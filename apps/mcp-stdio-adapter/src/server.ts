@@ -7,6 +7,7 @@ import {
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import {
   MCP_TOOL_CATALOG,
+  MCP_CONTRACT_VERSION,
   mcpToolInputJsonSchemas,
   mcpToolOutputJsonSchemas,
   parseMcpToolInput,
@@ -14,6 +15,8 @@ import {
   type McpToolName
 } from '../../shared/protocol/src/index.js';
 import type { StdioAdapterConfig } from './config.js';
+import { createDemoTrace } from './demo-trace.js';
+import { randomUUID } from 'node:crypto';
 
 export interface RunningStdioAdapter {
   close(): Promise<void>;
@@ -26,7 +29,7 @@ const title = (tool: McpToolName): string => tool
 
 // Hand-wired stdio currently negotiates the 2025 MCP era. Its wire codec
 // wraps structured output as `{result: ...}` when the advertised schema has a
-// typeless `$ref` root. Every canonical Octopus result is an object, so stamp
+// typeless `$ref` root. Every canonical Tabro result is an object, so stamp
 // that known root type and keep the broker's structured result shape intact.
 const objectRootOutputSchema = (tool: McpToolName): Record<string, unknown> => ({
   ...mcpToolOutputJsonSchemas[tool],
@@ -42,7 +45,9 @@ const objectRootOutputSchema = (tool: McpToolName): Record<string, unknown> => (
  * request_ref remains the only request identity and is never synthesized here.
  */
 export async function startStdioAdapter(config: StdioAdapterConfig): Promise<RunningStdioAdapter> {
+  const trace = createDemoTrace(config.demoTrace, config.identity.runtimeSessionKey, config.bearerToken);
   const requestHeaders: Record<string, string> = {
+    'x-octopus-contract-version': MCP_CONTRACT_VERSION,
     Authorization: `Bearer ${config.bearerToken}`,
     'x-octopus-runtime': config.identity.runtimeName,
     'x-octopus-runtime-session': config.identity.runtimeSessionKey,
@@ -50,8 +55,12 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
       ? {}
       : { 'x-octopus-parent-runtime-session': config.identity.parentRuntimeSessionKey })
   };
+  const healthResponse = await fetch(new URL('/health', config.brokerUrl), { signal: AbortSignal.timeout(5_000) });
+  if (!healthResponse.ok || (await healthResponse.json() as { mcpContractVersion?: string }).mcpContractVersion !== MCP_CONTRACT_VERSION) {
+    throw new Error('MCP_CONTRACT_VERSION_MISMATCH: update the Broker and stdio adapter together.');
+  }
   const remoteClient = new Client({
-    name: 'octopus-browser-relay-stdio-adapter',
+    name: 'tabro-stdio-adapter',
     version: config.serviceVersion
   }, { versionNegotiation: { mode: 'auto' } });
   await remoteClient.connect(new StreamableHTTPClientTransport(config.brokerUrl, {
@@ -59,7 +68,7 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
   }));
 
   const server = new McpServer({
-    name: 'octopus-browser-relay',
+    name: 'tabro',
     version: config.serviceVersion
   });
   for (const definition of MCP_TOOL_CATALOG) {
@@ -70,10 +79,14 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
       outputSchema: fromJsonSchema(objectRootOutputSchema(definition.name))
     }, async (rawInput): Promise<CallToolResult> => {
       const input = parseMcpToolInput(definition.name, rawInput);
+      const callId = randomUUID();
+      trace?.({ kind: 'call', callId, tool: definition.name, input });
       const result = await remoteClient.callTool({
         name: definition.name,
         arguments: input as Record<string, unknown>
       });
+      try { trace?.({ kind: 'result', callId, tool: definition.name, result: result.structuredContent ?? null, isError: result.isError ?? false }); }
+      catch (error) { console.error('Demo trace write failed after MCP execution:', error instanceof Error ? error.message : String(error)); }
       if (!result.isError && result.structuredContent !== undefined) {
         parseMcpToolOutput(definition.name, result.structuredContent);
       }

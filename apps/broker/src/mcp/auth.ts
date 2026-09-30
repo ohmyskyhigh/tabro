@@ -21,7 +21,7 @@ export function authenticateRequest(request: IncomingMessage, store: RelayReposi
 export function rejectUnauthorized(response: ServerResponse): void {
   response.writeHead(401, {
     'content-type': 'application/json',
-    'www-authenticate': 'Bearer realm="octopus-browser-relay"'
+    'www-authenticate': 'Bearer realm="tabro"'
   });
   response.end(JSON.stringify({ error: 'UNAUTHORIZED' }));
 }

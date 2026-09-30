@@ -4,7 +4,7 @@ Authority level: User Interface.
 
 For this vault, User Interface is the runtime-independent, agent-facing MCP contract rather than a graphical interface. It owns exact tool names and modes, model-authored inputs, returned envelopes, public facts, problems, request tickets, event cursors, available actions, and machine-readable schemas.
 
-Status: confirmed as wire-contract version `1` and ready for System realization. Numeric limits and runtime adapters remain evidence-tunable only where the contract advertises the active value and preserves the same public semantics.
+Status: confirmed as wire-contract version `2` and ready for System realization. Numeric limits and runtime adapters remain evidence-tunable only where the contract advertises the active value and preserves the same public semantics.
 
 ## Canonical contract
 
@@ -20,7 +20,7 @@ Status: confirmed as wire-contract version `1` and ready for System realization.
 
 [`MCP-Contract.schema.json`](./MCP-Contract.schema.json) is the exact closed schema bundle for the fourteen input roots, fourteen output roots, common facts, request tickets, problems, raw CDP results, pause and recovery facts, pagination, and executable available actions.
 
-The broker issues every Octopus reference and cursor. Caller identity is injected outside model-authored inputs. Agents only echo returned references and browser-issued CDP handles accepted by a supported method.
+The broker issues every Tabro reference and cursor. Caller identity is injected outside model-authored inputs. Agents only echo returned references and browser-issued CDP handles accepted by a supported method.
 
 ## Compatibility
 

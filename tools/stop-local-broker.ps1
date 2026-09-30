@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 
 function Resolve-TaskPath([string]$Value, [string]$Fallback, [string]$Base) {
   $candidate = if ([string]::IsNullOrWhiteSpace($Value)) { $Fallback } else { $Value }
-  if (-not [System.IO.Path]::IsPathFullyQualified($candidate)) {
+  if ($candidate -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2})') {
     $candidate = Join-Path $Base $candidate
   }
   return [System.IO.Path]::GetFullPath($candidate)
@@ -23,7 +23,7 @@ function Test-CommandLineArgument([string]$CommandLine, [string]$ExpectedPath) {
   return [Regex]::IsMatch($normalizedCommandLine, $pattern)
 }
 
-if (-not $IsWindows) {
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
   throw 'The current local broker stop command requires Windows process inspection.'
 }
 
@@ -75,7 +75,7 @@ if (-not $isExpectedNode -or -not $hasExpectedEntry) {
 
 if (-not $PSCmdlet.ShouldProcess(
   "process $brokerProcessId ($($brokerProcess.ExecutablePath))",
-  "Stop the installer-managed Octopus broker running $brokerEntry"
+  "Stop the installer-managed Tabro broker running $brokerEntry"
 )) {
   Write-Output ([ordered]@{
     status = 'would_stop'

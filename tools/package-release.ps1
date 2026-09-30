@@ -9,10 +9,10 @@ $workspace = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $package = Get-Content -LiteralPath (Join-Path $workspace 'package.json') -Raw | ConvertFrom-Json
 $version = [string]$package.version
 $outputRoot = [IO.Path]::GetFullPath((Join-Path $workspace $OutputDirectory))
-$stage = Join-Path $outputRoot "octopus-browser-relay-v$version-windows-x64"
+$stage = Join-Path $outputRoot "tabro-v$version-windows-x64"
 $archive = "$stage.zip"
 $checksum = "$archive.sha256"
-$updater = Join-Path $outputRoot 'octopus-browser-relay-update.ps1'
+$updater = Join-Path $outputRoot 'tabro-update.ps1'
 
 if (-not $SkipVerify) {
   & pnpm verify

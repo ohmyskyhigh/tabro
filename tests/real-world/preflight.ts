@@ -29,7 +29,7 @@ else {
   const adminToken = readFileSync(manifest.adminTokenFile, 'utf8').trim();
   const client = new Client({ name: 'real-world-preflight', version: '0.1.0' }, { versionNegotiation: { mode: 'auto' } });
   try {
-    await client.connect(new StreamableHTTPClientTransport(new URL(manifest.mcpUrl), { requestInit: { headers: { Authorization: `Bearer ${adminToken}` } } }));
+    await client.connect(new StreamableHTTPClientTransport(new URL(manifest.mcpUrl), { requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${adminToken}` } } }));
     const result = await client.callTool({ name: 'list_targets', arguments: {} });
     targets = ((result.structuredContent as { targets?: Array<Record<string, unknown>> } | undefined)?.targets ?? []);
     const listedBindings = await client.callTool({ name: 'list_bindings', arguments: {} });

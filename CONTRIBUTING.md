@@ -1,4 +1,4 @@
-# Contributing to Octopus Browser Relay
+# Contributing to Tabro
 
 Thanks for helping agents automate several local browser profiles through one brokered MCP contract.
 

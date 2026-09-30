@@ -223,6 +223,16 @@ export class SqliteLogicalRepository implements LogicalRepository {
     })();
   }
 
+  markMissingWindows(input: Parameters<LogicalRepository['markMissingWindows']>[0]): void {
+    const at = input.at ?? nowIso();
+    const observed = [...new Set(input.observedWindowRefs)];
+    const exclusion = observed.length === 0
+      ? ''
+      : ` AND window_ref NOT IN (${observed.map(() => '?').join(',')})`;
+    this.db.prepare(`UPDATE logical_windows SET focused = 0, eligible = 0, updated_at = ?
+      WHERE endpoint_ref = ?${exclusion}`).run(at, input.endpointRef, ...observed);
+  }
+
   getWindow(windowRef: string): StoredLogicalWindow | null {
     const row = this.db.prepare('SELECT * FROM logical_windows WHERE window_ref = ?').get(windowRef) as Row | undefined;
     return row ? toWindow(row) : null;

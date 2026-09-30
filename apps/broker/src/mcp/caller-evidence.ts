@@ -44,6 +44,7 @@ export function callerEvidenceFromContext(context: McpRequestContext, authInfo: 
   const principalNamespace = `principal:${authInfo.clientId}`;
 
   return {
+    managementAuthority: { principalId: authInfo.clientId, scopes: [...authInfo.scopes] },
     runtimeName,
     runtimeSessionKey: `${principalNamespace}:session:${suppliedSession ?? authInfo.clientId}`,
     ...(suppliedParent === undefined

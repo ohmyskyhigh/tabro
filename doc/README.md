@@ -1,4 +1,4 @@
-# Octopus Browser Relay documentation
+# Tabro documentation
 
 [English documentation](./README.md) | [简体中文文档](./zh-CN/README.md)
 

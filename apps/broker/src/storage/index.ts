@@ -5,3 +5,4 @@ export * from './sqlite/event-repository.js';
 export * from './sqlite/logical-repository.js';
 export * from './sqlite/request-repository.js';
 export * from './sqlite/runtime.js';
+export * from './sqlite/profile-repository.js';

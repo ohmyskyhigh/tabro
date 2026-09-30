@@ -4,6 +4,11 @@ import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 
 const ConfigSchema = z.strictObject({
+  profiles: z.strictObject({
+    launchesEnabled: z.boolean().optional(),
+    root: z.string().min(1), executablePath: z.string().min(1), extensionSource: z.string().min(1),
+    expectedBrowserVersion: z.string().min(1), expectedExtensionDigest: z.string().regex(/^[a-f0-9]{64}$/u), relayUrl: z.string().url()
+  }).optional(),
   host: z.string().default('127.0.0.1'),
   mcpPort: z.coerce.number().int().min(0).max(65_535).default(7331),
   wsPort: z.coerce.number().int().min(0).max(65_535).default(7332),
@@ -29,6 +34,7 @@ function localAdminToken(dbPath: string): string {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
   const dbPath = env.RELAY_DB_PATH ?? '.relay-data/relay.sqlite';
   return ConfigSchema.parse({
+    ...(env.RELAY_PROFILES_CONFIG ? { profiles: JSON.parse(readFileSync(resolve(env.RELAY_PROFILES_CONFIG), 'utf8')) as unknown } : {}),
     host: env.RELAY_HOST,
     mcpPort: env.RELAY_MCP_PORT,
     wsPort: env.RELAY_WS_PORT,

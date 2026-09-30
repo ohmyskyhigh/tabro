@@ -2,7 +2,7 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { BrokerCore, OctopusBroker, type ExtensionEventSink } from '../../apps/broker/src/core/index.js';
-import { ExtensionGateway } from '../../apps/broker/src/extension-relay/index.js';
+import { ExtensionGateway, type LiveExtensionConnection } from '../../apps/broker/src/extension-relay/index.js';
 import {
   MAX_RELAY_V2_ENVELOPE_BYTES,
   createRelayEnvelope,
@@ -148,7 +148,7 @@ describe('extension WebSocket gateway', () => {
     await new Promise<void>((resolve) => { reconnect.once('close', () => resolve()); reconnect.close(); });
   });
 
-  it('pairs through relay v2, publishes inventory, and correlates private operations', async () => {
+  it.each([false, true])('pairs through relay v2 and correlates operations (pre-dispatch inventory rejection: %s)', async (rejectStaleInventory) => {
     const keys = generateKeyPairSync('ec', { namedCurve: 'P-256' });
     const publicKeyJwk = keys.publicKey.export({ format: 'jwk' }) as RelayV2PayloadByType['HELLO']['publicKeyJwk'];
     await gateway.start();
@@ -174,7 +174,8 @@ describe('extension WebSocket gateway', () => {
     socket.send(JSON.stringify(createRelayV2Envelope('HELLO', {
       endpointId: paired.payload.endpointId,
       publicKeyJwk,
-      proposedNickname: 'mintwave',
+      pairingCode: 'CALM-REEF',
+      proposedNickname: 'calmreef',
       extensionVersion: '0.3.0-test',
       browser: { product: 'Chrome', version: '140.0.0.0', userAgent: null },
       supportedProtocolVersions: [2],
@@ -198,17 +199,34 @@ describe('extension WebSocket gateway', () => {
     const ready = await readyMessage as RelayV2Envelope<'READY'>;
     expect(ready.type).toBe('READY');
     expect(ready.payload).toMatchObject({
+      nickname: 'calmreef',
       brokerVersion: '0.3.0-test',
       requiredExtensionVersion: '0.3.0-test',
       reloadExtension: false
     });
 
-    const endpoint = store.canonical.logical.getEndpointByNickname('mintwave');
+    expect(store.getTargetById(paired.payload.endpointId)?.alias).toBe('calmreef');
+    expect(store.canonical.logical.getEndpointByNickname('mintwave')).toBeNull();
+    const endpoint = store.canonical.logical.getEndpointByNickname('calmreef');
     expect(endpoint).not.toBeNull();
     expect(gateway.connection(endpoint!.endpointRef)).toMatchObject({
       connected: true,
       connectionGeneration: challenge.payload.connectionGeneration
     });
+
+    const live = (gateway as unknown as {
+      registry: { values(): LiveExtensionConnection[] };
+    }).registry.values()[0]!;
+    live.lastHeartbeatAt = Date.now() - 5_000;
+    live.lastProbeAt = 0;
+    const pingReceived = new Promise<void>((resolve) => socket!.once('ping', () => resolve()));
+    gateway.sweepHeartbeat(10_000);
+    await pingReceived;
+    for (let attempt = 0; attempt < 20 && live.lastHeartbeatAt < Date.now() - 1_000; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(live.lastHeartbeatAt).toBeGreaterThan(Date.now() - 1_000);
+    expect(socket.readyState).toBe(WebSocket.OPEN);
 
     socket.send(JSON.stringify(createRelayV2Envelope('INVENTORY_SNAPSHOT', {
       attemptId: crypto.randomUUID(),
@@ -254,8 +272,28 @@ describe('extension WebSocket gateway', () => {
       active: true,
       index: null
     });
-    const operation = await nextV2Message(socket) as RelayV2Envelope<'CREATE_TAB'>;
+    let operation = await nextV2Message(socket) as RelayV2Envelope<'CREATE_TAB'>;
     expect(operation.payload.attemptId).toBe(attemptId);
+    if (rejectStaleInventory) {
+      const refreshNext = nextV2Message(socket);
+      socket.send(JSON.stringify(createRelayV2Envelope('ERROR', {
+        connectionGeneration: challenge.payload.connectionGeneration,
+        attemptId, code: 'STALE_INVENTORY_GENERATION', message: 'Inventory changed before dispatch.', retryable: true, details: null
+      })));
+      const refresh = await refreshNext as RelayV2Envelope<'INVENTORY_REQUEST'>;
+      expect(refresh.type).toBe('INVENTORY_REQUEST');
+      const retriedNext = nextV2Message(socket);
+      socket.send(JSON.stringify(createRelayV2Envelope('INVENTORY_SNAPSHOT', {
+        attemptId: refresh.payload.attemptId,
+        connectionGeneration: challenge.payload.connectionGeneration,
+        inventoryGeneration: 5, capturedAt: new Date().toISOString(),
+        browser: { product: 'Chrome', version: '140.0.0.0', userAgent: null }, windows: []
+      })));
+      operation = await retriedNext as RelayV2Envelope<'CREATE_TAB'>;
+      expect(operation.type).toBe('CREATE_TAB');
+      expect(operation.payload.attemptId).toBe(attemptId);
+      expect(operation.payload.expected.inventoryGeneration).toBe(5);
+    }
     socket.send(JSON.stringify(createRelayV2Envelope('ACK', {
       attemptId,
       operation: 'CREATE_TAB',
@@ -280,6 +318,22 @@ describe('extension WebSocket gateway', () => {
       completedAt: new Date().toISOString()
     })));
     await expect(operationPromise).resolves.toMatchObject({ outcome: 'succeeded' });
+
+    const acknowledgedAttempt = crypto.randomUUID();
+    const acknowledgedFailure = gateway.execute(endpoint!.endpointRef, 'CREATE_TAB', {
+      ...operation.payload, attemptId: acknowledgedAttempt
+    });
+    const rejection = expect(acknowledgedFailure).rejects.toThrow('STALE_INVENTORY_GENERATION');
+    const acknowledgedOperation = await nextV2Message(socket) as RelayV2Envelope<'CREATE_TAB'>;
+    socket.send(JSON.stringify(createRelayV2Envelope('ACK', {
+      attemptId: acknowledgedAttempt, operation: 'CREATE_TAB', expected: acknowledgedOperation.payload.expected,
+      connectionGeneration: challenge.payload.connectionGeneration, acceptedAt: new Date().toISOString()
+    })));
+    socket.send(JSON.stringify(createRelayV2Envelope('ERROR', {
+      attemptId: acknowledgedAttempt, connectionGeneration: challenge.payload.connectionGeneration,
+      code: 'STALE_INVENTORY_GENERATION', message: 'Cannot prove no effect after ACK.', retryable: true, details: null
+    })));
+    await rejection;
 
     const firstSocket = socket;
     const firstSocketClosed = new Promise<void>((resolve) => firstSocket!.once('close', resolve));
@@ -315,7 +369,7 @@ describe('extension WebSocket gateway', () => {
       .toBe(replacementChallenge.payload.connectionGeneration);
   });
 
-  it('requests reload and withholds broker readiness for a mismatched extension version', async () => {
+  it.each(['0.2.0', '0.3.1', '99.0.0'])('accepts protocol-compatible extension %s without requesting a reload', async (extensionVersion) => {
     const readySpy = vi.spyOn(octopus, 'onExtensionReady');
     const keys = generateKeyPairSync('ec', { namedCurve: 'P-256' });
     const publicKeyJwk = keys.publicKey.export({ format: 'jwk' }) as RelayV2PayloadByType['HELLO']['publicKeyJwk'];
@@ -329,7 +383,7 @@ describe('extension WebSocket gateway', () => {
       publicKeyJwk,
       pairingCode: 'SOFT-CLOUD',
       proposedNickname: 'softcloud',
-      extensionVersion: '0.2.0',
+      extensionVersion,
       browser: { product: 'Chrome', version: '140.0.0.0', userAgent: null },
       supportedProtocolVersions: [2],
       capabilityManifestIds: ['octopus-extension-baseline-v1'],
@@ -342,7 +396,7 @@ describe('extension WebSocket gateway', () => {
       endpointId: paired.payload.endpointId,
       publicKeyJwk,
       proposedNickname: 'softcloud',
-      extensionVersion: '0.2.0',
+      extensionVersion,
       browser: { product: 'Chrome', version: '140.0.0.0', userAgent: null },
       supportedProtocolVersions: [2],
       capabilityManifestIds: ['octopus-extension-baseline-v1'],
@@ -362,10 +416,10 @@ describe('extension WebSocket gateway', () => {
     const ready = await readyNext as RelayV2Envelope<'READY'>;
     expect(ready.payload).toMatchObject({
       brokerVersion: '0.3.0-test',
-      requiredExtensionVersion: '0.3.0-test',
-      reloadExtension: true
+      requiredExtensionVersion: extensionVersion,
+      reloadExtension: false
     });
-    expect(readySpy).not.toHaveBeenCalled();
+    expect(readySpy).toHaveBeenCalledOnce();
   });
 
   it('returns a retryable conflict so an unpaired extension can generate another two-word nickname', async () => {

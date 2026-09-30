@@ -1,25 +1,29 @@
-# Octopus Browser Relay stdio MCP adapter
+# Tabro stdio MCP adapter
 
 ## Purpose
 
 ### One adapter process gives one Codex or Hermes session private caller evidence
 
-The adapter publishes the canonical fourteen Octopus tools over stdio and forwards every call to the loopback HTTP broker. It injects runtime and session headers outside tool arguments, so the agent never generates or sees caller identity fields.
+The adapter publishes the canonical eighteen Tabro tools over stdio and forwards every call to the loopback HTTP broker. It injects runtime and session headers outside tool arguments, so the agent never generates or sees caller identity fields. It requires MCP contract v2, checks Broker health before connecting and sends the contract version header.
 
 ### Runtime session evidence prefers host IDs and otherwise lasts for one process
 
-Session lookup prefers `CODEX_THREAD_ID`, `CODEX_SESSION_ID`, `HERMES_SESSION_ID`, and `HERMES_AGENT_SESSION_ID`, in that order. `OCTOPUS_RUNTIME_SESSION` is an explicit fallback. If none exists, the adapter creates a random value once at startup and retains it for that process lifetime. Parent-session equivalents are forwarded when present.
+Session lookup prefers `CODEX_THREAD_ID`, `CODEX_SESSION_ID`, `HERMES_SESSION_ID`, and `HERMES_AGENT_SESSION_ID`, in that order. `TABRO_RUNTIME_SESSION` is an explicit fallback. If none exists, the adapter creates a random value once at startup and retains it for that process lifetime. Parent-session equivalents are forwarded when present.
 
 ## Configuration
 
 ### The adapter accepts a loopback broker URL and a token or token-file path
 
-- `OCTOPUS_BROKER_URL` defaults to `http://127.0.0.1:7331/mcp`.
-- `OCTOPUS_BROWSER_RELAY_TOKEN_FILE` points to the installer's local token file.
-- `OCTOPUS_BROWSER_RELAY_TOKEN` or `OCTOPUS_AGENT_TOKEN` can supply the same token directly instead.
-- `OCTOPUS_RUNTIME` can force the runtime label to `codex`, `hermes`, or another safe local name.
+- `TABRO_BROKER_URL` defaults to `http://127.0.0.1:7331/mcp`.
+- `TABRO_TOKEN_FILE` points to the installer's local token file.
+- `TABRO_TOKEN` or `TABRO_AGENT_TOKEN` can supply the same token directly instead.
+- `TABRO_RUNTIME` can force the runtime label to `codex`, `hermes`, or another safe local name.
 
 The token file wins when both forms exist, preventing an inherited stale token from overriding the installed broker credential. The token and session evidence are transport configuration. They are not MCP tool inputs.
+
+### Legacy environment names continue to connect existing installations
+
+Each `TABRO_*` setting also accepts its corresponding `OCTOPUS_*` name; `TABRO_TOKEN` and `TABRO_TOKEN_FILE` correspond to `OCTOPUS_BROWSER_RELAY_TOKEN` and `OCTOPUS_BROWSER_RELAY_TOKEN_FILE`. A nonempty Tabro value wins over the legacy value for the same setting. Runtime-provided session IDs still precede either explicit fallback. Native Messaging identity, extension identity, wire headers, and profile storage remain unchanged.
 
 ## Delivery boundary
 

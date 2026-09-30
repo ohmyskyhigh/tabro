@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string]$Repository = 'ohmyskyhigh/octopus-browser-relay',
+  [string]$Repository = 'ohmyskyhigh/tabro',
   [string]$Version = 'latest',
   [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'Octopus Browser Relay'),
   [string]$DataRoot = '',
@@ -15,6 +15,7 @@ param(
     'HKCU:\Software\AdsPower\SunBrowser\NativeMessagingHosts'
   ),
   [switch]$SkipNativeRegistration,
+  [switch]$EnableManagedProfiles,
   [switch]$NoStartBroker,
   [switch]$Force
 )
@@ -35,8 +36,15 @@ $previousStatePath = Join-Path $bootstrap 'current-release.json'
 $previousStateText = if (Test-Path -LiteralPath $previousStatePath) { Get-Content -LiteralPath $previousStatePath -Raw } else { $null }
 $previousState = if ($previousStateText) { $previousStateText | ConvertFrom-Json } else { $null }
 $extensionBackup = Join-Path $temporaryRoot 'extension-backup'
+$installedHermesRegistrationHelper = Join-Path $install 'register-hermes-profiles.ps1'
 $brokerStopped = $false
 $previousBrokerWasRunning = $false
+$upgradeBackup = Join-Path $data ('upgrade-backups\' + [guid]::NewGuid().ToString('N'))
+$databaseBackup = Join-Path $upgradeBackup 'relay.sqlite'
+$managedConfigBackup = Join-Path $upgradeBackup 'managed-profiles.json'
+$releaseBackup = Join-Path $temporaryRoot 'previous-release'
+$bootstrapBackup = Join-Path $temporaryRoot 'previous-bootstrap'
+$replacedReleaseRoot = $null
 
 function Assert-ChildPath([string]$Parent, [string]$Child) {
   $parentFull = [IO.Path]::GetFullPath($Parent).TrimEnd('\') + '\'
@@ -44,6 +52,10 @@ function Assert-ChildPath([string]$Parent, [string]$Child) {
   if (-not $childFull.StartsWith($parentFull, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Path escapes its expected root: $childFull"
   }
+}
+
+function ConvertTo-PowerShellLiteral([string]$Value) {
+  return "'" + $Value.Replace("'", "''") + "'"
 }
 
 function Invoke-Mirror([string]$Source, [string]$Destination) {
@@ -57,7 +69,7 @@ function Write-NativeManifest([pscustomobject]$State) {
   $manifestPath = Join-Path $bootstrap "$hostName.json"
   [ordered]@{
     name = $hostName
-    description = 'Octopus Browser Relay Native Messaging companion'
+    description = 'Tabro Native Messaging companion'
     path = [string]$State.nativeHostEntry
     type = 'stdio'
     allowed_origins = @("chrome-extension://$extensionId/")
@@ -83,7 +95,7 @@ function Start-InstalledBroker([pscustomobject]$State) {
     RELAY_WS_PORT = [string]$RelayPort
     RELAY_LOG_LEVEL = 'info'
   }
-  $process = Start-Process -FilePath $node -ArgumentList @($launcher) -WorkingDirectory $install -WindowStyle Hidden -PassThru -Environment $environment
+  $process = Start-Process -FilePath $node -ArgumentList @('"' + $launcher + '"') -WorkingDirectory $install -WindowStyle Hidden -PassThru -Environment $environment
   Set-Content -LiteralPath (Join-Path $data 'broker.pid') -Value $process.Id -Encoding ascii
   $healthUrl = "http://127.0.0.1:$McpPort/health"
   for ($attempt = 0; $attempt -lt 80; $attempt += 1) {
@@ -91,7 +103,7 @@ function Start-InstalledBroker([pscustomobject]$State) {
     if ($process.HasExited) { throw "Updated broker exited with code $($process.ExitCode)." }
     try {
       $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 1
-      if ($health.status -eq 'ok' -and $health.serviceVersion -eq $State.version) {
+      if ($health.status -eq 'ok' -and $health.serviceVersion -eq $State.version -and $health.mcpContractVersion -eq '2') {
         return [ordered]@{ processId = $process.Id; healthUrl = $healthUrl; health = $health }
       }
     } catch { }
@@ -132,13 +144,16 @@ try {
       $tag = if ($Version.StartsWith('v')) { $Version } else { "v$Version" }
       "https://api.github.com/repos/$Repository/releases/tags/$tag"
     }
-    $release = Invoke-RestMethod -Uri $releaseUri -Headers @{ 'User-Agent' = 'octopus-browser-relay-updater' }
-    $zipAsset = @($release.assets | Where-Object { $_.name -match '^octopus-browser-relay-v.+-windows-x64\.zip$' })
+    $release = Invoke-RestMethod -Uri $releaseUri -Headers @{ 'User-Agent' = 'tabro-updater' }
+    $zipAsset = @($release.assets | Where-Object { $_.name -match '^tabro-v.+-windows-x64\.zip$' })
+    if ($zipAsset.Count -eq 0) {
+      $zipAsset = @($release.assets | Where-Object { $_.name -match '^octopus-browser-relay-v.+-windows-x64\.zip$' })
+    }
     if ($zipAsset.Count -ne 1) { throw "Release $($release.tag_name) must contain exactly one Windows x64 ZIP." }
     $checksumAsset = @($release.assets | Where-Object { $_.name -eq "$($zipAsset[0].name).sha256" })
     if ($checksumAsset.Count -ne 1) { throw "Release $($release.tag_name) has no matching checksum asset." }
-    Invoke-WebRequest -Uri $zipAsset[0].browser_download_url -OutFile $archive -Headers @{ 'User-Agent' = 'octopus-browser-relay-updater' }
-    Invoke-WebRequest -Uri $checksumAsset[0].browser_download_url -OutFile $checksum -Headers @{ 'User-Agent' = 'octopus-browser-relay-updater' }
+    Invoke-WebRequest -Uri $zipAsset[0].browser_download_url -OutFile $archive -Headers @{ 'User-Agent' = 'tabro-updater' }
+    Invoke-WebRequest -Uri $checksumAsset[0].browser_download_url -OutFile $checksum -Headers @{ 'User-Agent' = 'tabro-updater' }
   }
 
   $expectedHash = ((Get-Content -LiteralPath $checksum -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
@@ -174,15 +189,29 @@ try {
   if (Test-Path -LiteralPath $stableExtension) {
     Copy-Item -LiteralPath $stableExtension -Destination $extensionBackup -Recurse
   }
+  $snapshotNode = if ($NodePath) { [IO.Path]::GetFullPath($NodePath) } else { (Get-Command node -ErrorAction Stop).Source }
+  & $snapshotNode (Join-Path $expanded 'tools\managed-upgrade-snapshot.mjs') (Join-Path $data 'relay.sqlite') $databaseBackup --check-only
+  if ($LASTEXITCODE -ne 0) { throw 'Finish browser work and stop managed Profiles before upgrading.' }
   $previousBrokerWasRunning = Stop-CurrentBroker
   $brokerStopped = $true
-  if (Test-Path -LiteralPath $releaseRoot) { Remove-Item -LiteralPath $releaseRoot -Recurse -Force }
+  & $snapshotNode (Join-Path $expanded 'tools\managed-upgrade-snapshot.mjs') (Join-Path $data 'relay.sqlite') $databaseBackup
+  if ($LASTEXITCODE -ne 0) { throw 'Upgrade requires inactive workspaces, completed requests and stopped managed Profiles; the previous broker will be restored.' }
+  [void](New-Item -ItemType Directory -Path $upgradeBackup -Force)
+  if (Test-Path -LiteralPath (Join-Path $data 'managed-profiles.json')) { Copy-Item -LiteralPath (Join-Path $data 'managed-profiles.json') -Destination $managedConfigBackup }
+  if (Test-Path -LiteralPath $bootstrap) { Copy-Item -LiteralPath $bootstrap -Destination $bootstrapBackup -Recurse }
+  if (Test-Path -LiteralPath $releaseRoot) {
+    Assert-ChildPath $releases $releaseRoot
+    Assert-ChildPath $temporaryRoot $releaseBackup
+    Move-Item -LiteralPath $releaseRoot -Destination $releaseBackup
+    $replacedReleaseRoot = $releaseRoot
+  }
   Move-Item -LiteralPath $releaseStage -Destination $releaseRoot
   Invoke-Mirror (Join-Path $releaseRoot ([string]$manifest.extensionDirectory)) $stableExtension
   Copy-Item -LiteralPath (Join-Path $releaseRoot 'tools\installed-broker-launcher.mjs') -Destination (Join-Path $bootstrap 'broker-launcher.mjs') -Force
   Copy-Item -LiteralPath (Join-Path $releaseRoot 'tools\installed-mcp-adapter-launcher.mjs') -Destination (Join-Path $bootstrap 'mcp-stdio-adapter.mjs') -Force
   Copy-Item -LiteralPath (Join-Path $releaseRoot 'tools\update-local.ps1') -Destination (Join-Path $install 'update-local.ps1') -Force
   Copy-Item -LiteralPath (Join-Path $releaseRoot 'tools\stop-installed-broker.ps1') -Destination (Join-Path $install 'stop-installed-broker.ps1') -Force
+  Copy-Item -LiteralPath (Join-Path $releaseRoot 'tools\register-hermes-profiles.ps1') -Destination $installedHermesRegistrationHelper -Force
 
   $state = [ordered]@{
     version = [string]$manifest.version
@@ -195,17 +224,32 @@ try {
   }
   $state | ConvertTo-Json | Set-Content -LiteralPath $previousStatePath -Encoding utf8
   $nativeManifest = Write-NativeManifest ([pscustomobject]$state)
+  $managedConfig = Join-Path $data 'managed-profiles.json'
+  if ($EnableManagedProfiles -or (Test-Path -LiteralPath $managedConfig)) {
+    & (Join-Path $releaseRoot 'tools\configure-managed-profiles.ps1') -DataRoot $data -ExtensionPath $stableExtension -RelayUrl "ws://127.0.0.1:$RelayPort/relay" | Out-Null
+  }
 
   $adapter = Join-Path $bootstrap 'mcp-stdio-adapter.mjs'
   $tokenFile = Join-Path $data 'admin-token.txt'
   $nodeExecutable = if ($NodePath) { [IO.Path]::GetFullPath($NodePath) } else { (Get-Command node -ErrorAction Stop).Source }
   @"
-[mcp_servers.octopus-browser-relay]
+[mcp_servers.tabro]
 command = "$($nodeExecutable.Replace('\','\\'))"
 args = ["$($adapter.Replace('\','\\'))"]
-env = { OCTOPUS_BROKER_URL = "http://127.0.0.1:$McpPort/mcp", OCTOPUS_BROWSER_RELAY_TOKEN_FILE = "$($tokenFile.Replace('\','\\'))", OCTOPUS_RUNTIME = "codex" }
+env = { TABRO_BROKER_URL = "http://127.0.0.1:$McpPort/mcp", TABRO_TOKEN_FILE = "$($tokenFile.Replace('\','\\'))", TABRO_RUNTIME = "codex" }
 "@ | Set-Content -LiteralPath (Join-Path $bootstrap 'codex-mcp.toml') -Encoding utf8
-  $hermesCommand = "hermes mcp add octopus-browser-relay --command `"$nodeExecutable`" --env `"OCTOPUS_BROKER_URL=http://127.0.0.1:$McpPort/mcp`" `"OCTOPUS_BROWSER_RELAY_TOKEN_FILE=$tokenFile`" `"OCTOPUS_RUNTIME=hermes`" --args `"$adapter`""
+  $hermesCommand = @(
+    'pwsh -NoProfile -File',
+    (ConvertTo-PowerShellLiteral $installedHermesRegistrationHelper),
+    '-NodeExecutable',
+    (ConvertTo-PowerShellLiteral $nodeExecutable),
+    '-AdapterPath',
+    (ConvertTo-PowerShellLiteral $adapter),
+    '-BrokerUrl',
+    (ConvertTo-PowerShellLiteral "http://127.0.0.1:$McpPort/mcp"),
+    '-TokenFile',
+    (ConvertTo-PowerShellLiteral $tokenFile)
+  ) -join ' '
   $hermesCommand | Set-Content -LiteralPath (Join-Path $bootstrap 'hermes-mcp.txt') -Encoding utf8
   @"
 Load this extension directory once with Chrome developer mode and Load unpacked:
@@ -215,7 +259,9 @@ Future updates keep this path and the updated broker requests one safe extension
 
 Codex: merge the generated codex-mcp.toml fragment into the applicable Codex config.toml and start a new session.
 
-Hermes: run the command in hermes-mcp.txt, then run: hermes mcp test octopus-browser-relay
+Hermes: run the command in hermes-mcp.txt. It registers Tabro in the default profile and every named profile currently installed. Start a new session in each profile, then run: hermes -p <profile> mcp test tabro
+
+Rerun hermes-mcp.txt after creating another Hermes profile so the new isolated profile receives the MCP registration.
 
 Both handoffs point to the local token file instead of embedding its contents. Do not paste the token into chat, documentation, source control, or shell history.
 "@ | Set-Content -LiteralPath (Join-Path $bootstrap 'INSTALLATION.md') -Encoding utf8
@@ -240,8 +286,22 @@ Both handoffs point to the local token file instead of embedding its contents. D
   } | ConvertTo-Json -Depth 10
 } catch {
   if ($brokerStopped -and $previousStateText) {
+    if ($replacedReleaseRoot -and (Test-Path -LiteralPath $releaseBackup)) {
+      Assert-ChildPath $releases $replacedReleaseRoot
+      if (Test-Path -LiteralPath $replacedReleaseRoot) { Remove-Item -LiteralPath $replacedReleaseRoot -Recurse -Force }
+      Move-Item -LiteralPath $releaseBackup -Destination $replacedReleaseRoot
+    }
+    if (Test-Path -LiteralPath $bootstrapBackup) { Invoke-Mirror $bootstrapBackup $bootstrap }
+    if (Test-Path -LiteralPath $databaseBackup) {
+      foreach ($suffix in @('-wal', '-shm')) {
+        $sidecar = Join-Path $data ('relay.sqlite' + $suffix)
+        if (Test-Path -LiteralPath $sidecar) { Remove-Item -LiteralPath $sidecar -Force }
+      }
+      Copy-Item -LiteralPath $databaseBackup -Destination (Join-Path $data 'relay.sqlite') -Force
+    }
     Set-Content -LiteralPath $previousStatePath -Value $previousStateText -Encoding utf8
     if (Test-Path -LiteralPath $extensionBackup) { Invoke-Mirror $extensionBackup $stableExtension }
+    if (Test-Path -LiteralPath $managedConfigBackup) { Copy-Item -LiteralPath $managedConfigBackup -Destination (Join-Path $data 'managed-profiles.json') -Force }
     Write-NativeManifest $previousState | Out-Null
     if ($previousBrokerWasRunning -and -not $NoStartBroker) {
       Start-InstalledBroker $previousState | Out-Null

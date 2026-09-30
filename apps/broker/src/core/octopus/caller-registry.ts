@@ -6,6 +6,7 @@ import type {
 import type { ReferenceFactory } from './reference-factory.js';
 
 export interface CallerEvidence {
+  managementAuthority?: { principalId: string; scopes: readonly string[] };
   runtimeName: string;
   runtimeSessionKey: string;
   parentRuntimeSessionKey?: string;

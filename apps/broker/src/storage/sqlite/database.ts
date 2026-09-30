@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { SQLInputValue } from 'node:sqlite';
 import type {
@@ -26,6 +26,7 @@ import { SqliteAuditRepository } from './audit-repository.js';
 import { SqliteEventRepository } from './event-repository.js';
 import { SqliteLogicalRepository } from './logical-repository.js';
 import { SqliteRequestRepository } from './request-repository.js';
+import { SqliteProfileRepository } from './profile-repository.js';
 import { NodeSqliteDatabase, type SqliteDatabase } from './runtime.js';
 
 type Row = Record<string, unknown>;
@@ -122,14 +123,17 @@ function toCommand(row: Row): StoredCommand {
 export class SqliteRelayStore implements RelayRepositories {
   private readonly db: SqliteDatabase;
   readonly canonical: CanonicalRepositories;
+  readonly profiles: SqliteProfileRepository;
 
   constructor(databasePath: string) {
+    const existingDatabase = databasePath !== ':memory:' && existsSync(databasePath);
     if (databasePath !== ':memory:') mkdirSync(dirname(resolve(databasePath)), { recursive: true });
     this.db = new NodeSqliteDatabase(databasePath);
     this.db.pragma('foreign_keys = ON');
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('busy_timeout = 5000');
-    this.migrate();
+    try { this.migrate(existingDatabase ? databasePath : null); } catch (error) { this.db.close(); throw error; }
+    this.profiles = new SqliteProfileRepository(this.db);
     const repositories: CanonicalRepositorySet = {
       logical: new SqliteLogicalRepository(this.db),
       requests: new SqliteRequestRepository(this.db),
@@ -142,15 +146,19 @@ export class SqliteRelayStore implements RelayRepositories {
     };
   }
 
-  private migrate(): void {
+  private migrate(backupSource: string | null): void {
     const migrations = [
       { version: 1, sql: readFileSync(new URL('./migrations/001-initial.sql', import.meta.url), 'utf8') },
       { version: 2, sql: readFileSync(new URL('./migrations/002-real-world-trace.sql', import.meta.url), 'utf8') },
       { version: 3, sql: readFileSync(new URL('./migrations/003-agent-target-bindings.sql', import.meta.url), 'utf8') },
       { version: 4, sql: readFileSync(new URL('./migrations/004-workspaces-requests.sql', import.meta.url), 'utf8') },
-      { version: 5, sql: readFileSync(new URL('./migrations/005-window-focus-history.sql', import.meta.url), 'utf8') }
+      { version: 5, sql: readFileSync(new URL('./migrations/005-window-focus-history.sql', import.meta.url), 'utf8') },
+      { version: 6, sql: readFileSync(new URL('./migrations/006-managed-profiles.sql', import.meta.url), 'utf8') }
     ];
     this.db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
+    if (backupSource && !this.db.prepare('SELECT 1 FROM schema_migrations WHERE version=6').get()) {
+      this.db.prepare('VACUUM INTO ?').run(`${resolve(backupSource)}.before-profiles-${randomUUID()}.sqlite`);
+    }
     for (const migration of migrations) {
       const applied = this.db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(migration.version);
       if (applied) continue;
@@ -202,6 +210,17 @@ export class SqliteRelayStore implements RelayRepositories {
       displayName: String(row.display_name),
       scopes: parseJson<string[]>(row.scopes_json)
     };
+  }
+
+  updateAgentScopes(principalId: string, scopes: string[]): AgentPrincipal | null {
+    this.db.prepare('UPDATE agents SET scopes_json=? WHERE principal_id=? AND enabled=1')
+      .run(JSON.stringify([...new Set(scopes)]), principalId);
+    return this.getAgentById(principalId);
+  }
+
+  rotateAgentToken(principalId: string, token: string): boolean {
+    return Number(this.db.prepare('UPDATE agents SET token_hash=? WHERE principal_id=? AND enabled=1')
+      .run(hashSecret(token), principalId).changes) === 1;
   }
 
   createPairingCode(alias: string, expiresAt: string): string {
@@ -273,9 +292,24 @@ export class SqliteRelayStore implements RelayRepositories {
   }
 
   renameTarget(alias: string, newAlias: string): void {
-    const result = this.db.prepare('UPDATE targets SET alias = ?, status_version = status_version + 1, updated_at = ? WHERE alias = ? AND revoked = 0')
-      .run(newAlias, nowIso(), alias);
-    if (result.changes !== 1) throw new Error(`Target not found: ${alias}`);
+    this.db.transaction(() => {
+      const target = this.getTargetByAlias(alias);
+      if (!target) throw new Error(`Target not found: ${alias}`);
+      const conflictingTarget = this.db.prepare('SELECT target_id FROM targets WHERE alias = ?')
+        .get(newAlias) as Row | undefined;
+      const conflictingEndpoint = this.db.prepare('SELECT legacy_target_id FROM browser_endpoints WHERE nickname = ?')
+        .get(newAlias) as Row | undefined;
+      if ((conflictingTarget && conflictingTarget.target_id !== target.targetId)
+        || (conflictingEndpoint && conflictingEndpoint.legacy_target_id !== target.targetId)) {
+        throw new Error('ENDPOINT_NICKNAME_CONFLICT');
+      }
+      const current = nowIso();
+      this.db.prepare('UPDATE targets SET alias = ?, status_version = status_version + 1, updated_at = ? WHERE target_id = ?')
+        .run(newAlias, current, target.targetId);
+      this.db.prepare(`UPDATE browser_endpoints
+        SET nickname = ?, status_version = status_version + 1, updated_at = ?
+        WHERE legacy_target_id = ?`).run(newAlias, current, target.targetId);
+    })();
   }
 
   revokeTarget(alias: string): void {

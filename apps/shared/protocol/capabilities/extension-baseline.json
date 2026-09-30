@@ -48,6 +48,7 @@
     { "method": "DOM.requestNode", "scope": "managed_tab", "childSessions": false },
     { "method": "DOM.resolveNode", "scope": "managed_tab", "childSessions": false },
     { "method": "DOM.setAttributeValue", "scope": "managed_tab", "childSessions": false },
+    { "method": "DOM.setFileInputFiles", "scope": "managed_tab", "childSessions": false },
     { "method": "Emulation.clearDeviceMetricsOverride", "scope": "managed_tab", "childSessions": false },
     { "method": "Emulation.setDeviceMetricsOverride", "scope": "managed_tab", "childSessions": false },
     { "method": "Emulation.setScrollbarsHidden", "scope": "managed_tab", "childSessions": false },

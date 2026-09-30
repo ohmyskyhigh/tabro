@@ -1,6 +1,9 @@
-export const MCP_CONTRACT_VERSION = '1' as const;
+export const MCP_CONTRACT_VERSION = '2' as const;
 
 export const MCP_ASYNC_TOOL_NAMES = [
+  'create_browser_profile',
+  'open_browser_profile',
+  'stop_browser_profile',
   'request_browser_workspace',
   'create_browser_tab',
   'send_cdp_command',
@@ -14,6 +17,7 @@ export const MCP_ASYNC_TOOL_NAMES = [
 ] as const;
 
 export const MCP_READ_TOOL_NAMES = [
+  'list_browser_profiles',
   'get_browser_context',
   'read_cdp_events',
   'get_browser_request'
@@ -22,6 +26,10 @@ export const MCP_READ_TOOL_NAMES = [
 export const MCP_IMMEDIATE_CONTROL_TOOL_NAMES = ['close_browser_request'] as const;
 
 export const MCP_TOOL_NAMES = [
+  'list_browser_profiles',
+  'create_browser_profile',
+  'open_browser_profile',
+  'stop_browser_profile',
   'get_browser_context',
   'request_browser_workspace',
   'create_browser_tab',
@@ -53,6 +61,10 @@ export interface McpToolDefinition<Name extends McpToolName = McpToolName> {
 }
 
 const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
+  list_browser_profiles: 'List owned persistent Profiles, including stopped browsers, with observed readiness and bounded pagination.',
+  create_browser_profile: 'Reserve an independent Profile idempotently, launch Chrome and connect its extension through a durable request.',
+  open_browser_profile: 'Ensure one owned Profile is running and its authenticated extension is ready, reusing its current instance.',
+  stop_browser_profile: 'Normally close an owned Profile after checking active work, retaining its browser data and identity.',
   get_browser_context: 'Read one narrow, paginated broker, endpoint, window, capability, workspace, tab, or request-summary view.',
   request_browser_workspace: 'Acquire an exact number of logical workspaces on distinct eligible browser-profile endpoints.',
   create_browser_tab: 'Create and register one managed tab in an owned workspace.',

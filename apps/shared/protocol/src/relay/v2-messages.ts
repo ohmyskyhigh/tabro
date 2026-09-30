@@ -169,6 +169,12 @@ const DebuggerErrorSchema = z.strictObject({
 
 export const relayV2PayloadSchemas = {
   HELLO: z.strictObject({
+    managedClaim: z.strictObject({
+      instanceRef: z.string().regex(/^ins_[0-9a-f-]{36}$/u),
+      generation: PositiveGenerationSchema,
+      grantRef: z.string().regex(/^grt_[0-9a-f-]{36}$/u).optional(),
+      secret: z.string().regex(/^[A-Za-z0-9_-]{43}$/u).optional()
+    }).optional(),
     endpointId: RelayV2EndpointIdentitySchema.optional(),
     publicKeyJwk: JwkSchema,
     pairingCode: RelayV2PairingCodeSchema.optional(),

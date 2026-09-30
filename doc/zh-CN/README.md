@@ -1,4 +1,4 @@
-# Octopus Browser Relay 中文文档
+# Tabro 中文文档
 
 本目录提供面向安装、操作和理解系统的简体中文资料。
 

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { startStdioAdapter } from '../../apps/mcp-stdio-adapter/src/server.js';
 import { Client } from '@modelcontextprotocol/client';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { createRelayApplication, type RelayApplication } from '../../apps/broker/src/runtime/bootstrap.js';
@@ -17,9 +18,20 @@ describe('stdio MCP session adapter', () => {
   const adapterClients: AdapterClient[] = [];
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await Promise.allSettled(adapterClients.splice(0).map(({ client }) => client.close()));
     if (application) await application.stop();
     application = null;
+  });
+
+  it('rejects old or unversioned Brokers before opening MCP or dispatching tools', async () => {
+    for (const health of [{ mcpContractVersion: '1' }, {}]) {
+      const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(health), { status: 200 }));
+      await expect(startStdioAdapter({ brokerUrl: new URL('http://127.0.0.1:17331/mcp'), bearerToken: TOKEN,
+        serviceVersion: 'test', identity: { runtimeName: 'test', runtimeSessionKey: 'version-check', source: 'explicit' } })).rejects.toThrow('MCP_CONTRACT_VERSION_MISMATCH');
+      expect(request).toHaveBeenCalledTimes(1); expect(String(request.mock.calls[0]![0])).toBe('http://127.0.0.1:17331/health');
+      request.mockRestore();
+    }
   });
 
   it('prefers runtime-owned session IDs and retains a deterministic process fallback', () => {

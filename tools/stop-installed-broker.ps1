@@ -29,7 +29,7 @@ if (-not $process) {
 
 $commandLine = [string]$process.CommandLine
 if (-not $commandLine.Contains($launcher, [StringComparison]::OrdinalIgnoreCase)) {
-  throw "PID $processId does not belong to the installed Octopus broker launcher $launcher."
+  throw "PID $processId does not belong to the installed Tabro broker launcher $launcher."
 }
 
 Stop-Process -Id $processId

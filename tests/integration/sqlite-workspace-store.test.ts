@@ -43,7 +43,7 @@ function seed(store: SqliteRelayStore) {
   const workspace = logical.createWorkspace({
     workspaceRef: 'ws_a', endpointRef: endpoint.endpointRef, windowRef: window.windowRef,
     lineageRef: lineage.lineageRef, ownerSessionRef: session.sessionRef,
-    groupLabel: 'Octopus task', privateGroupKey: 'chrome-group-4'
+    groupLabel: 'Tabro task', privateGroupKey: 'chrome-group-4'
   });
   const tab = logical.addTab({
     tabRef: 'tab_a', workspaceRef: workspace.workspaceRef, endpointRef: endpoint.endpointRef,
@@ -72,7 +72,7 @@ describe('canonical SQLite workspace store', () => {
     const migrated = store.canonical.logical.getEndpointByNickname('legacy-profile');
     expect(migrated?.legacyTargetId).toBe(store.listTargets()[0]?.targetId);
     expect(migrated?.credential).toEqual({});
-    expect(store.sqliteDiagnostics()).toEqual({ journalMode: 'wal', foreignKeys: true, migrationVersion: 5 });
+    expect(store.sqliteDiagnostics()).toEqual({ journalMode: 'wal', foreignKeys: true, migrationVersion: 6 });
     store.close();
   });
 
@@ -96,6 +96,34 @@ describe('canonical SQLite workspace store', () => {
     expect(logical.getWindow('win-first')).toMatchObject({ focused: false, lastFocusedAt: '2026-08-31T10:00:00.000Z' });
     expect(logical.getWindow('win-second')).toMatchObject({ focused: false, lastFocusedAt: '2026-08-31T10:01:00.000Z' });
     expect(logical.listWindows(endpoint.endpointRef).map((window) => window.windowRef)).toEqual(['win-second', 'win-first']);
+    store.close();
+  });
+
+  it('marks windows missing from a reconciled inventory as ineligible without changing their last observation', () => {
+    const store = new SqliteRelayStore(':memory:');
+    const logical = store.canonical.logical;
+    const endpoint = logical.createEndpoint({ endpointRef: 'ep-missing', nickname: 'missing-profile' });
+    logical.upsertWindow({
+      windowRef: 'win-current', endpointRef: endpoint.endpointRef, privateWindowKey: 'current-window',
+      locatorGeneration: 1, focused: true, eligible: true, observedAt: '2026-09-02T10:00:00.000Z'
+    });
+    logical.upsertWindow({
+      windowRef: 'win-missing', endpointRef: endpoint.endpointRef, privateWindowKey: 'missing-window',
+      locatorGeneration: 1, focused: false, eligible: true, observedAt: '2026-09-02T09:00:00.000Z'
+    });
+
+    logical.markMissingWindows({
+      endpointRef: endpoint.endpointRef,
+      observedWindowRefs: ['win-current'],
+      at: '2026-09-02T10:01:00.000Z'
+    });
+
+    expect(logical.getWindow('win-current')).toMatchObject({ eligible: true, focused: true });
+    expect(logical.getWindow('win-missing')).toMatchObject({
+      eligible: false,
+      focused: false,
+      lastObservedAt: '2026-09-02T09:00:00.000Z'
+    });
     store.close();
   });
 

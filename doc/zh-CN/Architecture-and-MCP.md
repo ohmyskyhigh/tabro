@@ -1,6 +1,6 @@
 # 架构与 MCP
 
-本说明帮助中文读者理解 Octopus Browser Relay 的运行边界和 14 个 Agent 工具。规范性定义仍由英文 [System Architecture](../04-System/System-Architecture.md) 和 [MCP Contract](../03-User-Interface/MCP-Contract.md) 拥有。
+本说明帮助中文读者理解 Tabro 的运行边界和 18 个 Agent 工具。规范性定义仍由英文 [System Architecture](../04-System/System-Architecture.md) 和 [MCP Contract](../03-User-Interface/MCP-Contract.md) 拥有。
 
 ## 目标
 
@@ -27,7 +27,7 @@ agent session
 | --- | --- |
 | MCP stdio 适配器 | 为一个 Codex/Hermes 会话提供身份事实并转发 14 个工具 |
 | MCP Gateway | 验证调用、公开 JSON Schema、返回同步拒绝或异步票据 |
-| Octopus Broker Core | 所有权、工作区、请求、FIFO、暂停、恢复、接管和终止规则 |
+| Tabro Broker Core | 所有权、工作区、请求、FIFO、暂停、恢复、接管和终止规则 |
 | SQLite Storage | 端点、会话、工作区、票据、检查点、事件和审计事实 |
 | Extension Gateway | relay-v2 认证、连接代次、清单、命令和事件关联 |
 | Native Messaging Host | 在浏览器扩展和本机 loopback relay 之间转发 JSON |
@@ -68,10 +68,14 @@ agent session
 
 ## 工具目录
 
-### 三类 14 个工具保持读取、异步工作和立即关闭的语义分离
+### 三类 18 个工具保持读取、异步工作和立即关闭的语义分离
 
 | 类型 | 工具 | 作用 |
 | --- | --- | --- |
+| 读取 | `list_browser_profiles` | 列出持久 Profile，包括已停止的浏览器和观测到的就绪状态 |
+| 异步 | `create_browser_profile` | 创建持久 Profile，启动 Chrome 并建立扩展连接 |
+| 异步 | `open_browser_profile` | 打开已有 Profile 或复用正在运行的实例 |
+| 异步 | `stop_browser_profile` | 在活动工作结束后正常关闭 Profile |
 | 读取 | `get_browser_context` | 分页读取 Broker、端点、窗口、能力、工作区、标签页或票据摘要 |
 | 异步 | `request_browser_workspace` | 在不同合格端点上申请精确数量的工作区 |
 | 异步 | `create_browser_tab` | 在已拥有工作区创建托管标签页 |

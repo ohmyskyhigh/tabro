@@ -1,6 +1,6 @@
 # 安装与设置
 
-本指南帮助 Windows 用户从零完成 Octopus Browser Relay、浏览器扩展、自动配对、Codex/Hermes MCP 注册和基础验证。精确运行时边界以英文 [Real-World Runbook](../06-Files/Real-World-Runbook.md) 为准。
+本指南帮助 Windows 用户从零完成 Tabro、浏览器扩展、自动配对、Codex/Hermes MCP 注册和基础验证。精确运行时边界以英文 [Real-World Runbook](../06-Files/Real-World-Runbook.md) 为准。
 
 ## 路径选择
 
@@ -28,7 +28,7 @@ node --version
 
 ```powershell
 Invoke-WebRequest `
-  https://github.com/ohmyskyhigh/octopus-browser-relay/releases/latest/download/octopus-browser-relay-update.ps1 `
+  https://github.com/ohmyskyhigh/tabro/releases/latest/download/octopus-browser-relay-update.ps1 `
   -OutFile .\octopus-browser-relay-update.ps1
 pwsh -NoProfile -File .\octopus-browser-relay-update.ps1
 ```
@@ -92,7 +92,7 @@ pwsh -NoProfile -File .\octopus-browser-relay-update.ps1
 7. 保持 **Native companion (recommended)**。
 8. 等待状态变为 `connected`。
 
-扩展自动生成类似 `MINT-WAVE` 的两词配对代码和类似 `mintwave` 的短昵称。无需把代码输入 Broker。Broker 首次看到该扩展时自动注册；昵称冲突会触发扩展自动换名重试。
+扩展会自动生成类似 `MINT-WAVE` 的两词配对代码和类似 `mintwave` 的短昵称，也允许在设置页把代码改成两个三至八字母的英文单词。保存的代码会在该浏览器配置文件中持续保留，无需把代码输入 Broker。已有端点改名必须先通过原配置文件密钥认证；昵称冲突会保留当前代码并显示错误，直到用户选择另一组词。
 
 ### 多配置文件验证以 Broker 的已连接端点数量为准
 
@@ -112,11 +112,11 @@ Invoke-RestMethod http://127.0.0.1:7331/health | ConvertTo-Json -Depth 8
 %LOCALAPPDATA%\Octopus Browser Relay\bootstrap\codex-mcp.toml
 ```
 
-将整个 `[mcp_servers.octopus-browser-relay]` 区块合并到当前 Codex `config.toml`。不要把 `admin-token.txt` 的内容复制进配置、聊天或提交记录。保存后新建 Codex 会话，让 Codex 启动新的 stdio 适配器进程。
+将整个 `[mcp_servers.tabro]` 区块合并到当前 Codex `config.toml`。不要把 `admin-token.txt` 的内容复制进配置、聊天或提交记录。保存后新建 Codex 会话，让 Codex 启动新的 stdio 适配器进程。
 
 ## Hermes 配置
 
-### Hermes 配置使用生成的完整命令并通过工具发现验证
+### Hermes 配置命令会注册默认配置文件和所有已安装命名配置文件
 
 运行以下文件中的命令：
 
@@ -124,13 +124,13 @@ Invoke-RestMethod http://127.0.0.1:7331/health | ConvertTo-Json -Depth 8
 %LOCALAPPDATA%\Octopus Browser Relay\bootstrap\hermes-mcp.txt
 ```
 
-然后执行：
+该命令会发现 Hermes 默认配置文件以及当前已安装的所有命名配置文件，并为每个隔离配置文件分别注册同一个 Tabro MCP。然后为要使用的每个配置文件新建会话并执行：
 
 ```powershell
-hermes mcp test octopus-browser-relay
+hermes -p <profile> mcp test tabro
 ```
 
-通过条件是连接成功并发现 14 个工具。修改注册后新建 Hermes 会话。
+通过条件是连接成功并发现 18 个工具。以后新建 Hermes 配置文件时，需要再次运行 `hermes-mcp.txt` 中的命令，再为该配置文件新建会话。
 
 ## 源码安装
 
@@ -139,8 +139,8 @@ hermes mcp test octopus-browser-relay
 需要 Git、Node.js、pnpm 11、PowerShell、Visual Studio C++ Build Tools 和 Windows SDK：
 
 ```powershell
-git clone https://github.com/ohmyskyhigh/octopus-browser-relay.git
-Set-Location .\octopus-browser-relay
+git clone https://github.com/ohmyskyhigh/tabro.git
+Set-Location .\tabro
 corepack enable
 corepack prepare pnpm@11.19.0 --activate
 pnpm install --frozen-lockfile
@@ -229,7 +229,7 @@ Get-NetTCPConnection -LocalPort 7331,7332 -ErrorAction SilentlyContinue
 
 ### Agent 已连接但工具数量不正确时应检查 MCP 注册入口
 
-Codex/Hermes 必须启动 `bootstrap\mcp-stdio-adapter.mjs`，连接 `http://127.0.0.1:7331/mcp`，并引用本地 token 文件。修改后创建新会话。正确结果是 14 个工具。
+Codex/Hermes 必须启动 `bootstrap\mcp-stdio-adapter.mjs`，连接 `http://127.0.0.1:7331/mcp`，并引用本地 token 文件。Hermes 的每个隔离配置文件都必须拥有自己的 MCP 注册；可以重新运行 `hermes-mcp.txt` 一次性修复当前所有配置文件。修改后创建新会话。正确结果是 18 个工具。
 
 ## 安全
 
@@ -245,3 +245,17 @@ Codex/Hermes 必须启动 `bootstrap\mcp-stdio-adapter.mjs`，连接 `http://127
 - 包含用户名或浏览器配置文件名的本机绝对路径截图。
 
 Parent: [`中文文档`](./README.md).
+
+## 受管 Chrome
+
+### 启用受管 Profile 后不再需要逐个手工安装扩展
+
+本地开发安装运行 `pwsh -NoProfile -File tools/install-local.ps1 -Install -EnableManagedProfiles`。从当前源码构建的离线发布包运行 `tools/update-local.ps1 -PackagePath <zip> -EnableManagedProfiles`。本功能尚未发布远程 Release；旧发布包不会因为添加参数而具备新能力。安装器要求 Chrome 153.0.8010.53，检查固定扩展身份并设置私有目录权限。一次性 Native host 注册完成后，Agent 用 MCP 创建/打开 Profile 即可自动连接。外部已有 Profile 保留原人工安装旅程。
+
+生成的 `data/managed-profiles.json` 保存浏览器路径、版本、扩展摘要、受管根和 relay 地址。不要移动已建 Profile 的扩展目录。设置 `launchesEnabled: false` 并重启 Broker 可禁用 create/open，同时保留有权主体的 list/stop；不要删除配置或数据库来禁用功能。
+
+### 升级和回退必须先完成工作并保留受管数据
+
+新 updater 拒绝存在活跃工作区、未完成请求或未结束受管实例的升级。用 MCP 终止工作区、正常停止 Profile 后再升级。关闭 Broker 后再次检查，SQLite VACUUM INTO 生成一致性快照，配置与新 Profile 元数据保存在 `data/upgrade-backups/`。失败会恢复先前安装、配置和数据库快照。
+
+真正降级到旧版前保留升级后的数据库及 Profile 元数据，恢复迁移前快照并使用旧版 Broker/adapter；旧版不会显示升级后新增的 Profile，但数据目录应保留。v0.3.0 → v2 → v0.3.0 的隔离实测见 `artifacts/real-world/profile-upgrade-probe-001/report.json`。不要直接拿旧二进制打开未知的新 schema，不回滚网站副作用。

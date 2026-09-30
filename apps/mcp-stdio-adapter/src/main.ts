@@ -11,7 +11,7 @@ const stop = async (): Promise<void> => {
   try {
     await adapter.close();
   } catch (error) {
-    console.error('Octopus stdio adapter shutdown failed:', error instanceof Error ? error.message : String(error));
+    console.error('Tabro stdio adapter shutdown failed:', error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   }
 };

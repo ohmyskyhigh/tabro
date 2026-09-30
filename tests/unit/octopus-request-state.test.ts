@@ -3,7 +3,7 @@ import { DeterministicReferenceFactory } from '../../apps/broker/src/core/octopu
 import { updateRequestProgress } from '../../apps/broker/src/core/octopus/request-state-machine.js';
 import { TabLane } from '../../apps/broker/src/core/octopus/tab-lane.js';
 
-describe('Octopus request primitives', () => {
+describe('Tabro request primitives', () => {
   it('issues opaque typed references without routing data', () => {
     const factory = new DeterministicReferenceFactory();
     expect(factory.issue('workspace')).toBe('wrk_test_000001');

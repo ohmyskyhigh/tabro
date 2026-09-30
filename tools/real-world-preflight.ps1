@@ -22,7 +22,7 @@ param(
 )
 
 if (-not [string]::IsNullOrWhiteSpace($RunId)) {
-  Write-Error "The -RunId/-Checkpoint preflight uses the retired relay-v1 MCP contract and cannot qualify Octopus Browser Relay 0.3.0. Run this script without -RunId, then follow doc\06-Files\Real-World-Runbook.md for the canonical fourteen-tool physical test."
+  Write-Error "The -RunId/-Checkpoint preflight uses the retired relay-v1 MCP contract and cannot qualify Tabro 0.3.0. Run this script without -RunId, then follow doc\06-Files\Real-World-Runbook.md for the canonical fourteen-tool physical test."
   exit 2
 }
 

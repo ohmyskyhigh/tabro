@@ -1,10 +1,17 @@
 import { loadSettings, saveSettings } from './config.js';
-import { loadOrCreateIdentity, resetIdentity } from './identity/device-identity.js';
+import {
+  createNicknameFromPairingCode,
+  loadOrCreateIdentity,
+  normalizePairingCode,
+  resetIdentity,
+  saveCustomPairingCode,
+  validatePairingCode
+} from './identity/device-identity.js';
 
 const form = document.querySelector<HTMLFormElement>('#settings-form')!;
 const brokerUrl = document.querySelector<HTMLInputElement>('#broker-url')!;
 const transportMode = document.querySelector<HTMLSelectElement>('#transport-mode')!;
-const pairingCode = document.querySelector<HTMLElement>('#pairing-code')!;
+const pairingCode = document.querySelector<HTMLInputElement>('#pairing-code')!;
 const profileNickname = document.querySelector<HTMLElement>('#profile-nickname')!;
 const status = document.querySelector<HTMLElement>('#status')!;
 const reset = document.querySelector<HTMLButtonElement>('#reset')!;
@@ -25,11 +32,28 @@ async function refresh(): Promise<void> {
   ]);
   brokerUrl.value = settings.brokerUrl;
   transportMode.value = settings.transportMode;
-  pairingCode.textContent = identity.pairingCode ?? 'legacy paired endpoint';
-  const nickname = stored.endpointNickname ?? stored.targetAlias ?? identity.nickname ?? identity.proposedNickname;
-  profileNickname.textContent = String(nickname);
-  status.textContent = statusText(stored.connectionStatus, nickname, stored.transportKind, stored.lastError);
+  if (document.activeElement !== pairingCode) pairingCode.value = identity.pairingCode ?? '';
+  profileNickname.textContent = identity.proposedNickname;
+  const connectedNickname = stored.endpointNickname ?? stored.targetAlias ?? identity.nickname;
+  status.textContent = statusText(stored.connectionStatus, connectedNickname, stored.transportKind, stored.lastError);
 }
+
+function updateNicknamePreview(): void {
+  try {
+    const normalized = validatePairingCode(pairingCode.value);
+    pairingCode.setCustomValidity('');
+    profileNickname.textContent = createNicknameFromPairingCode(normalized);
+  } catch (error) {
+    pairingCode.setCustomValidity(error instanceof Error ? error.message : 'Invalid pairing code');
+    profileNickname.textContent = 'invalid pairing code';
+  }
+}
+
+pairingCode.addEventListener('input', updateNicknamePreview);
+pairingCode.addEventListener('blur', () => {
+  pairingCode.value = normalizePairingCode(pairingCode.value);
+  updateNicknamePreview();
+});
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -41,6 +65,8 @@ form.addEventListener('submit', (event) => {
       }
       const mode = transportMode.value;
       if (mode !== 'native' && mode !== 'websocket') throw new Error('Invalid transport mode');
+      const customizedPairing = await saveCustomPairingCode(pairingCode.value);
+      pairingCode.value = customizedPairing.pairingCode;
       await saveSettings({
         brokerUrl: normalizedUrl.toString(),
         transportMode: mode

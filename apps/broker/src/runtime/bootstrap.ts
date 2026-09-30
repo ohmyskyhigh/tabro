@@ -5,12 +5,15 @@ import { McpGateway } from '../mcp/index.js';
 import { SqliteRelayStore } from '../storage/index.js';
 import { OCTOPUS_VERSION } from '../../../shared/protocol/src/version.js';
 import type { RelayConfig } from './config.js';
+import { ChromeLauncher } from '../profiles/chrome-launcher.js';
+import { ProfileManager } from '../profiles/profile-manager.js';
 
 const SERVICE_VERSION = OCTOPUS_VERSION;
-const MCP_CONTRACT_VERSION = '1';
+const MCP_CONTRACT_VERSION = '2';
 const RELAY_PROTOCOL_VERSION = '2';
 
 export interface RelayApplication {
+  profileManager: ProfileManager | null;
   store: SqliteRelayStore;
   /** Canonical source-of-truth broker used by the public MCP contract. */
   broker: OctopusBroker;
@@ -46,8 +49,14 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
       'browser:write'
     ], config.adminToken);
   }
+  if (config.profiles) {
+    const admin = store.authenticateAgent(config.adminToken)!;
+    store.updateAgentScopes(admin.principalId, [...admin.scopes, 'profiles:read', 'profiles:manage']);
+  }
 
   const broker = new OctopusBroker(store.canonical);
+  const profileManager: ProfileManager | null = config.profiles ? new ProfileManager(store, new ChromeLauncher(config.profiles), endpointRef => extensionGateway.connection(endpointRef), 120_000, config.profiles.launchesEnabled !== false) : null;
+  if (profileManager) broker.setProfileManager(profileManager);
   const legacyBroker = new BrokerCore(store, {
     heartbeatTimeoutMs: config.heartbeatTimeoutMs,
     errorThreshold: config.errorThreshold
@@ -56,7 +65,8 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
     legacyBroker,
     store,
     { host: config.host, port: config.wsPort, serviceVersion: SERVICE_VERSION },
-    broker
+    broker,
+    profileManager?.grants
   );
   legacyBroker.setTransport(extensionGateway);
 
@@ -95,6 +105,7 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
   let storeClosed = false;
 
   return {
+    profileManager,
     store,
     broker,
     legacyBroker,
@@ -106,12 +117,14 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
       if (storeClosed) throw new Error('Cannot restart a closed relay application.');
       if (extensionStarted || mcpStarted) throw new Error('Relay application is already started.');
       try {
+        await profileManager?.reconcile();
         legacyBroker.recover();
         broker.recover();
         await extensionGateway.start();
         extensionStarted = true;
         await mcpGateway.start();
         mcpStarted = true;
+        profileManager?.startObserving();
         sweepTimer = setInterval(() => {
           legacyBroker.sweep();
           extensionGateway.sweepHeartbeat(config.heartbeatTimeoutMs);
@@ -122,7 +135,7 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
           mcp: mcpGateway.address(),
           relay: extensionGateway.address(),
           ...health()
-        }, 'Octopus Browser Relay started');
+        }, 'Tabro started');
       } catch (error) {
         if (mcpStarted) {
           await mcpGateway.stop().catch((stopError: unknown) => {
@@ -140,6 +153,8 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
       }
     },
     async stop() {
+      broker.beginShutdown();
+      await profileManager?.shutdown();
       if (sweepTimer) {
         clearInterval(sweepTimer);
         sweepTimer = null;
@@ -153,10 +168,11 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
         extensionStarted = false;
       }
       if (!storeClosed) {
+        await broker.waitForIdle();
         store.close();
         storeClosed = true;
       }
-      logger.info('Octopus Browser Relay stopped');
+      logger.info('Tabro stopped');
     }
   };
 }

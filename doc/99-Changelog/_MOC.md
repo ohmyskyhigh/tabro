@@ -4,6 +4,10 @@ This directory records applied changes to vault structure and canonical document
 
 ## Entries
 
+- [`2026-09-30-tabro-source-publication.md`](./2026-09-30-tabro-source-publication.md)
+- [`2026-09-30-tabro-branding.md`](./2026-09-30-tabro-branding.md)
+- [`2026-09-04-persistent-custom-pairing-labels.md`](./2026-09-04-persistent-custom-pairing-labels.md)
+- [`2026-09-01-hermes-all-profile-registration.md`](./2026-09-01-hermes-all-profile-registration.md)
 - [`2026-08-31-v0.3.0-publication.md`](./2026-08-31-v0.3.0-publication.md)
 - [`2026-08-31-bilingual-public-documentation.md`](./2026-08-31-bilingual-public-documentation.md)
 - [`2026-08-31-github-release-update.md`](./2026-08-31-github-release-update.md)
@@ -34,3 +38,5 @@ This directory records applied changes to vault structure and canonical document
 - [`2026-08-30-restart-exhaustion-and-endpoint-ownership-fence.md`](./2026-08-30-restart-exhaustion-and-endpoint-ownership-fence.md)
 
 Parent: [`TOP-DOWN-MOC.md`](../TOP-DOWN-MOC.md).
+
+- [Managed Profile lifecycle](./2026-09-27-managed-profile-lifecycle.md) records the approved scope, contract version and implementation evidence.

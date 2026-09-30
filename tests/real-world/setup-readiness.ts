@@ -50,6 +50,10 @@ const hermesRegistrationPath = absolute(
   argument('hermes-registration', '.relay-data/bootstrap/hermes-mcp.txt'),
   workspace
 );
+const hermesRegistrationHelperPath = absolute(
+  argument('hermes-registration-helper', 'tools/register-hermes-profiles.ps1'),
+  workspace
+);
 const adminTokenPath = absolute(argument('admin-token', '.relay-data/admin-token.txt'), workspace);
 const configuredRegistryRoots = repeatedArguments('native-registry-root');
 const nativeRegistryRoots = configuredRegistryRoots.length > 0 ? configuredRegistryRoots : [
@@ -69,7 +73,7 @@ const actionRequired = (name: string, detail: string, action: string): void => {
 };
 
 if (existsSync(resolve(workspace, 'package.json'))) {
-  ready('workspace', `Octopus workspace found at ${workspace}.`);
+  ready('workspace', `Tabro workspace found at ${workspace}.`);
 } else {
   actionRequired('workspace', `package.json is missing under ${workspace}.`, 'Pass the correct --workspace path.');
 }
@@ -97,7 +101,7 @@ if (!existsSync(extensionManifestPath) || !existsSync(serviceWorkerPath) || !exi
       actionRequired(
         'extension_build',
         `The built extension manifest is missing required runtime declarations: ${missingPermissions.join(', ') || 'service-worker.js'}.`,
-        'Rebuild the current Octopus extension source before loading profiles.'
+        'Rebuild the current Tabro extension source before loading profiles.'
       );
     } else {
       ready('extension_build', `Built extension ${String(manifest.version)} is ready at ${extensionPath}.`, {
@@ -181,6 +185,7 @@ checks.push(...inspectMcpHandoffs({
   instructionsPath: mcpInstructionsPath,
   codexRegistrationPath,
   hermesRegistrationPath,
+  hermesRegistrationHelperPath,
   adminTokenPath,
   brokerUrl: argument('mcp-url', 'http://127.0.0.1:7331/mcp')
 }));
@@ -229,6 +234,7 @@ console.log(JSON.stringify({
     mcpInstructionsPath,
     codexRegistrationPath,
     hermesRegistrationPath,
+    hermesRegistrationHelperPath,
     adminTokenPath
   },
   nativeRegistryRoots,

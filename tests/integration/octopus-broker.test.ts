@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DeterministicReferenceFactory,
   OctopusBroker,
@@ -24,9 +24,11 @@ class FakeExtensionPort implements OctopusExtensionPort {
   private readonly endpointCreateFailures = new Map<string, number>();
   private lostCreateResultsRemaining = 0;
   private createCalls = 0;
+  private cdpCalls = 0;
   private readonly createCallsByEndpoint = new Map<string, number>();
   private readonly connections = new Map<string, { connectionGeneration: number; connected: boolean }>();
   private readonly inventoryDisconnects = new Map<string, (connectionGeneration: number) => void>();
+  private readonly inventoryGates = new Map<string, Promise<void>>();
   private readonly tabs = new Map<string, Map<number, {
     tabId: number; tabGeneration: number; windowId: number; groupId: number | null; title: string; url: string;
   }>>();
@@ -41,9 +43,15 @@ class FakeExtensionPort implements OctopusExtensionPort {
   failNextTabCreationsOn(endpointRef: string, count: number): void { this.endpointCreateFailures.set(endpointRef, count); }
   loseNextTabCreationResults(count: number): void { this.lostCreateResultsRemaining = count; }
   createTabCallCount(): number { return this.createCalls; }
+  cdpCallCount(): number { return this.cdpCalls; }
   createTabCallCountOn(endpointRef: string): number { return this.createCallsByEndpoint.get(endpointRef) ?? 0; }
   disconnectDuringNextInventory(endpointRef: string, onDisconnect: (connectionGeneration: number) => void): void {
     this.inventoryDisconnects.set(endpointRef, onDisconnect);
+  }
+  holdNextInventory(endpointRef: string): () => void {
+    let release!: () => void;
+    this.inventoryGates.set(endpointRef, new Promise<void>((resolve) => { release = resolve; }));
+    return release;
   }
   reconnect(endpointRef: string, connectionGeneration: number): void {
     this.connections.set(endpointRef, { connectionGeneration, connected: true });
@@ -65,6 +73,11 @@ class FakeExtensionPort implements OctopusExtensionPort {
   }
 
   async requestInventory(endpointRef: string, _afterInventoryGeneration: number | null = null) {
+    const gate = this.inventoryGates.get(endpointRef);
+    if (gate) {
+      this.inventoryGates.delete(endpointRef);
+      await gate;
+    }
     const disconnect = this.inventoryDisconnects.get(endpointRef);
     if (disconnect) {
       this.inventoryDisconnects.delete(endpointRef);
@@ -176,6 +189,7 @@ class FakeExtensionPort implements OctopusExtensionPort {
     } else if (type === 'ATTACH_DEBUGGER') {
       result = { attachmentGeneration: 1, protocolVersion: '1.3' };
     } else if (type === 'SEND_CDP') {
+      this.cdpCalls += 1;
       result = { result: { result: { type: 'number', value: 4 } }, sessionId: null };
     }
     return this.operationResult(type, attemptId, endpointRef, result);
@@ -230,7 +244,7 @@ const eventuallyMatching = async (
   throw new Error(`Ticket did not reach ${description}.`);
 };
 
-describe('canonical Octopus broker', () => {
+describe('canonical Tabro broker', () => {
   let store: SqliteRelayStore;
   let broker: OctopusBroker;
   let extension: FakeExtensionPort;
@@ -250,7 +264,13 @@ describe('canonical Octopus broker', () => {
 
   afterEach(() => store.close());
 
-  it('returns a ticket before allocating a workspace and then relays raw CDP by logical tab ref', async () => {
+  it.each([
+    { method: 'Runtime.evaluate', params: { expression: '2 + 2' } },
+    { method: 'DOM.setFileInputFiles', params: { nodeId: 42, files: ['C:\\uploads\\图片.png', 'C:\\uploads\\report.pdf'] } },
+    { method: 'DOM.setFileInputFiles', params: { backendNodeId: 42, files: ['C:\\uploads\\a file.txt'] } },
+    { method: 'DOM.setFileInputFiles', params: { objectId: 'input-object', files: [] } }
+  ])('returns a ticket and relays $method by logical tab ref with $params', async ({ method, params }) => {
+    const execute = vi.spyOn(extension, 'execute');
     const accepted = broker.submit('request_browser_workspace', {
       required_workspace_count: 1,
       designated_endpoints: [{ endpoint_nickname: 'profile-a' }]
@@ -269,8 +289,8 @@ describe('canonical Octopus broker', () => {
     const commandAccepted = broker.submit('send_cdp_command', {
       workspace_ref: workspaceRef,
       target: { kind: 'tab', tab_ref: tabRef },
-      method: 'Runtime.evaluate',
-      params: { expression: '2 + 2' }
+      method,
+      params
     }, caller);
     parseMcpToolOutput('send_cdp_command', commandAccepted);
     const commandRef = (commandAccepted.facts as { ticket: { request_ref: string } }).ticket.request_ref;
@@ -278,6 +298,88 @@ describe('canonical Octopus broker', () => {
     const commandTicket = await eventually(() => broker.getBrowserRequest({ request_ref: commandRef }, caller));
     parseMcpToolOutput('get_browser_request', commandTicket);
     expect((commandTicket.facts as { ticket: { state: string } }).ticket.state).toBe('succeeded');
+    expect(execute).toHaveBeenCalledWith(expect.any(String), 'SEND_CDP', expect.objectContaining({ method, params }));
+  });
+
+  it('holds a newly accepted CDP request until reconnect inventory reconciles its logical tab', async () => {
+    const workspaceAccepted = broker.submit('request_browser_workspace', {
+      required_workspace_count: 1,
+      designated_endpoints: [{ endpoint_nickname: 'profile-a' }]
+    }, caller);
+    const workspaceRequestRef = (workspaceAccepted.facts as { ticket: { request_ref: string } }).ticket.request_ref;
+    broker.confirmAcknowledgement(workspaceRequestRef, true);
+    const workspaceTicket = await eventually(() => broker.getBrowserRequest({ request_ref: workspaceRequestRef }, caller));
+    const resolved = (workspaceTicket.facts as {
+      ticket: { result: { facts: { resolved: Array<{ workspace: { workspace_ref: string }; tabs: Array<{ tab_ref: string }> }> } } }
+    }).ticket.result.facts.resolved[0]!;
+    const endpoint = store.canonical.logical.getEndpointByNickname('profile-a')!;
+    const originalConnection = store.canonical.logical.getCurrentConnection(endpoint.endpointRef)!;
+
+    broker.closeEndpointConnection(endpoint.endpointRef, originalConnection.connectionGeneration, 'synthetic reconnect');
+    const reconnectedGeneration = broker.openEndpointConnection({
+      endpointRef: endpoint.endpointRef,
+      connectionRef: 'connection-test-reconnected',
+      transport: 'test',
+      protocolVersion: '2',
+      extensionVersion: '0.3.0',
+      browserProduct: 'Chrome',
+      browserVersion: '140'
+    });
+    extension.reconnect(endpoint.endpointRef, reconnectedGeneration);
+    const releaseInventory = extension.holdNextInventory(endpoint.endpointRef);
+    broker.onExtensionReady(endpoint.endpointRef, reconnectedGeneration);
+
+    const accepted = broker.submit('send_cdp_command', {
+      workspace_ref: resolved.workspace.workspace_ref,
+      target: { kind: 'tab', tab_ref: resolved.tabs[0]!.tab_ref },
+      method: 'Runtime.evaluate',
+      params: { expression: 'document.title' }
+    }, caller);
+    const requestRef = (accepted.facts as { ticket: { request_ref: string } }).ticket.request_ref;
+    broker.confirmAcknowledgement(requestRef, true);
+
+    const paused = await eventuallyMatching(
+      () => broker.getBrowserRequest({ request_ref: requestRef }, caller),
+      (value) => (value.facts as { ticket?: { pause_condition?: { reason?: string } | null } } | null)
+        ?.ticket?.pause_condition?.reason === 'extension_disconnected',
+      'the reconnect reconciliation barrier'
+    );
+    expect(paused).toMatchObject({ facts: { ticket: { state: 'running' } } });
+    expect(store.canonical.requests.scanRequestRecovery().attempts
+      .filter((attempt) => attempt.requestRef === requestRef)).toHaveLength(0);
+    expect(extension.cdpCallCount()).toBe(0);
+    expect(broker.getBrowserContext({
+      view: { kind: 'windows', endpoint_nickname: 'profile-a', eligible_only: true, page_size: 100 }
+    }, caller)).toMatchObject({ facts: { windows: [] } });
+
+    releaseInventory();
+
+    const completed = await eventually(() => broker.getBrowserRequest({ request_ref: requestRef }, caller));
+    expect(completed).toMatchObject({ facts: { ticket: { state: 'succeeded', pause_condition: null } } });
+    expect(extension.cdpCallCount()).toBe(1);
+  });
+
+  it('removes inventory-absent windows from eligible browser context results', async () => {
+    const endpoint = store.canonical.logical.getEndpointByNickname('profile-a')!;
+    extension.setInventoryWindows([
+      { windowId: 1, windowGeneration: 1, focused: true },
+      { windowId: 2, windowGeneration: 1, focused: false }
+    ]);
+    broker.onInventory(endpoint.endpointRef, await extension.requestInventory(endpoint.endpointRef, null));
+    const missingWindow = store.canonical.logical.listWindows(endpoint.endpointRef)
+      .find((window) => Number(JSON.parse(window.privateWindowKey).windowId) === 2)!;
+    const lastObservedAt = missingWindow.lastObservedAt;
+
+    extension.setInventoryWindows([{ windowId: 1, windowGeneration: 1, focused: true }]);
+    broker.onInventory(endpoint.endpointRef, await extension.requestInventory(endpoint.endpointRef, null));
+
+    expect(store.canonical.logical.getWindow(missingWindow.windowRef)).toMatchObject({
+      eligible: false,
+      lastObservedAt
+    });
+    expect(broker.getBrowserContext({
+      view: { kind: 'windows', endpoint_nickname: 'profile-a', eligible_only: true, page_size: 100 }
+    }, caller)).toMatchObject({ facts: { windows: [{ eligible_for_workspace: true }] } });
   });
 
   it('requires an explicit window until a multi-window endpoint has durable focus history', async () => {

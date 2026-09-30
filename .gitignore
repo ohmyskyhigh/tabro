@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .relay-data/
+artifacts/*
+!artifacts/real-world/
 artifacts/real-world/*
 !artifacts/real-world/.gitignore
 artifacts/release/

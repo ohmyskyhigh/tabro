@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Octopus Browser Relay is currently an early pre-release. Security fixes are applied to the latest revision of the `main` branch.
+Tabro is currently an early pre-release. Security fixes are applied to the latest revision of the `main` branch.
 
 ## Reporting a vulnerability
 

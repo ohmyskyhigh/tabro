@@ -15,6 +15,7 @@ export interface McpHandoffPaths {
   instructionsPath: string;
   codexRegistrationPath: string;
   hermesRegistrationPath: string;
+  hermesRegistrationHelperPath: string;
   adminTokenPath: string;
   brokerUrl: string;
 }
@@ -64,7 +65,8 @@ export function inspectMcpHandoffs(paths: McpHandoffPaths): ReadinessCheck[] {
   const registrationFiles = [
     paths.instructionsPath,
     paths.codexRegistrationPath,
-    paths.hermesRegistrationPath
+    paths.hermesRegistrationPath,
+    paths.hermesRegistrationHelperPath
   ];
   const missing = registrationFiles.filter((path) => !isNonemptyFile(path));
   if (missing.length > 0) {
@@ -79,16 +81,20 @@ export function inspectMcpHandoffs(paths: McpHandoffPaths): ReadinessCheck[] {
   const instructions = readFileSync(paths.instructionsPath, 'utf8');
   const codex = readFileSync(paths.codexRegistrationPath, 'utf8');
   const hermes = readFileSync(paths.hermesRegistrationPath, 'utf8');
-  const codexValid = codex.includes('[mcp_servers.octopus-browser-relay]')
-    && codex.includes('OCTOPUS_RUNTIME = "codex"')
+  const hermesHelper = readFileSync(paths.hermesRegistrationHelperPath, 'utf8');
+  const codexValid = codex.includes('[mcp_servers.tabro]')
+    && codex.includes('TABRO_RUNTIME = "codex"')
     && codex.includes(paths.brokerUrl)
     && containsPath(codex, paths.adapterPath)
     && containsPath(codex, paths.adminTokenPath);
-  const hermesValid = hermes.includes('hermes mcp add octopus-browser-relay')
-    && hermes.includes('OCTOPUS_RUNTIME=hermes')
+  const hermesValid = hermes.includes('register-hermes-profiles.ps1')
+    && containsPath(hermes, paths.hermesRegistrationHelperPath)
     && hermes.includes(paths.brokerUrl)
     && containsPath(hermes, paths.adapterPath)
-    && containsPath(hermes, paths.adminTokenPath);
+    && containsPath(hermes, paths.adminTokenPath)
+    && hermesHelper.includes("@('default') + $namedProfiles")
+    && hermesHelper.includes("'mcp', 'add', 'tabro'")
+    && hermesHelper.includes("'TABRO_RUNTIME=hermes'");
   const instructionsValid = /Codex/i.test(instructions)
     && /Hermes/i.test(instructions)
     && containsPath(instructions, paths.codexRegistrationPath)
@@ -107,7 +113,8 @@ export function inspectMcpHandoffs(paths: McpHandoffPaths): ReadinessCheck[] {
       {
         instructionsPath: paths.instructionsPath,
         codexRegistrationPath: paths.codexRegistrationPath,
-        hermesRegistrationPath: paths.hermesRegistrationPath
+        hermesRegistrationPath: paths.hermesRegistrationPath,
+        hermesRegistrationHelperPath: paths.hermesRegistrationHelperPath
       }
     ));
   }

@@ -23,6 +23,8 @@ export type WindowRef = BrokerIssuedRef<'window'>;
 export type WorkspaceRef = BrokerIssuedRef<'workspace'>;
 export type TabRef = BrokerIssuedRef<'tab'>;
 export type RequestRef = BrokerIssuedRef<'request'>;
+export type ProfileRef = BrokerIssuedRef<'profile'>;
+export type BrowserInstanceRef = BrokerIssuedRef<'browser_instance'>;
 export type PaginationCursor = BrokerIssuedCursor<'pagination'>;
 export type EventCursor = BrokerIssuedCursor<'event'>;
 

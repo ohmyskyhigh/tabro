@@ -320,6 +320,20 @@ export class BrokerCore {
     return target;
   }
 
+  renameAuthenticatedExtension(targetId: string, newAlias: string): StoredTarget {
+    if (!/^[a-z]{6,16}$/.test(newAlias)) throw new Error('ENDPOINT_NICKNAME_INVALID');
+    const target = this.store.getTargetById(targetId);
+    if (!target) throw new Error('ENDPOINT_NOT_FOUND');
+    if (target.alias === newAlias) return target;
+    this.store.renameTarget(target.alias, newAlias);
+    this.store.audit('target.renamed', {
+      targetAlias: newAlias,
+      previousAlias: target.alias,
+      pairingMode: 'authenticated_extension'
+    });
+    return this.store.getTargetById(targetId)!;
+  }
+
   renameTarget(principal: AgentPrincipal, alias: string, newAlias: string): void {
     this.requireScope(principal, 'broker:admin');
     this.store.renameTarget(alias, newAlias);

@@ -431,6 +431,11 @@ export interface LogicalRepository {
     eligible: boolean;
     observedAt?: string;
   }): StoredLogicalWindow;
+  markMissingWindows(input: {
+    endpointRef: string;
+    observedWindowRefs: string[];
+    at?: string;
+  }): void;
   getWindow(windowRef: string): StoredLogicalWindow | null;
   listWindows(endpointRef: string): StoredLogicalWindow[];
   createWorkspace(input: {

@@ -9,6 +9,7 @@ import {
   type RelayV2PayloadByType
 } from '../../../shared/protocol/src/relay/v2-messages.js';
 import { detectBrowserDescriptor } from '../browser/browser-descriptor.js';
+import { initializeManagedBootstrap, rememberManagedAuthentication } from '../identity/managed-bootstrap.js';
 import { BrowserInventory } from '../browser/inventory.js';
 import { TabGroupOperations } from '../browser/tab-groups.js';
 import { loadSettings } from '../config.js';
@@ -45,11 +46,13 @@ const checkedPublicJwk = (value: JsonWebKey): RelayV2PayloadByType['HELLO']['pub
 };
 
 export class RelayClient {
+  private managedClaim: RelayV2PayloadByType['HELLO']['managedClaim'];
   private socket: RelayTransport | null = null;
   private connecting = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempt = 0;
+  private managedNicknameRetries = 0;
   private connectionGeneration: number | null = null;
   private endpointId: string | null = null;
   private stopped = false;
@@ -100,6 +103,7 @@ export class RelayClient {
     this.connecting = true;
     await chrome.storage.local.set({ connectionStatus: 'connecting', lastError: null });
     try {
+      this.managedClaim = await initializeManagedBootstrap();
       const settings = await loadSettings();
       const identity = await loadOrCreateIdentity();
       this.endpointId = identity.endpointId ?? null;
@@ -224,6 +228,7 @@ export class RelayClient {
 
   private async onReady(envelope: RelayV2Envelope<'READY'>): Promise<void> {
     const payload = relayV2PayloadSchemas.READY.parse(envelope.payload);
+    await rememberManagedAuthentication(this.managedClaim);
     const identity = await loadOrCreateIdentity();
     if (identity.endpointId !== payload.endpointId) {
       throw new Error('The ready endpoint does not match this profile identity.');
@@ -284,13 +289,16 @@ export class RelayClient {
   private async onProtocolError(envelope: RelayV2Envelope<'ERROR'>): Promise<void> {
     const payload = relayV2PayloadSchemas.ERROR.parse(envelope.payload);
     if (payload.code === 'ENDPOINT_NICKNAME_CONFLICT' && !this.endpointId) {
-      const replacement = await regeneratePairingLabel();
-      this.lastProtocolError = null;
-      await chrome.storage.local.set({
-        connectionStatus: 'connecting',
-        lastError: `Generated another nickname: ${replacement.proposedNickname}`
-      });
-      this.socket?.close(4009, 'Retrying with another profile nickname');
+      if (this.managedClaim && this.managedNicknameRetries < 5) {
+        this.managedNicknameRetries++;
+        await regeneratePairingLabel();
+        this.socket?.close(4009, 'Retry managed Profile nickname');
+        return;
+      }
+      this.lastProtocolError = `${payload.code}: ${payload.message}`;
+      await chrome.storage.local.set({ connectionStatus: 'error', lastError: this.lastProtocolError });
+      this.stopped = true;
+      this.socket?.close(4009, 'Pairing code must be changed by the user');
       return;
     }
     this.lastProtocolError = `${payload.code}: ${payload.message}`;
@@ -350,6 +358,7 @@ export class RelayClient {
       throw new Error('An unpaired profile must have an extension-generated pairing code.');
     }
     this.sendEnvelope(createRelayV2Envelope('HELLO', {
+      ...(this.managedClaim ? { managedClaim: this.managedClaim } : {}),
       ...(identity.endpointId ? { endpointId: identity.endpointId } : {}),
       ...(identity.pairingCode ? { pairingCode: identity.pairingCode } : {}),
       publicKeyJwk: checkedPublicJwk(identity.publicKeyJwk),

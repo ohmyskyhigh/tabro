@@ -5,6 +5,7 @@ param(
   [switch]$SkipDependencyInstall,
   [switch]$SkipBuild,
   [switch]$SkipNativeRegistration,
+  [switch]$EnableManagedProfiles,
   [string]$WorkspaceRoot = '',
   [string]$DataRoot = '',
   [string]$ExtensionPath = '',
@@ -39,6 +40,10 @@ function Invoke-Checked([string]$FilePath, [string[]]$ArgumentList) {
   }
 }
 
+function ConvertTo-PowerShellLiteral([string]$Value) {
+  return "'" + $Value.Replace("'", "''") + "'"
+}
+
 function Test-Health([string]$Url) {
   try {
     $response = Invoke-RestMethod -Method Get -Uri $Url -TimeoutSec 2
@@ -67,6 +72,7 @@ $data = Resolve-TaskPath $DataRoot '.relay-data' $workspace
 $extension = Resolve-TaskPath $ExtensionPath 'dist\browser-extension' $workspace
 $nativeHost = Resolve-TaskPath $NativeHostPath 'dist\native-host\relay-native-host.exe' $workspace
 $mcpAdapter = Resolve-TaskPath '' 'dist\mcp-stdio-adapter\src\main.js' $workspace
+$hermesRegistrationHelper = Resolve-TaskPath '' 'tools\register-hermes-profiles.ps1' $workspace
 $brokerEntry = Resolve-TaskPath '' 'dist\broker\src\runtime\main.js' $workspace
 $bootstrap = Resolve-TaskPath $BootstrapRoot (Join-Path $data 'bootstrap') $workspace
 $nativeManifest = Join-Path $bootstrap "$hostName.json"
@@ -107,6 +113,7 @@ if (-not $Install) {
       "--mcp-instructions=$mcpInstructions" `
       "--codex-registration=$codexTemplate" `
       "--hermes-registration=$hermesTemplate" `
+      "--hermes-registration-helper=$hermesRegistrationHelper" `
       "--admin-token=$adminTokenFile" `
       @registryArguments
     exit $LASTEXITCODE
@@ -140,13 +147,16 @@ if (-not (Test-Path -LiteralPath $nativeHost)) {
 if (-not (Test-Path -LiteralPath $mcpAdapter)) {
   throw "Built stdio MCP adapter is missing: $mcpAdapter"
 }
+if (-not (Test-Path -LiteralPath $hermesRegistrationHelper)) {
+  throw "Hermes all-profile registration helper is missing: $hermesRegistrationHelper"
+}
 if (-not (Test-Path -LiteralPath $brokerEntry)) {
   throw "Built broker entry point is missing: $brokerEntry"
 }
 
 $nativeManifestBody = [ordered]@{
   name = $hostName
-  description = 'Octopus Browser Relay native companion'
+  description = 'Tabro native companion'
   path = $nativeHost
   type = 'stdio'
   allowed_origins = @("chrome-extension://$extensionId/")
@@ -185,14 +195,25 @@ $codexAdapterJson = ConvertTo-Json $mcpAdapter -Compress
 $codexBrokerUrlJson = ConvertTo-Json $McpUrl -Compress
 $codexTokenFileJson = ConvertTo-Json $adminTokenFile -Compress
 $codexConfig = @"
-[mcp_servers.octopus-browser-relay]
+[mcp_servers.tabro]
 command = $codexNodeJson
 args = [$codexAdapterJson]
-env = { OCTOPUS_BROKER_URL = $codexBrokerUrlJson, OCTOPUS_BROWSER_RELAY_TOKEN_FILE = $codexTokenFileJson, OCTOPUS_RUNTIME = "codex" }
+env = { TABRO_BROKER_URL = $codexBrokerUrlJson, TABRO_TOKEN_FILE = $codexTokenFileJson, TABRO_RUNTIME = "codex" }
 "@
 $codexConfig | Set-Content -LiteralPath $codexTemplate -Encoding utf8
 
-$hermesCommand = "hermes mcp add octopus-browser-relay --command `"$nodeExecutable`" --env `"OCTOPUS_BROKER_URL=$McpUrl`" `"OCTOPUS_BROWSER_RELAY_TOKEN_FILE=$adminTokenFile`" `"OCTOPUS_RUNTIME=hermes`" --args `"$mcpAdapter`""
+$hermesCommand = @(
+  'pwsh -NoProfile -File',
+  (ConvertTo-PowerShellLiteral $hermesRegistrationHelper),
+  '-NodeExecutable',
+  (ConvertTo-PowerShellLiteral $nodeExecutable),
+  '-AdapterPath',
+  (ConvertTo-PowerShellLiteral $mcpAdapter),
+  '-BrokerUrl',
+  (ConvertTo-PowerShellLiteral $McpUrl),
+  '-TokenFile',
+  (ConvertTo-PowerShellLiteral $adminTokenFile)
+) -join ' '
 $hermesCommand | Set-Content -LiteralPath $hermesTemplate -Encoding utf8
 
 $mcpGuide = @"
@@ -202,10 +223,11 @@ The installer generated instructions but did not overwrite Codex or Hermes confi
 
 1. Start the broker and confirm $mcpHealthUrl returns status: ok.
 2. Codex: merge the contents of $codexTemplate into the applicable Codex config.toml, then start a new Codex session.
-3. Hermes: run the command stored in $hermesTemplate, then run: hermes mcp test octopus-browser-relay
-4. Both registrations launch $mcpAdapter as a stdio MCP server. Each adapter process injects its Codex or Hermes session evidence outside tool arguments and forwards the canonical fourteen tools to $McpUrl.
+3. Hermes: run the command stored in $hermesTemplate. It registers Tabro in the default profile and every named profile installed when the command runs. Start a new session in each profile, then run: hermes -p <profile> mcp test tabro
+4. Both registrations launch $mcpAdapter as a stdio MCP server. Each adapter process injects its Codex or Hermes session evidence outside tool arguments and forwards the canonical eighteen tools to $McpUrl. Broker and adapter must both use MCP contract v2.
 5. The adapter prefers CODEX_THREAD_ID, CODEX_SESSION_ID, HERMES_SESSION_ID, or HERMES_AGENT_SESSION_ID. When the runtime supplies none of them, it creates one random session key for that adapter process. A runtime must launch a separate adapter process for each independent agent session when it supplies no session ID.
 6. The generated registrations point to $adminTokenFile; they do not embed the bearer token. Do not paste the token into chat, documentation, source control, or retained shell history.
+7. Rerun the Hermes command after creating another Hermes profile so the new isolated profile receives the MCP registration.
 
 The broker URL is parameterized as $McpUrl.
 "@
@@ -217,7 +239,7 @@ $pairingGuide = @"
 1. Open chrome://extensions in each intended Chrome or AdsPower profile.
 2. Enable developer mode, choose **Load unpacked**, and select $extension.
 3. Confirm extension ID $extensionId and accept the debugger, tabGroups, and Native Messaging permissions.
-4. Open Octopus Browser Relay settings. Keep **Native companion** selected and relay URL $RelayUrl.
+4. Open Tabro settings. Keep **Native companion** selected and relay URL $RelayUrl.
 5. The extension generates and displays a two-word profile-local pairing code and compact combined endpoint nickname, such as MINT-WAVE and mintwave. It registers automatically with the running local broker; do not request or enter a broker-generated code. A nickname collision selects another two-word label and retries automatically.
 6. Choose **Save connection settings** only if you changed the transport or relay URL.
 7. Wait for Status: connected, then confirm the broker context lists the final nickname and at least one browser window.
@@ -227,6 +249,10 @@ The readable pairing code is an installation label, not a password. Reconnect au
 "@
 $pairingGuide | Set-Content -LiteralPath $pairingInstructions -Encoding utf8
 
+if ($EnableManagedProfiles) {
+  & (Join-Path $workspace 'tools\configure-managed-profiles.ps1') -DataRoot $data -ExtensionPath $extension -RelayUrl $RelayUrl | Out-Null
+}
+
 if ($StartBroker -and -not (Test-Health $mcpHealthUrl)) {
   $node = (Get-Command node -ErrorAction Stop).Source
   $environment = @{
@@ -234,6 +260,8 @@ if ($StartBroker -and -not (Test-Health $mcpHealthUrl)) {
     RELAY_MCP_PORT = $mcpUri.Port.ToString()
     RELAY_WS_PORT = $relayUri.Port.ToString()
   }
+  $managedConfig = Join-Path $data 'managed-profiles.json'
+  if (Test-Path -LiteralPath $managedConfig) { $environment.RELAY_PROFILES_CONFIG = $managedConfig }
   $process = Start-Process -FilePath $node -ArgumentList @("`"$brokerEntry`"") -WorkingDirectory $workspace -WindowStyle Hidden -PassThru -Environment $environment
   Set-Content -LiteralPath $brokerPidFile -Value $process.Id -Encoding ascii
   $deadline = [DateTime]::UtcNow.AddSeconds(15)

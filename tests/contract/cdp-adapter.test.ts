@@ -31,7 +31,7 @@ class MemoryStorage implements LocalStorageArea {
 class FakeDebugger implements DebuggerApi {
   readonly attach = vi.fn(async () => undefined);
   readonly detach = vi.fn(async () => undefined);
-  readonly sendCommand = vi.fn(async (_target: chrome.debugger.DebuggerSession, method: string) => ({ method, value: 2 }));
+  readonly sendCommand = vi.fn(async (_target: chrome.debugger.DebuggerSession, method: string): Promise<object> => ({ method, value: 2 }));
   readonly getTargets = vi.fn(async () => []);
   private detachListener: ((source: chrome.debugger.Debuggee, reason: string) => void) | null = null;
   private eventListener: ((source: chrome.debugger.DebuggerSession, method: string, params?: object) => void) | null = null;
@@ -93,6 +93,35 @@ const browserApi: BrowserInventoryApi = {
 };
 
 describe('extension CDP adapter', () => {
+  it.each([
+    { nodeId: 42, files: ['C:\\uploads\\图片.png', 'C:\\uploads\\report.pdf'] },
+    { backendNodeId: 42, files: ['C:\\uploads\\a file.txt'] },
+    { objectId: 'input-object', files: [] }
+  ])('passes file input parameters unchanged to Chrome: $files', async (params) => {
+    const inventory = new BrowserInventory(browserApi);
+    const snapshot = await inventory.snapshot();
+    const privateTab = snapshot.tabs[0]!;
+    const debuggerApi = new FakeDebugger();
+    debuggerApi.sendCommand.mockResolvedValueOnce({});
+    const attachments = new DebuggerAttachmentManager(inventory, debuggerApi);
+    const attempts = new RecentAttemptCache(new MemoryStorage());
+    const executor = new CdpExecutor(attachments, attempts);
+    const attachment = await attachments.attach(privateTab, null, '1.3');
+    const result = await executor.execute({
+      attemptId: crypto.randomUUID(),
+      connectionGeneration: 1,
+      inventoryGeneration: snapshot.inventoryGeneration,
+      privateTab,
+      attachmentGeneration: attachment.attachmentGeneration,
+      method: 'DOM.setFileInputFiles',
+      params
+    });
+    expect(debuggerApi.sendCommand).toHaveBeenCalledExactlyOnceWith(
+      { tabId: 10 }, 'DOM.setFileInputFiles', params
+    );
+    expect(result.rawResult).toEqual({});
+  });
+
   it('fences attachments, forwards ordered events, and retains bounded attempt outcomes', async () => {
     const inventory = new BrowserInventory(browserApi);
     const snapshot = await inventory.snapshot();

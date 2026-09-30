@@ -25,11 +25,11 @@ describe('extension manifest', () => {
     expect(JSON.stringify(manifest)).not.toContain('https://*/*');
   });
 
-  it('shows automatic pairing facts without a user-entered code field', () => {
+  it('lets the user persist a customized two-word pairing code', () => {
     const options = readFileSync('apps/browser-extension/options.html', 'utf8');
-    expect(options).toContain('Pairing code:');
-    expect(options).toContain('without digits');
+    expect(options).toContain('Pairing code');
+    expect(options).toContain('persists across browser windows and restarts');
     expect(options).toContain('registers automatically');
-    expect(options).not.toMatch(/<input[^>]+id="pairing-code"/);
+    expect(options).toMatch(/<input[^>]+id="pairing-code"/);
   });
 });

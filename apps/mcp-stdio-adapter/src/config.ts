@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { OCTOPUS_VERSION } from '../../shared/protocol/src/version.js';
+import type { DemoTraceConfig } from './demo-trace.js';
 
 const SAFE_RUNTIME_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$/u;
 const SAFE_SESSION_KEY = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/u;
@@ -13,6 +14,7 @@ export interface StdioAdapterIdentity {
 }
 
 export interface StdioAdapterConfig {
+  demoTrace?: DemoTraceConfig;
   brokerUrl: URL;
   bearerToken: string;
   identity: StdioAdapterIdentity;
@@ -39,7 +41,8 @@ const CODEX_PARENT_SESSION_KEYS = ['CODEX_PARENT_THREAD_ID', 'CODEX_PARENT_SESSI
 const HERMES_PARENT_SESSION_KEYS = ['HERMES_PARENT_SESSION_ID', 'HERMES_PARENT_AGENT_SESSION_ID'] as const;
 
 const valueOf = (environment: AdapterEnvironment, key: string): string | undefined => {
-  const value = environment[key]?.trim();
+  const tabroKey = key.replace(/^OCTOPUS_BROWSER_RELAY_/u, 'TABRO_').replace(/^OCTOPUS_/u, 'TABRO_');
+  const value = environment[tabroKey]?.trim() || environment[key]?.trim();
   return value === undefined || value === '' ? undefined : value;
 };
 
@@ -98,7 +101,7 @@ const readBearerToken = (environment: AdapterEnvironment): string => {
   // broker principal.
   const token = tokenFile ? readFileSync(tokenFile, 'utf8').trim() : direct;
   if (!token || token.length < 16 || token.length > 4096) {
-    throw new Error('A valid broker token is required through OCTOPUS_BROWSER_RELAY_TOKEN or OCTOPUS_BROWSER_RELAY_TOKEN_FILE.');
+    throw new Error('A valid broker token is required through TABRO_TOKEN or TABRO_TOKEN_FILE (legacy OCTOPUS_BROWSER_RELAY_* names are also accepted).');
   }
   return token;
 };
@@ -106,10 +109,10 @@ const readBearerToken = (environment: AdapterEnvironment): string => {
 const readBrokerUrl = (environment: AdapterEnvironment): URL => {
   const url = new URL(valueOf(environment, 'OCTOPUS_BROKER_URL') ?? 'http://127.0.0.1:7331/mcp');
   if (!['127.0.0.1', 'localhost', '::1'].includes(url.hostname.toLowerCase())) {
-    throw new Error('OCTOPUS_BROKER_URL must use a loopback host.');
+    throw new Error('TABRO_BROKER_URL must use a loopback host.');
   }
   if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/mcp') {
-    throw new Error('OCTOPUS_BROKER_URL must be an HTTP(S) URL whose path is /mcp.');
+    throw new Error('TABRO_BROKER_URL must be an HTTP(S) URL whose path is /mcp.');
   }
   return url;
 };
@@ -118,7 +121,11 @@ export function loadStdioAdapterConfig(
   environment: AdapterEnvironment = process.env,
   createRandomId: () => string = randomUUID
 ): StdioAdapterConfig {
+  const traceRoot = valueOf(environment, 'OCTOPUS_DEMO_TRACE_ROOT');
+  const runId = valueOf(environment, 'OCTOPUS_DEMO_RUN_ID');
+  if (!!traceRoot !== !!runId) throw new Error('Demo trace requires both root and run ID.');
   return {
+    ...(traceRoot && runId ? { demoTrace: { root: traceRoot, runId } } : {}),
     brokerUrl: readBrokerUrl(environment),
     bearerToken: readBearerToken(environment),
     identity: resolveAdapterIdentity(environment, createRandomId),

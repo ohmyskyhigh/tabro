@@ -40,6 +40,39 @@ describe('SQLite relay store', () => {
     )).toThrow('ENDPOINT_NICKNAME_CONFLICT');
   });
 
+  it('renames the legacy target and canonical endpoint together', () => {
+    const target = store.registerExtension(
+      'mintwave',
+      { kty: 'EC', crv: 'P-256', x: 'profile-x', y: 'profile-y' },
+      ['baseline-v1']
+    );
+    store.canonical.logical.createEndpoint({
+      endpointRef: 'ep_profile',
+      nickname: target.alias,
+      legacyTargetId: target.targetId
+    });
+    const other = store.registerExtension(
+      'brightsky',
+      { kty: 'EC', crv: 'P-256', x: 'other-x', y: 'other-y' },
+      ['baseline-v1']
+    );
+    store.canonical.logical.createEndpoint({
+      endpointRef: 'ep_other',
+      nickname: other.alias,
+      legacyTargetId: other.targetId
+    });
+
+    store.renameTarget('mintwave', 'calmreef');
+
+    expect(store.getTargetById(target.targetId)?.alias).toBe('calmreef');
+    expect(store.canonical.logical.getEndpoint('ep_profile')?.nickname).toBe('calmreef');
+    expect(() => store.renameTarget('calmreef', 'brightsky')).toThrow('ENDPOINT_NICKNAME_CONFLICT');
+    expect(store.getTargetById(target.targetId)?.alias).toBe('calmreef');
+    expect(store.canonical.logical.getEndpoint('ep_profile')?.nickname).toBe('calmreef');
+    store.revokeTarget('brightsky');
+    expect(() => store.renameTarget('calmreef', 'brightsky')).toThrow('ENDPOINT_NICKNAME_CONFLICT');
+  });
+
   it('rotates a revoked target pairing without changing its alias or private target identity', () => {
     const firstCode = store.createPairingCode('profile-c', new Date(Date.now() + 60_000).toISOString());
     const first = store.consumePairingCode(firstCode, { kty: 'EC', crv: 'P-256', x: 'old-x', y: 'old-y' }, ['snapshot']);

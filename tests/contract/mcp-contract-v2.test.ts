@@ -26,6 +26,10 @@ const refs = {
 } as const;
 
 const validInputs: Readonly<Record<McpToolName, unknown>> = {
+  list_browser_profiles: {},
+  create_browser_profile: { display_name: 'Alice', idempotency_key: 'create-alice' },
+  open_browser_profile: { profile_ref: 'profile-ref' },
+  stop_browser_profile: { profile_ref: 'profile-ref' },
   get_browser_context: { view: { kind: 'broker' } },
   request_browser_workspace: { required_workspace_count: 1, designated_endpoints: [] },
   create_browser_tab: { workspace_ref: refs.workspace },
@@ -71,7 +75,7 @@ const payloadTooLargeProblem = {
 
 function rejectedOutput() {
   return {
-    contract_version: '1',
+    contract_version: '2',
     disposition: 'rejected',
     observed_at: '2026-08-31T00:00:00.000Z',
     caller,
@@ -83,7 +87,7 @@ function rejectedOutput() {
 
 function acceptedWorkspaceOutput(requestTool = 'request_browser_workspace') {
   return {
-    contract_version: '1',
+    contract_version: '2',
     disposition: 'accepted',
     observed_at: '2026-08-31T00:00:00.000Z',
     caller,
@@ -122,12 +126,12 @@ function acceptedWorkspaceOutput(requestTool = 'request_browser_workspace') {
   };
 }
 
-describe('canonical MCP contract version 1', () => {
-  it('publishes exactly fourteen tools and twenty-eight validator roots', () => {
-    expect(MCP_TOOL_NAMES).toHaveLength(14);
-    expect(new Set(MCP_TOOL_NAMES).size).toBe(14);
-    expect(MCP_ASYNC_TOOL_NAMES).toHaveLength(10);
-    expect(MCP_READ_TOOL_NAMES).toHaveLength(3);
+describe('canonical MCP contract version 2', () => {
+  it('publishes exactly eighteen tools and thirty-six validator roots', () => {
+    expect(MCP_TOOL_NAMES).toHaveLength(18);
+    expect(new Set(MCP_TOOL_NAMES).size).toBe(18);
+    expect(MCP_ASYNC_TOOL_NAMES).toHaveLength(13);
+    expect(MCP_READ_TOOL_NAMES).toHaveLength(4);
     expect(MCP_IMMEDIATE_CONTROL_TOOL_NAMES).toEqual(['close_browser_request']);
     expect(MCP_TOOL_CATALOG.map((tool) => tool.name)).toEqual([...MCP_TOOL_NAMES]);
     expect(Object.keys(mcpToolInputSchemas)).toEqual([...MCP_TOOL_NAMES]);

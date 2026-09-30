@@ -35,6 +35,7 @@ import {
 } from '../../../shared/protocol/src/index.js';
 import type { RelayRepositories, StoredTarget } from '../storage/index.js';
 import { ConnectionRegistry, type LiveExtensionConnection } from './connection-registry.js';
+import type { BootstrapGrants, ManagedConnectionClaim } from '../profiles/bootstrap-grants.js';
 
 interface BrowserHelloFacts {
   product: string;
@@ -43,11 +44,13 @@ interface BrowserHelloFacts {
 }
 
 interface PendingSocketState {
+  managedClaim?: ManagedConnectionClaim | undefined;
   protocolVersion?: 1 | 2;
   targetId?: string;
   endpointId?: string;
   endpointRef?: string;
   alias?: string;
+  requestedAlias: string | null;
   epoch?: number;
   challenge?: string;
   authenticated: boolean;
@@ -81,6 +84,9 @@ interface PendingOperation {
 
 type PendingAttempt = PendingInventory | PendingOperation;
 
+/** The extension rejected the inventory fence before acknowledging execution. */
+class InventoryRejectedBeforeDispatch extends Error {}
+
 export interface ExtensionGatewayOptions {
   host: string;
   port: number;
@@ -99,6 +105,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
   private readonly httpServer: Server;
   private readonly wsServer: WebSocketServer;
   private readonly states = new WeakMap<WebSocket, PendingSocketState>();
+  private readonly messageTasks = new Set<Promise<void>>();
   private readonly pendingAttempts = new Map<string, PendingAttempt>();
   private eventSink: ExtensionEventSink | null = null;
   private upgradeAttempts = 0;
@@ -113,7 +120,8 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     private readonly broker: BrokerCore,
     private readonly store: RelayRepositories,
     private readonly options: ExtensionGatewayOptions,
-    private readonly octopusBroker: OctopusBroker | null = null
+    private readonly octopusBroker: OctopusBroker | null = null,
+    private readonly managedBootstrap?: BootstrapGrants
   ) {
     this.octopusBroker?.setExtensionPort(this);
     this.httpServer = createServer((req, res) => {
@@ -207,7 +215,26 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     });
   }
 
-  execute<Type extends ExtensionOperationType>(
+  async execute<Type extends ExtensionOperationType>(
+    endpointRef: string,
+    type: Type,
+    payload: RelayV2PayloadByType[Type]
+  ): Promise<RelayV2PayloadByType['OPERATION_RESULT']> {
+    let current = payload;
+    for (let retry = 0; ; retry += 1) {
+      try { return await this.executeOnce(endpointRef, type, current); }
+      catch (error) {
+        if (!(error instanceof InventoryRejectedBeforeDispatch) || retry >= 2) throw error;
+        const inventory = await this.requestInventory(endpointRef, current.expected.inventoryGeneration);
+        if (inventory.connectionGeneration !== payload.expected.connectionGeneration) throw error;
+        // Preserve the attempt identity and locator fences; never retry an ACKed
+        // command or infer that a transport failure means no browser effect.
+        current = { ...current, expected: { ...current.expected, inventoryGeneration: inventory.inventoryGeneration } };
+      }
+    }
+  }
+
+  private executeOnce<Type extends ExtensionOperationType>(
     endpointRef: string,
     type: Type,
     payload: RelayV2PayloadByType[Type]
@@ -242,11 +269,12 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
   }
 
   async stop(): Promise<void> {
-    for (const connection of this.registry.values()) connection.socket.close(1001, 'Broker shutting down');
+    for (const socket of this.wsServer.clients) socket.close(1001, 'Broker shutting down');
     for (const attemptId of [...this.pendingAttempts.keys()]) {
       this.rejectPending(attemptId, new Error('Broker extension gateway stopped.'));
     }
     await new Promise<void>((resolve) => this.wsServer.close(() => resolve()));
+    await Promise.allSettled([...this.messageTasks]);
     await new Promise<void>((resolve, reject) => this.httpServer.close((error) => error ? reject(error) : resolve()));
   }
 
@@ -280,9 +308,16 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
   }
 
   sweepHeartbeat(timeoutMs: number): void {
-    const cutoff = Date.now() - timeoutMs;
+    const now = Date.now();
+    const cutoff = now - timeoutMs;
+    const probeInterval = Math.max(1_000, Math.floor(timeoutMs / 3));
     for (const connection of this.registry.values()) {
-      if (connection.lastHeartbeatAt < cutoff) connection.socket.close(4000, 'Heartbeat timeout');
+      if (connection.lastHeartbeatAt < cutoff) {
+        connection.socket.close(4000, 'Heartbeat timeout');
+      } else if (connection.socket.readyState === WebSocket.OPEN && connection.lastProbeAt <= now - probeInterval) {
+        connection.lastProbeAt = now;
+        connection.socket.ping();
+      }
     }
   }
 
@@ -294,6 +329,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     const state: PendingSocketState = {
       authenticated: false,
       canonicalConnectionOpened: false,
+      requestedAlias: null,
       negotiatedMaxEnvelopeBytes: Math.min(
         this.options.maxPayloadBytes ?? MAX_RELAY_V2_ENVELOPE_BYTES,
         MAX_RELAY_V2_ENVELOPE_BYTES
@@ -301,6 +337,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       handshakeTimer
     };
     this.states.set(socket, state);
+    let messages = Promise.resolve();
     socket.on('message', (data, isBinary) => {
       const text = data.toString();
       const maximum = this.options.maxPayloadBytes ?? MAX_RELAY_V2_ENVELOPE_BYTES;
@@ -308,22 +345,34 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
         socket.close(1009, 'Invalid payload');
         return;
       }
+      messages = messages.then(async () => {
+      if (socket.readyState !== WebSocket.OPEN) return;
       try {
         const raw = JSON.parse(text) as { protocolVersion?: unknown };
         if (raw.protocolVersion === RELAY_PROTOCOL_V2) {
-          this.onV2Message(socket, parseRelayV2Envelope(raw, state.negotiatedMaxEnvelopeBytes));
+          await this.onV2Message(socket, parseRelayV2Envelope(raw, state.negotiatedMaxEnvelopeBytes));
         } else {
           this.onLegacyMessage(socket, parseRelayEnvelope(raw));
         }
       } catch (error) {
         this.sendProtocolError(socket, state, 'INVALID_MESSAGE', this.asError(error).message, false, null);
       }
+      });
+      const task = messages;
+      this.messageTasks.add(task);
+      void task.finally(() => this.messageTasks.delete(task));
     });
     socket.on('close', (_code, reason) => this.onSocketClose(socket, state, reason.toString() || 'socket_closed'));
     socket.on('error', () => undefined);
+    socket.on('pong', () => {
+      const current = state.endpointRef
+        ? this.registry.getEndpoint(state.endpointRef)
+        : state.targetId ? this.registry.get(state.targetId) : null;
+      if (current?.socket === socket && current.epoch === state.epoch) current.lastHeartbeatAt = Date.now();
+    });
   }
 
-  private onV2Message(socket: WebSocket, envelope: RelayV2Envelope): void {
+  private async onV2Message(socket: WebSocket, envelope: RelayV2Envelope): Promise<void> {
     const state = this.states.get(socket);
     if (!state) return;
     if (state.protocolVersion && state.protocolVersion !== 2) {
@@ -332,11 +381,11 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     }
     state.protocolVersion = 2;
     if (envelope.type === 'HELLO') {
-      this.handleV2Hello(socket, state, (envelope as RelayV2Envelope<'HELLO'>).payload);
+      await this.handleV2Hello(socket, state, (envelope as RelayV2Envelope<'HELLO'>).payload);
       return;
     }
     if (envelope.type === 'AUTH') {
-      this.handleV2Auth(socket, state, (envelope as RelayV2Envelope<'AUTH'>).payload);
+      await this.handleV2Auth(socket, state, (envelope as RelayV2Envelope<'AUTH'>).payload);
       return;
     }
     const connection = this.currentV2Connection(socket, state);
@@ -344,6 +393,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       socket.close(4001, 'Authentication required');
       return;
     }
+    connection.lastHeartbeatAt = Date.now();
     switch (envelope.type) {
       case 'HEARTBEAT':
         this.handleV2Heartbeat(connection, (envelope as RelayV2Envelope<'HEARTBEAT'>).payload);
@@ -371,13 +421,19 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     }
   }
 
-  private handleV2Hello(
+  private async handleV2Hello(
     socket: WebSocket,
     state: PendingSocketState,
     payload: RelayV2PayloadByType['HELLO']
-  ): void {
+  ): Promise<void> {
     if (!this.octopusBroker) throw new Error('Relay v2 requires an OctopusBroker.');
     if (state.authenticated) throw new Error('An authenticated socket cannot start another handshake.');
+    if (payload.managedClaim && !this.managedBootstrap) throw new Error('PROFILE_MANAGEMENT_UNAVAILABLE');
+    const knownEndpoint = payload.endpointId
+      ? this.octopusBroker.endpointForLegacyTarget(payload.endpointId) : undefined;
+    await this.managedBootstrap?.check(payload.managedClaim, knownEndpoint?.endpointRef ?? null, payload.publicKeyJwk as JsonWebKey);
+    if (socket.readyState !== WebSocket.OPEN) return;
+    state.managedClaim = payload.managedClaim;
     negotiateRelayProtocol(payload.supportedProtocolVersions);
     const browserMajorMatch = payload.browser.version.match(/\d+/);
     const selection = selectCapabilityManifest({
@@ -395,6 +451,13 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       selection.manifest.limits.maxEnvelopeBytes,
       this.options.maxPayloadBytes ?? MAX_RELAY_V2_ENVELOPE_BYTES
     );
+    const requestedAlias = payload.pairingCode
+      ? payload.pairingCode.replace('-', '').toLowerCase()
+      : undefined;
+    if (requestedAlias && payload.proposedNickname !== requestedAlias) {
+      throw new Error('The proposed nickname must match the saved pairing code.');
+    }
+    state.requestedAlias = requestedAlias ?? null;
 
     if (!payload.endpointId) {
       if (!payload.pairingCode) throw new Error('An unpaired extension must provide its generated pairing code.');
@@ -402,7 +465,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       let target: StoredTarget;
       try {
         target = this.broker.autoPairExtension(
-          payload.proposedNickname,
+          requestedAlias!,
           payload.publicKeyJwk as JsonWebKey,
           [selection.manifest.manifestId]
         );
@@ -467,19 +530,43 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     });
   }
 
-  private handleV2Auth(
+  private async handleV2Auth(
     socket: WebSocket,
     state: PendingSocketState,
     payload: RelayV2PayloadByType['AUTH']
-  ): void {
+  ): Promise<void> {
     if (!state.targetId || !state.endpointId || !state.endpointRef || !state.alias || !state.epoch || !state.challenge
       || payload.endpointId !== state.endpointId || payload.connectionGeneration !== state.epoch) {
       throw new Error('Authentication state mismatch.');
     }
-    const target = this.requireTarget(state.targetId);
+    let target = this.requireTarget(state.targetId);
     if (!this.verifySignature(target, state.challenge, payload.signature)) {
       socket.close(4003, 'Authentication failed');
       return;
+    }
+    await this.managedBootstrap?.authenticated(state.managedClaim, state.endpointRef, target.publicKeyJwk);
+    if (socket.readyState !== WebSocket.OPEN) return;
+    if (state.requestedAlias && state.requestedAlias !== target.alias) {
+      try {
+        target = this.broker.renameAuthenticatedExtension(target.targetId, state.requestedAlias);
+        state.alias = target.alias;
+      } catch (error) {
+        const code = this.asError(error).message;
+        if (code === 'ENDPOINT_NICKNAME_CONFLICT' || code === 'ENDPOINT_NICKNAME_INVALID') {
+          this.sendProtocolError(
+            socket,
+            state,
+            code,
+            code === 'ENDPOINT_NICKNAME_CONFLICT'
+              ? 'That pairing code belongs to another browser profile. Choose a different code and save again.'
+              : 'The saved pairing code does not produce a valid endpoint nickname.',
+            false,
+            null
+          );
+          return;
+        }
+        throw error;
+      }
     }
     clearTimeout(state.handshakeTimer);
     state.authenticated = true;
@@ -493,13 +580,13 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       socket,
       connectedAt: Date.now(),
       lastHeartbeatAt: Date.now(),
+      lastProbeAt: 0,
       inventoryGeneration: 0,
       maxEnvelopeBytes: state.negotiatedMaxEnvelopeBytes
     };
     const previous = this.registry.bind(connection);
     if (previous && previous.socket !== socket) previous.socket.close(4002, 'Replaced by newer connection');
-    const reloadExtension = state.extensionVersion !== this.options.serviceVersion;
-    if (!reloadExtension) this.octopusBroker?.onExtensionReady(state.endpointRef, state.epoch);
+    this.octopusBroker?.onExtensionReady(state.endpointRef, state.epoch);
     this.store.updateTargetObservation(state.targetId, 'heartbeat');
     this.store.audit('extension.connected', {
       targetAlias: state.alias,
@@ -513,8 +600,10 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       connectionGeneration: state.epoch,
       selectedCapabilityManifestId: state.selectedCapabilityManifestId ?? CONSERVATIVE_CAPABILITY_MANIFEST.manifestId,
       brokerVersion: this.options.serviceVersion,
-      requiredExtensionVersion: this.options.serviceVersion,
-      reloadExtension
+      // Echo HELLO for older clients that require this field and compare it locally.
+      // Compatibility is negotiated by relay protocol, not package version equality.
+      requiredExtensionVersion: state.extensionVersion!,
+      reloadExtension: false
     });
   }
 
@@ -622,6 +711,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       socket,
       connectedAt: Date.now(),
       lastHeartbeatAt: Date.now(),
+      lastProbeAt: 0,
       inventoryGeneration: 0,
       maxEnvelopeBytes: this.options.maxPayloadBytes ?? MAX_RELAY_V2_ENVELOPE_BYTES
     });
@@ -695,7 +785,12 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
   private handleV2Error(connection: LiveExtensionConnection, payload: RelayV2PayloadByType['ERROR']): void {
     if (payload.connectionGeneration !== null && payload.connectionGeneration !== connection.epoch) return;
     if (payload.attemptId) {
-      this.rejectPending(payload.attemptId, new Error(`${payload.code}: ${payload.message}`));
+      const pending = this.pendingAttempts.get(payload.attemptId);
+      if (!pending || !this.sameGeneration(pending, connection)) return;
+      const message = `${payload.code}: ${payload.message}`;
+      this.rejectPending(payload.attemptId,
+        pending.kind === 'operation' && !pending.acknowledged && payload.code === 'STALE_INVENTORY_GENERATION'
+          ? new InventoryRejectedBeforeDispatch(message) : new Error(message));
     }
   }
 

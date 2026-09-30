@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tabro · Daily tasks</title>
+<style>
+  :root{font:16px/1.55 system-ui,sans-serif;color:#111;background:white;color-scheme:light}body{max-width:760px;margin:48px auto;padding:0 24px}header{border-bottom:1px solid #ddd;padding-bottom:20px}h1{font-size:28px;line-height:1.2;margin:8px 0}h2{font-size:20px;margin:28px 0 12px}.muted,small{color:#666}.task{padding:20px 0;border-bottom:1px solid #ddd}.task h3{margin:0;font-size:18px}.task form{display:flex;gap:10px;align-items:end;margin-top:14px;flex-wrap:wrap}label{display:block}input,select,button{font:inherit;padding:9px 12px;border:1px solid #aaa;border-radius:4px}input{min-width:240px}button{background:#175cd3;color:white;border-color:#175cd3;cursor:pointer}button:disabled{background:#eee;border-color:#ccc;color:#666;cursor:default}:focus-visible{outline:3px solid #175cd3;outline-offset:3px}.done{color:#16733a}#error{color:#a62020}#summary-text{white-space:pre-wrap}footer{margin-top:36px;border-top:1px solid #ddd;padding-top:12px;font-size:13px;color:#666}
+.task label input{display:block;margin-top:4px}
+</style>
+<header><small>TABRO / LOCAL DEMO</small><h1>Daily tasks</h1><div id="identity">Choose a test account to begin.</div></header>
+<main>
+<section id="login"><h2>Test account</h2><form id="login-form"><label for="role">Account</label><select id="role" name="role"><option>Alice</option><option>Bob</option><option>Carol</option></select> <button>Continue</button></form></section>
+<section id="work" hidden><h2>Your task list</h2><p class="muted">Complete the earliest due unfinished task. Add a note before marking it complete.</p><div id="tasks"></div><h2>Daily summary</h2><button id="summary">Generate summary</button><p id="summary-state" role="status"></p><p id="summary-text"></p></section>
+<p id="error" role="alert"></p>
+</main><footer id="run"></footer>
+<script>
+const $=s=>document.querySelector(s);
+async function api(path,body){const r=await fetch(path,body===undefined?{}:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error);return data;}
+function fail(e){$('#error').textContent=e.message;}
+let currentRole=null;
+async function refresh(){const data=await api('/api/state');$('#run').textContent='Run '+data.runId+' · Reference date '+data.date+' · Asia/Shanghai';if(!data.account)return;const a=data.account;currentRole=a.role;$('#identity').textContent='Signed in as '+a.role;$('#identity').dataset.role=a.role;$('#login').hidden=true;$('#work').hidden=false;$('#tasks').replaceChildren();for(const t of a.tasks){const row=document.createElement('article');row.className='task';row.dataset.taskId=t.id;const title=document.createElement('h3');title.textContent=t.title;row.append(title);const due=document.createElement('p');due.textContent='Due '+t.due+(t.completed?' · Completed':' · Open');due.className=t.completed?'done':'muted';row.append(due);if(t.completed){const note=document.createElement('p');note.textContent='Note: '+t.note;row.append(note);}else{const form=document.createElement('form');const label=document.createElement('label');label.textContent='Completion note';const input=document.createElement('input');input.name='note';input.required=true;input.maxLength=200;input.autocomplete='off';label.append(input);const button=document.createElement('button');button.textContent='Mark complete';form.append(label,button);form.onsubmit=async e=>{e.preventDefault();try{await api('/api/complete',{taskId:t.id,note:input.value});await refresh();}catch(error){fail(error);}};row.append(form);}$('#tasks').append(row);}$('#summary').disabled=a.summary.state!=='idle';$('#summary-state').textContent=a.summary.state==='pending'?'Preparing summary…':a.summary.state==='ready'?'Summary ready':'No summary requested.';$('#summary-state').dataset.state=a.summary.state;$('#summary-text').textContent=a.summary.text||'';}
+$('#login-form').onsubmit=async e=>{e.preventDefault();try{await api('/api/login',{role:$('#role').value});localStorage.setItem('octopus-demo-role',$('#role').value);await refresh();}catch(error){fail(error);}};
+$('#summary').onclick=async()=>{try{await api('/api/summary',{});await refresh();}catch(error){fail(error);}};
+setInterval(async()=>{if(currentRole&&$('#summary-state').dataset.state==='pending')try{await refresh();}catch(error){fail(error);}},1000);
+refresh().catch(fail);
+</script></html>

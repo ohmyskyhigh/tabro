@@ -22,7 +22,7 @@ function assertLocalRelayUrl(value: string): URL {
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if ((url.protocol !== 'ws:' && url.protocol !== 'wss:')
     || (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1')) {
-    throw new Error('Octopus relay transport only permits local ws:// or wss:// broker URLs.');
+    throw new Error('Tabro relay transport only permits local ws:// or wss:// broker URLs.');
   }
   return url;
 }

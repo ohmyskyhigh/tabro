@@ -159,7 +159,7 @@ export class TabGroupOperations {
 
   async archiveGroup(groupLocator: PrivateGroupLocator): Promise<PrivateGroupFact> {
     const current = await this.inventory.assertGroup(groupLocator);
-    const base = current.title?.trim() || 'Octopus';
+    const base = current.title?.trim() || 'Tabro';
     const title = /(?:^|\s)archive$/i.test(base) ? base : `${base} archive`;
     const updated = await this.api.tabGroups.update(groupLocator.tabGroupId, { title });
     if (!updated) throw new ExtensionAdapterError('GROUP_NOT_FOUND', 'Chrome did not return the archived tab group.');

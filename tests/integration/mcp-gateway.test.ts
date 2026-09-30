@@ -17,7 +17,7 @@ const CALLER = {
 };
 
 const rejectedOutput = () => ({
-  contract_version: '1',
+  contract_version: '2',
   disposition: 'rejected',
   observed_at: NOW,
   caller: CALLER,
@@ -34,7 +34,7 @@ const rejectedOutput = () => ({
 const acceptedWorkspaceOutput = (input: unknown) => {
   const requestRef = 'req_gateway_test';
   return {
-    contract_version: '1',
+    contract_version: '2',
     disposition: 'accepted',
     observed_at: NOW,
     caller: CALLER,
@@ -131,7 +131,7 @@ describe('canonical MCP gateway', () => {
     await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
       requestInit: {
         headers: {
-          Authorization: `Bearer ${TOKEN}`,
+          'x-octopus-contract-version': '2', Authorization: `Bearer ${TOKEN}`,
           ...headers
         }
       }
@@ -149,6 +149,17 @@ describe('canonical MCP gateway', () => {
     }
   });
 
+  it('rejects missing or old contract versions after authentication and before admission', async () => {
+    const broker = new FakeCanonicalBroker(); await connect(broker);
+    const url = `http://127.0.0.1:${gateway!.address().port}/mcp`;
+    for (const version of [undefined, '1']) {
+      const response = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}`, ...(version ? { 'x-octopus-contract-version': version } : {}) } });
+      expect(response.status).toBe(409);
+    }
+    expect((await fetch(url, { method: 'POST', headers: { 'x-octopus-contract-version': '1' } })).status).toBe(401);
+    expect(broker.calls).toHaveLength(0);
+  });
+
   it('derives caller evidence from auth and safe runtime headers, never tool arguments', async () => {
     const broker = new FakeCanonicalBroker();
     const connected = await connect(broker, {
@@ -163,6 +174,7 @@ describe('canonical MCP gateway', () => {
     expect(result.isError).not.toBe(true);
     expect(broker.calls).toHaveLength(1);
     expect(broker.calls[0]?.evidence).toEqual({
+      managementAuthority: { principalId: 'principal-gateway-test', scopes: ['browser:read', 'browser:write'] },
       runtimeName: 'codex',
       runtimeSessionKey: 'principal:principal-gateway-test:session:task-42',
       parentRuntimeSessionKey: 'principal:principal-gateway-test:session:task-parent'
@@ -181,10 +193,10 @@ describe('canonical MCP gateway', () => {
     await gateway.start();
     const { port } = gateway.address();
     const firstTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-      requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } }
+      requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${TOKEN}` } }
     });
     const secondTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-      requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } }
+      requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${TOKEN}` } }
     });
     const first = new Client({ name: 'same-token-first', version: '1.0.0' }, { versionNegotiation: { mode: 'auto' } });
     const second = new Client({ name: 'same-token-second', version: '1.0.0' }, { versionNegotiation: { mode: 'auto' } });

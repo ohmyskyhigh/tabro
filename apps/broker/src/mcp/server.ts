@@ -12,6 +12,7 @@ import { toNodeHandler } from '@modelcontextprotocol/node';
 import type { CallerEvidence, JsonObject, OctopusBroker } from '../core/index.js';
 import {
   MCP_TOOL_CATALOG,
+  MCP_CONTRACT_VERSION,
   mcpToolInputJsonSchemas,
   mcpToolOutputJsonSchemas,
   parseMcpToolInput,
@@ -88,6 +89,12 @@ export class McpGateway {
         rejectUnauthorized(response);
         return;
       }
+      if (request.headers['x-octopus-contract-version'] !== MCP_CONTRACT_VERSION) {
+        response.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({
+          error: 'MCP_CONTRACT_VERSION_MISMATCH', expected: MCP_CONTRACT_VERSION
+        }));
+        return;
+      }
       (request as NodeRequestWithAuth).auth = auth;
       const deliveryContext: DeliveryContext = { acknowledgements: [] };
       try {
@@ -133,7 +140,7 @@ export class McpGateway {
     const authInfo = this.requireAuth(context.authInfo);
     const evidence = callerEvidenceFromContext(context, authInfo);
     const server = new McpServer({
-      name: 'octopus-browser-relay',
+      name: 'tabro',
       version: this.options.serviceVersion
     });
 
@@ -155,7 +162,9 @@ export class McpGateway {
     const input = parseMcpToolInput(tool, rawInput);
     let output: unknown;
 
-    if (tool === 'get_browser_context') {
+    if (tool === 'list_browser_profiles') {
+      output = await this.broker.listBrowserProfiles(input, evidence);
+    } else if (tool === 'get_browser_context') {
       output = await this.broker.getBrowserContext(input, evidence);
     } else if (tool === 'read_cdp_events') {
       output = await this.broker.readCdpEvents(input, evidence);

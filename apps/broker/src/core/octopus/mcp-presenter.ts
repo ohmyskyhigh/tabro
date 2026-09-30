@@ -57,7 +57,7 @@ export const closeAction = (requestRef: string): JsonObject => ({
 });
 
 export const acceptedSubmission = (caller: StoredCallerSession, ticket: StoredRequestTicket): JsonObject => ({
-  contract_version: '1',
+  contract_version: '2',
   disposition: 'accepted',
   observed_at: new Date().toISOString(),
   caller: callerFacts(caller),
@@ -67,7 +67,7 @@ export const acceptedSubmission = (caller: StoredCallerSession, ticket: StoredRe
 });
 
 export const rejectedSubmission = (caller: StoredCallerSession, rejectedProblem: PublicProblem): JsonObject => ({
-  contract_version: '1',
+  contract_version: '2',
   disposition: 'rejected',
   observed_at: new Date().toISOString(),
   caller: callerFacts(caller),
@@ -81,7 +81,7 @@ export const completeRead = (
   facts: JsonObject,
   availableActions: JsonObject[] = []
 ): JsonObject => ({
-  contract_version: '1',
+  contract_version: '2',
   disposition: 'complete',
   observed_at: new Date().toISOString(),
   caller: callerFacts(caller),
@@ -91,7 +91,7 @@ export const completeRead = (
 });
 
 export const rejectedRead = (caller: StoredCallerSession, rejectedProblem: PublicProblem): JsonObject => ({
-  contract_version: '1',
+  contract_version: '2',
   disposition: 'rejected',
   observed_at: new Date().toISOString(),
   caller: callerFacts(caller),

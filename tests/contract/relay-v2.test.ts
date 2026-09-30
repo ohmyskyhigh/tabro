@@ -254,6 +254,8 @@ describe('conservative extension capability manifest', () => {
     expect(CONSERVATIVE_CAPABILITY_MANIFEST.profile).toBe('conservative');
     expect(supportsCdpMethod(CONSERVATIVE_CAPABILITY_MANIFEST, 'Runtime.evaluate')).toBe(true);
     expect(supportsCdpMethod(CONSERVATIVE_CAPABILITY_MANIFEST, 'Input.dispatchMouseEvent')).toBe(true);
+    expect(supportsCdpMethod(CONSERVATIVE_CAPABILITY_MANIFEST, 'DOM.setFileInputFiles')).toBe(true);
+    expect(supportsCdpMethod(CONSERVATIVE_CAPABILITY_MANIFEST, 'DOM.setFileInputFiles', true)).toBe(false);
     expect(supportsCdpMethod(CONSERVATIVE_CAPABILITY_MANIFEST, 'Browser.close')).toBe(false);
     expect(supportsCdpMethod(CONSERVATIVE_CAPABILITY_MANIFEST, 'Target.createTarget')).toBe(false);
   });

@@ -32,7 +32,7 @@ export interface ReleaseManifest {
 }
 
 const workspace = resolve(import.meta.dirname, '..');
-const defaultOutput = resolve(workspace, 'artifacts', 'release', `octopus-browser-relay-v${OCTOPUS_VERSION}-windows-x64`);
+const defaultOutput = resolve(workspace, 'artifacts', 'release', `tabro-v${OCTOPUS_VERSION}-windows-x64`);
 
 function json<T>(path: string): T {
   return JSON.parse(readFileSync(path, 'utf8')) as T;
@@ -105,7 +105,10 @@ export async function stageRelease(output = defaultOutput): Promise<{ output: st
   mkdirSync(resolve(target, 'tools'), { recursive: true });
   for (const name of [
     'update-local.ps1',
+    'configure-managed-profiles.ps1',
+    'managed-upgrade-snapshot.mjs',
     'stop-installed-broker.ps1',
+    'register-hermes-profiles.ps1',
     'installed-broker-launcher.mjs',
     'installed-mcp-adapter-launcher.mjs'
   ]) {

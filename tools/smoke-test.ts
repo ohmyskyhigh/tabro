@@ -1,5 +1,6 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { createRelayApplication } from '../apps/broker/src/runtime/bootstrap.js';
+import { MCP_TOOL_NAMES } from '../apps/shared/protocol/src/index.js';
 
 const token = 'smoke-admin-token-that-is-long-enough';
 const application = createRelayApplication({
@@ -11,10 +12,10 @@ const client = new Client({ name: 'smoke-test', version: '0.1.0' }, { versionNeg
 try {
   const { port } = application.mcpGateway.address();
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-    requestInit: { headers: { Authorization: `Bearer ${token}` } }
+    requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${token}` } }
   }));
   const tools = await client.listTools();
-  if (tools.tools.length !== 14) throw new Error(`Expected 14 MCP tools, received ${tools.tools.length}.`);
+  if (tools.tools.length !== MCP_TOOL_NAMES.length) throw new Error(`Expected ${MCP_TOOL_NAMES.length} MCP tools, received ${tools.tools.length}.`);
   const context = await client.callTool({
     name: 'get_browser_context',
     arguments: { view: { kind: 'broker' } }

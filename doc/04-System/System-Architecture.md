@@ -10,13 +10,13 @@ This architecture realizes the confirmed Product, User Experience, and MCP contr
 
 Agents call one MCP boundary. The broker owns endpoint registration, caller and lineage resolution, logical windows, workspaces, managed tabs, request tickets, routing, status, scheduling, event cursors, recovery decisions, and logs.
 
-Each browser profile installs one extension instance. On first connection the instance presents its randomly generated two-word pairing code, the compact lowercase nickname formed from those words, and its cryptographic profile identity; the loopback broker registers it automatically as one uniquely named endpoint. A nickname collision returns a retryable relay error, after which the still-unpaired extension selects another two-word label and reconnects without changing its cryptographic identity. The code is a correlation label rather than an authentication secret. Later connections prove the persisted profile identity through broker challenge authentication. The paired extension executes the broker's extension-supported CDP subset through `chrome.debugger`. Neither agent nor extension assigns logical ownership or selects a private Chrome target directly.
+Each browser profile installs one extension instance. On first connection the instance presents its saved generated or customized two-word pairing code, the compact lowercase nickname formed from those words, and its cryptographic profile identity; the loopback broker registers it automatically as one uniquely named endpoint. A nickname collision returns an explicit relay error and leaves the saved label unchanged until the operator chooses another. The code is a correlation label rather than an authentication secret. Later connections prove the persisted profile identity through broker challenge authentication, and the broker accepts a requested nickname change only after that proof. The paired extension executes the broker's extension-supported CDP subset through `chrome.debugger`. Neither agent nor extension assigns logical ownership or selects a private Chrome target directly.
 
 ### Public references are separated from replaceable browser locators
 
 The broker issues `session_ref`, `lineage_ref`, `window_ref`, `workspace_ref`, `tab_ref`, `request_ref`, and cursors. Private Chrome window, tab, group, target, debugger, child-session, connection, and message identifiers remain behind the broker boundary.
 
-Every public managed-tab command carries `workspace_ref` and `tab_ref`. Browser-issued CDP handles may appear inside raw CDP parameters or results, but never replace Octopus identity.
+Every public managed-tab command carries `workspace_ref` and `tab_ref`. Browser-issued CDP handles may appear inside raw CDP parameters or results, but never replace Tabro identity.
 
 ### Every installed browser profile reaches the broker through Native Messaging
 
@@ -52,7 +52,7 @@ The broker runs as one local service. MCP adapters, extension connections, worke
 
 ### Installation prepares both agent runtimes and each browser profile
 
-Scripted installation builds the broker and extension, registers the MCP server for Codex and Hermes, installs the Native Messaging host, and verifies local readiness. Each intended Chrome or AdsPower profile loads its own extension, which generates its readable code and registers automatically when the running broker is reachable. Installation provides no broker-code issuance or user-entry step.
+Scripted installation builds the broker and extension, registers the MCP server for Codex and for the default plus every installed named Hermes profile, installs the Native Messaging host, and verifies local readiness. Hermes profiles remain isolated: each profile stores its own MCP entry and launches its own session-owned adapter, while every adapter reaches the same local broker. Running the registration script again after profile creation brings the new profile into the registered set. Each intended Chrome or AdsPower profile loads its own extension, which generates a default readable code, accepts optional customization in its options page, and registers automatically when the running broker is reachable. Installation provides no broker-code issuance or required user-entry step.
 
 Installation reports one explicit unmet prerequisite at a time. It does not become an agent-visible browser-automation tool.
 
@@ -241,9 +241,9 @@ Durable audit retains request metadata, hashes, transitions, routing decisions, 
 
 ### Cross-boundary invariants define conformance
 
-- The broker is the sole issuer of Octopus references and cursors.
+- The broker is the sole issuer of Tabro references and cursors.
 - One paired extension identity represents one browser-profile endpoint.
-- A first relay-v2 connection carries an extension-generated two-word code, its combined lowercase nickname, and the profile key; automatic local registration retries with another two-word label after collision, precedes challenge-authenticated reconnects, and never treats the readable code as authorization.
+- A first relay-v2 connection carries a saved generated or customized two-word code, its combined lowercase nickname, and the profile key; automatic local registration preserves a colliding request for operator correction, authenticated reconnects can rename the endpoint, and the readable code never grants authorization.
 - Public commands never carry private Chrome routing identifiers.
 - Every async ticket is durable and delivered before its effect is eligible.
 - Rejected preconditions create no public ticket and no browser effect.
@@ -267,3 +267,17 @@ Unit and contract tests prove schemas, policy, state machines, references, and i
 Real-world qualification uses Codex and Hermes sessions against separately installed and automatically paired Chrome and AdsPower profiles. Test-driven changes return through the owning vault level; executable behavior never silently establishes higher-level intent.
 
 Parent: [`System MOC`](./_MOC.md).
+
+## Profile lifecycle
+
+### Profile state survives browser and Broker shutdown independently of online endpoints
+
+The persistent directory owns Profile references, immutable directory keys, principal ownership and optional endpoint bindings. A separate instance record retains launch generation, process identity and observations. Profile request associations add principal authority without replacing the existing owner/requester ticket schema. Creation reserves Profile, ticket and idempotency key atomically before acknowledgement.
+
+### Signed extension authentication binds a bootstrap grant to one verified instance
+
+The stable private extension directory receives instance-specific bootstrap configuration before its first connection. The extension uses Native Messaging and includes its managed claim in HELLO. The Broker verifies the owned process and challenge signature before atomically consuming a hashed short-lived grant and binding its endpoint identity. Reconnects retain the instance claim; stale instances and missing managed claims are rejected.
+
+### Profile operations serialize independently from tab execution lanes
+
+Profile operations retain the existing acknowledgement-before-dispatch rule. Per-Profile queues and renewable fenced leases serialize lifecycle work, with three concurrent operations and a bounded pending queue. Stop establishes an admission barrier and checks workspaces and in-flight work before normal closure. Unverified process ownership cannot trigger a blind restart or process termination.

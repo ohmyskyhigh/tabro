@@ -12,9 +12,9 @@ Parent: [`Files MOC`](./_MOC.md).
 
 The complete run uses:
 
-- one local Octopus broker;
+- one local Tabro broker;
 - one Codex session and one Hermes session;
-- at least three browser profiles, with one Octopus extension instance in each;
+- at least three browser profiles, with one Tabro extension instance in each;
 - Native Messaging for every normal profile connection;
 - the checked-in local fixture server; and
 - broker-issued endpoint nicknames, window references, workspace references, tab references, request references, and event cursors.
@@ -41,7 +41,7 @@ Node must satisfy the root `package.json` engine (`>=22.12.0`). Building the nat
 
 ### Existing browser profiles and pairing state remain user data
 
-The setup and test commands do not delete browser profiles. Do not reset extension pairing merely to repeat a run. Use **Reset pairing** only when intentionally replacing that endpoint identity; the extension then generates a new readable code, key, and nickname candidate and registers automatically.
+The setup and test commands do not delete browser profiles. Do not reset extension pairing merely to repeat a run or change its alias. Edit and save the pairing code to rename the existing authenticated endpoint. Use **Reset pairing** only when intentionally replacing that endpoint identity; the extension then generates a new readable code, key, and nickname candidate and registers automatically.
 
 ## Installation
 
@@ -62,7 +62,7 @@ The release path uses the standalone updater instead of a source checkout:
 
 ```powershell
 Invoke-WebRequest `
-  https://github.com/ohmyskyhigh/octopus-browser-relay/releases/latest/download/octopus-browser-relay-update.ps1 `
+  https://github.com/ohmyskyhigh/tabro/releases/latest/download/octopus-browser-relay-update.ps1 `
   -OutFile .\octopus-browser-relay-update.ps1
 pwsh -NoProfile -File .\octopus-browser-relay-update.ps1
 ```
@@ -121,20 +121,21 @@ In every intended profile:
 3. Choose **Load unpacked** and select the absolute `extensionPath` printed by the installer.
 4. Confirm extension ID `caekiojlchhifdomfghejkbfpmaklafe`.
 5. Accept the extension's `debugger`, `tabGroups`, and Native Messaging permissions.
-6. Open **Octopus Browser Relay Settings** and observe the profile-local readable pairing code, proposed endpoint nickname, and connection status.
+6. Open **Tabro Settings**, keep or customize the profile-local readable pairing code, and observe the derived endpoint nickname and connection status.
 
 ### The extension pairs automatically without a copied broker code
 
 In that profile's extension options:
 
-1. keep **Native companion** selected;
-2. keep the relay URL aligned with the broker, normally `ws://127.0.0.1:7332/relay`;
-3. choose **Save connection settings** only if you changed either setting; and
-4. wait for `Status: connected`.
+1. keep the generated pairing code or enter two three-to-eight-letter words separated by a hyphen, space, or underscore;
+2. keep **Native companion** selected;
+3. keep the relay URL aligned with the broker, normally `ws://127.0.0.1:7332/relay`;
+4. choose **Save settings and reconnect** after any change; and
+5. wait for `Status: connected`.
 
-On its first connection the extension sends its generated two-word code, combined lowercase nickname, and public profile identity to the loopback broker. For example, `MINT-WAVE` appears as endpoint nickname `mintwave`. The broker registers the endpoint automatically, then uses challenge authentication for that and later connections. The readable code identifies this installation for the human; it is not a password or an authorization grant.
+On its first connection the extension sends its saved generated or customized two-word code, combined lowercase nickname, and public profile identity to the loopback broker. For example, `MINT-WAVE` appears as endpoint nickname `mintwave`. The broker registers the endpoint automatically, then uses challenge authentication for that and later connections. A code change on an existing endpoint takes effect only after that authentication. The readable code identifies this installation for the human; it is not a password or an authorization grant.
 
-Repeat this in every profile. Each profile has separate extension storage and therefore generates its own identity, code, and nickname. If two unpaired profiles happen to select the same nickname, the later extension receives a retryable conflict, chooses another two-word label, and retries without human input.
+Repeat this in every profile. Each profile has separate extension storage and therefore retains its own identity, code, and nickname across ordinary browser restarts. If another endpoint already owns the chosen nickname, the extension preserves the code and displays a conflict; enter a different code and save again.
 
 ### Health confirms how many paired endpoints are currently connected
 
@@ -175,15 +176,15 @@ Open `.relay-data/bootstrap/MCP-REGISTRATION.md`. Merge `.relay-data/bootstrap/c
 
 The generated fragment launches the compiled Node stdio adapter and supplies the loopback broker URL, `.relay-data/admin-token.txt` path, and `codex` runtime label. It does not embed the token. The repository generates the fragment but does not locate or overwrite the active Codex configuration.
 
-### Hermes follows the generated command for the installed CLI release
+### Hermes registers the generated adapter in every installed profile
 
-Open `.relay-data/bootstrap/hermes-mcp.txt` and run its exact command. The command launches the same stdio adapter with the loopback broker URL, local token-file path, and `hermes` runtime label. Then run:
+Open `.relay-data/bootstrap/hermes-mcp.txt` and run its exact command. The command invokes the profile-aware registration helper, discovers the default profile and every installed named profile, and registers the same stdio adapter with the loopback broker URL, local token-file path, and `hermes` runtime label in each profile. Start a new session in every profile being qualified, then run:
 
 ```powershell
-hermes mcp test octopus-browser-relay
+hermes -p <profile> mcp test tabro
 ```
 
-The repository does not install Hermes or validate every Hermes CLI release. If the installed CLI rejects the generated syntax, capture `hermes mcp add --help` and treat registration as blocked rather than changing the broker contract.
+Repeat the generated registration command after creating another Hermes profile. The repository does not install Hermes or validate every Hermes CLI release. If the installed CLI rejects the generated syntax, capture `hermes mcp add --help` and treat registration as blocked rather than changing the broker contract.
 
 ### Separate stdio adapter processes distinguish independent sessions without model-authored IDs
 
@@ -201,7 +202,7 @@ The broker hands an accepted ticket to the stdio adapter before dispatch eligibi
 
 Give the agent this task in natural language:
 
-> Use Octopus Browser Relay. First read the connected endpoint choices and their eligible windows. Do not invent any reference. Request one workspace on endpoint `<nickname>` using the most recently focused eligible window, and poll the returned request ticket until it reaches a terminal or paused condition. Report the broker-issued `workspace_ref`, initial `tab_ref`, and initial event cursor.
+> Use Tabro. First read the connected endpoint choices and their eligible windows. Do not invent any reference. Request one workspace on endpoint `<nickname>` using the most recently focused eligible window, and poll the returned request ticket until it reaches a terminal or paused condition. Report the broker-issued `workspace_ref`, initial `tab_ref`, and initial event cursor.
 
 Passing evidence contains:
 
@@ -285,7 +286,7 @@ Record this table for the run:
 | Checkpoint | Required evidence |
 | --- | --- |
 | Setup | Installer output and preflight `READY` |
-| Pairing | A distinct displayed extension-generated code and endpoint nickname plus `Status: connected` in every profile, with no manual code entry |
+| Pairing | A distinct saved generated or customized code and endpoint nickname plus `Status: connected` in every profile, with no broker-issued code entry |
 | MCP surface | Exactly fourteen canonical tools in Codex and Hermes |
 | Ticket ordering | Accepted `request_ref` observed before terminal result |
 | Routing | A/B/C workspaces return A/B/C fixture markers |
@@ -302,7 +303,7 @@ State which browser product and version, extension version, broker service versi
 
 - The native host and installer are Windows-specific.
 - The defaults include the installed AdsPower/SunBrowser Native Messaging root; another AdsPower or Chromium variant can require its actual registry root through the installer's and preflight's `-NativeRegistryRoots` parameter.
-- The installer generates but does not apply Codex or Hermes configuration.
+- The installer generates but does not apply Codex configuration. Its generated Hermes command applies registration to every profile installed when that command runs; profiles created later require another run.
 - Independent-session proof requires one stdio adapter process per session or a supported runtime session environment value; a deliberately shared unidentified adapter process cannot pass it.
 - An adapter crash between the broker's HTTP handoff and the adapter's stdout write can leave dispatched work whose ticket was not received by the agent runtime.
 - The relay-v1 compatibility path and older real-world harness files are migration evidence; they do not substitute for the canonical fourteen-tool checkpoints above.

@@ -25,7 +25,7 @@ export function isTerminalRequestState(state: OctopusRequestState): boolean {
 
 export function assertRequestTransition(from: OctopusRequestState, to: OctopusRequestState): void {
   if (from === to || !transitions[from].includes(to)) {
-    throw new Error(`Invalid Octopus request transition: ${from} -> ${to}`);
+    throw new Error(`Invalid Tabro request transition: ${from} -> ${to}`);
   }
 }
 
@@ -46,7 +46,7 @@ export function updateRequestProgress(
   }
   const next = { ...current, ...update };
   if (isTerminalRequestState(next.state) && next.pauseCondition !== null) {
-    throw new Error('A terminal Octopus request cannot retain a pause condition.');
+    throw new Error('A terminal Tabro request cannot retain a pause condition.');
   }
   return next;
 }

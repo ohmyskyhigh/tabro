@@ -30,6 +30,7 @@ const PAIRING_NOUNS = [
 ] as const;
 
 const PAIRING_CODE_PATTERN = /^[A-Z]{3,8}-[A-Z]{3,8}$/;
+const PAIRING_CODE_ERROR = 'Pairing code must contain two 3-8 letter words separated by one hyphen.';
 
 export async function loadOrCreateIdentity(): Promise<DeviceIdentity> {
   const stored = await chrome.storage.local.get([
@@ -47,14 +48,19 @@ export async function loadOrCreateIdentity(): Promise<DeviceIdentity> {
     const endpointId = typeof stored.endpointId === 'string'
       ? stored.endpointId
       : typeof stored.targetId === 'string' ? stored.targetId : undefined;
-    const pairingCode = typeof stored.profilePairingCode === 'string'
-      && PAIRING_CODE_PATTERN.test(stored.profilePairingCode)
-      ? stored.profilePairingCode
+    const storedPairingCode = typeof stored.profilePairingCode === 'string'
+      ? normalizePairingCode(stored.profilePairingCode)
+      : null;
+    const pairingCode = storedPairingCode && PAIRING_CODE_PATTERN.test(storedPairingCode)
+      ? storedPairingCode
       : endpointId ? null : createRandomPairingCode();
-    const generatedNickname = pairingCode ? createNicknameFromPairingCode(pairingCode) : null;
-    const proposedNickname = endpointId && typeof stored.proposedNickname === 'string'
-      ? stored.proposedNickname
-      : generatedNickname ?? (typeof stored.targetAlias === 'string' ? stored.targetAlias : 'octopus');
+    const proposedNickname = pairingCode
+      ? createNicknameFromPairingCode(pairingCode)
+      : typeof stored.endpointNickname === 'string'
+        ? stored.endpointNickname
+        : typeof stored.targetAlias === 'string'
+          ? stored.targetAlias
+          : typeof stored.proposedNickname === 'string' ? stored.proposedNickname : 'octopus';
     if (stored.proposedNickname !== proposedNickname || stored.profilePairingCode !== pairingCode) {
       await chrome.storage.local.set({ proposedNickname, profilePairingCode: pairingCode });
     }
@@ -116,6 +122,26 @@ export function createRandomPairingCode(previous: string | null = null): string 
 
 export function createNicknameFromPairingCode(pairingCode: string): string {
   return pairingCode.replace('-', '').toLowerCase();
+}
+
+export function normalizePairingCode(value: string): string {
+  return value.trim().toUpperCase().replace(/[\s_]+/g, '-');
+}
+
+export function validatePairingCode(value: string): string {
+  const normalized = normalizePairingCode(value);
+  if (!PAIRING_CODE_PATTERN.test(normalized)) throw new Error(PAIRING_CODE_ERROR);
+  return normalized;
+}
+
+export async function saveCustomPairingCode(value: string): Promise<{
+  pairingCode: string;
+  proposedNickname: string;
+}> {
+  const pairingCode = validatePairingCode(value);
+  const proposedNickname = createNicknameFromPairingCode(pairingCode);
+  await chrome.storage.local.set({ profilePairingCode: pairingCode, proposedNickname });
+  return { pairingCode, proposedNickname };
 }
 
 export async function regeneratePairingLabel(): Promise<{ pairingCode: string; proposedNickname: string }> {

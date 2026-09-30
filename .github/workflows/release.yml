@@ -40,5 +40,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $assets = Get-ChildItem artifacts/release/*.zip, artifacts/release/*.sha256, artifacts/release/octopus-browser-relay-update.ps1 | ForEach-Object FullName
+          $assets = Get-ChildItem artifacts/release/*.zip, artifacts/release/*.sha256, artifacts/release/tabro-update.ps1 | ForEach-Object FullName
           gh release create $env:GITHUB_REF_NAME @assets --generate-notes --verify-tag

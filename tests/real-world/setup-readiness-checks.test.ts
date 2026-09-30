@@ -22,28 +22,37 @@ describe('real-world setup readiness checks', () => {
     const instructionsPath = join(root, 'bootstrap', 'MCP-REGISTRATION.md');
     const codexRegistrationPath = join(root, 'bootstrap', 'codex-mcp.toml');
     const hermesRegistrationPath = join(root, 'bootstrap', 'hermes-mcp.txt');
+    const hermesRegistrationHelperPath = join(root, 'tools', 'register-hermes-profiles.ps1');
     const adminTokenPath = join(root, 'data', 'admin-token.txt');
     const brokerUrl = 'http://127.0.0.1:7331/mcp';
     mkdirSync(join(root, 'dist'), { recursive: true });
     mkdirSync(join(root, 'bootstrap'), { recursive: true });
+    mkdirSync(join(root, 'tools'), { recursive: true });
     writeFileSync(adapterPath, 'adapter');
     writeFileSync(instructionsPath, `Codex ${codexRegistrationPath}\nHermes ${hermesRegistrationPath}\nadapter ${adapterPath}`);
     writeFileSync(codexRegistrationPath, [
-      '[mcp_servers.octopus-browser-relay]',
+      '[mcp_servers.tabro]',
       `args = [${JSON.stringify(adapterPath)}]`,
-      `env = { OCTOPUS_BROKER_URL = "${brokerUrl}", OCTOPUS_BROWSER_RELAY_TOKEN_FILE = ${JSON.stringify(adminTokenPath)}, OCTOPUS_RUNTIME = "codex" }`
+      `env = { TABRO_BROKER_URL = "${brokerUrl}", TABRO_TOKEN_FILE = ${JSON.stringify(adminTokenPath)}, TABRO_RUNTIME = "codex" }`
     ].join('\n'));
     writeFileSync(hermesRegistrationPath, [
-      'hermes mcp add octopus-browser-relay',
-      `--command node --env "OCTOPUS_BROKER_URL=${brokerUrl}"`,
-      `"OCTOPUS_BROWSER_RELAY_TOKEN_FILE=${adminTokenPath}" "OCTOPUS_RUNTIME=hermes" --args "${adapterPath}"`
+      `pwsh -NoProfile -File '${hermesRegistrationHelperPath}'`,
+      `-NodeExecutable 'node' -AdapterPath '${adapterPath}'`,
+      `-BrokerUrl '${brokerUrl}' -TokenFile '${adminTokenPath}'`
     ].join(' '));
+    writeFileSync(hermesRegistrationHelperPath, [
+      "$namedProfiles = @('alpha')",
+      "return @('default') + $namedProfiles",
+      "$arguments = @('mcp', 'add', 'tabro')",
+      "$environment = @('TABRO_RUNTIME=hermes')"
+    ].join('\n'));
 
     expect(inspectMcpHandoffs({
       adapterPath,
       instructionsPath,
       codexRegistrationPath,
       hermesRegistrationPath,
+      hermesRegistrationHelperPath,
       adminTokenPath,
       brokerUrl
     }).map(({ status }) => status)).toEqual(['ready', 'ready']);
@@ -54,6 +63,7 @@ describe('real-world setup readiness checks', () => {
       instructionsPath,
       codexRegistrationPath,
       hermesRegistrationPath,
+      hermesRegistrationHelperPath,
       adminTokenPath,
       brokerUrl
     })[1]).toMatchObject({ name: 'mcp_registration_handoffs', status: 'action_required' });

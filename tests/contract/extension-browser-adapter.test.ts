@@ -9,7 +9,9 @@ import {
 } from '../../apps/browser-extension/src/browser/tab-groups.js';
 import {
   createNicknameFromPairingCode,
-  createRandomPairingCode
+  createRandomPairingCode,
+  normalizePairingCode,
+  validatePairingCode
 } from '../../apps/browser-extension/src/identity/device-identity.js';
 
 const makeTab = (overrides: Partial<chrome.tabs.Tab> = {}): chrome.tabs.Tab => ({
@@ -128,6 +130,14 @@ describe('extension browser adapter', () => {
     expect(code).not.toMatch(/\d/);
     expect(createRandomPairingCode(code)).not.toBe(code);
     expect(createNicknameFromPairingCode('MINT-WAVE')).toBe('mintwave');
+  });
+
+  it('normalizes a customized pairing code into one deterministic persistent alias', () => {
+    expect(normalizePairingCode('  calm_reef  ')).toBe('CALM-REEF');
+    expect(validatePairingCode('calm reef')).toBe('CALM-REEF');
+    expect(createNicknameFromPairingCode(validatePairingCode('calm reef'))).toBe('calmreef');
+    expect(() => validatePairingCode('no-short')).toThrow('two 3-8 letter words');
+    expect(() => validatePairingCode('MINT-WAVE-EXTRA')).toThrow('two 3-8 letter words');
   });
 
   it('reconciles private locators and performs tab-group mutations without creating public IDs', async () => {

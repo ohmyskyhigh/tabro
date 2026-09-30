@@ -1,12 +1,12 @@
 # Product definition
 
-Octopus Browser Relay is a local, MCP-accessible browser-control product that lets AI-agent sessions automate websites across multiple Chrome profiles without managing Chrome remote-debugging ports, pipes, or broker-private browser routing.
+Tabro is a local, MCP-accessible browser-control product that lets AI-agent sessions automate websites across multiple Chrome profiles without managing Chrome remote-debugging ports, pipes, or broker-private browser routing.
 
 The project is open source under the MIT License. The broker and its browser connections operate locally.
 
 ## Target client
 
-The target client is an AI-agent session. The agent calls Octopus Browser Relay through MCP to perform website automation across one or more browser profiles.
+The target client is an AI-agent session. The agent calls Tabro through MCP to perform website automation across one or more browser profiles.
 
 Developers and human operators are not target clients. Installation, pairing, and maintenance are supporting operations rather than the product's browser-automation experience.
 
@@ -14,7 +14,7 @@ The expected human adopters are technically sophisticated AI users who are comfo
 
 ## Agent problem
 
-Before Octopus Browser Relay, an agent controlling multiple Chrome profiles commonly connects directly to remote-debugging ports and must preserve the relationship among each connection, browser profile, window, target, and tab.
+Before Tabro, an agent controlling multiple Chrome profiles commonly connects directly to remote-debugging ports and must preserve the relationship among each connection, browser profile, window, target, and tab.
 
 ### A physical browser connection can fail without revealing whether the browser remains usable
 
@@ -42,7 +42,7 @@ The core product problem is therefore not a lack of CDP capability. It is that d
 
 ## Product promise
 
-Octopus Browser Relay replaces agent-managed Chrome remote-debugging ports, pipes, and private target mappings with named browser endpoints, session-aware browser workspaces, and opaque broker-issued managed-tab references.
+Tabro replaces agent-managed Chrome remote-debugging ports, pipes, and private target mappings with named browser endpoints, session-aware browser workspaces, and opaque broker-issued managed-tab references.
 
 The broker retains browser identity, workspace ownership, routing, current status, coordination decisions, and operational history outside the agent's working context. The agent remains responsible for choosing CDP commands and deciding what the returned browser facts mean for its website task.
 
@@ -52,19 +52,19 @@ The promise includes the confirmed workspace and managed-tab targeting rules. It
 
 ### Each participating browser profile becomes one uniquely named extension endpoint
 
-Every browser profile used with Octopus installs a distinct Octopus extension instance. The instance randomly selects two short English words as a readable pairing code and combines those words into a compact lowercase endpoint nickname without a numeric suffix, such as pairing code `MINT-WAVE` and nickname `mintwave`. It persists that label alongside its separate cryptographic profile identity. On its first connection to the local broker, the extension registers itself automatically as one browser-profile endpoint; the human does not obtain or enter a broker-generated code.
+Every browser profile used with Tabro installs a distinct Tabro extension instance. The instance initially selects two short English words as a readable pairing code, and the operator may replace that default with two three-to-eight-letter words in the extension options. The extension normalizes and persists the code in profile-local storage, then combines the words into a compact lowercase endpoint nickname without a numeric suffix, such as pairing code `MINT-WAVE` and nickname `mintwave`. On its first connection to the local broker, the extension registers itself automatically as one browser-profile endpoint; the human does not obtain or enter a broker-generated code.
 
 The readable pairing code helps the human correlate an installed extension with its broker endpoint. It is not the reconnect credential or an authorization secret. The extension persists a separate cryptographic profile identity, and the broker authenticates later connections against that identity.
 
-The nickname is unique among endpoints registered with the same local broker. If a newly generated nickname collides with another profile identity, the extension generates another two-word label and retries registration automatically.
+The saved code remains the authoritative source of the nickname across ordinary browser windows, service-worker restarts, and reconnects. An already registered endpoint changes its nickname only after the broker authenticates the same persisted profile identity. The nickname is unique among endpoints registered with the same local broker; when a requested nickname belongs to another identity, the extension preserves the code and shows the conflict until the operator chooses another.
 
 ### Pairing makes browser capacity discoverable without assigning it permanently to an agent
 
 Automatic pairing makes an extension endpoint available for discovery. Known paired endpoints remain discoverable with their current condition even when they cannot accept a workspace. Pairing does not hard-bind an endpoint to an agent.
 
-An agent may request a workspace on a designated endpoint or ask Octopus to assign one. The broker establishes and records the resulting workspace binding at session time. A requested workspace count means that many distinct browser profiles and endpoints; the same profile or endpoint cannot satisfy the count more than once.
+An agent may request a workspace on a designated endpoint or ask Tabro to assign one. The broker establishes and records the resulting workspace binding at session time. A requested workspace count means that many distinct browser profiles and endpoints; the same profile or endpoint cannot satisfy the count more than once.
 
-If the connected eligible endpoint set cannot satisfy that distinct count or a designated endpoint is not eligible, Octopus rejects the request before ticket admission and creates no workspace; an unavailable designation is not silently replaced. If an admitted multi-profile request later fails while creating its set, the request finishes failed, keeps any workspaces already created, and reports their references and other known facts without presenting a partial-success outcome.
+If the connected eligible endpoint set cannot satisfy that distinct count or a designated endpoint is not eligible, Tabro rejects the request before ticket admission and creates no workspace; an unavailable designation is not silently replaced. If an admitted multi-profile request later fails while creating its set, the request finishes failed, keeps any workspaces already created, and reports their references and other known facts without presenting a partial-success outcome.
 
 ### A browser workspace links one endpoint, one browser window, and one agent-session lineage
 
@@ -74,43 +74,43 @@ An agent-session lineage consists of a top-level agent session and its authorize
 
 ### Workspace acquisition creates a tab group in one eligible existing browser window
 
-Octopus represents eligible existing browser windows with broker-issued logical window references. An agent may select one of those windows for a workspace; when it does not, Octopus uses the most recently focused eligible existing window on that endpoint. Workspace acquisition creates a new tab group in that selected existing window rather than creating another browser window.
+Tabro represents eligible existing browser windows with broker-issued logical window references. An agent may select one of those windows for a workspace; when it does not, Tabro uses the most recently focused eligible existing window on that endpoint. Workspace acquisition creates a new tab group in that selected existing window rather than creating another browser window.
 
 ### A persisted workspace without its browser group or tabs ends and receives a replacement
 
-If a persisted workspace no longer has its Chrome tab group or any live workspace tabs, Octopus ends that logical workspace instead of reconstructing browser state under its old `workspace_ref`. The same acquisition journey automatically creates a replacement workspace with a new broker-issued reference and reports both the ended workspace and its replacement.
+If a persisted workspace no longer has its Chrome tab group or any live workspace tabs, Tabro ends that logical workspace instead of reconstructing browser state under its old `workspace_ref`. The same acquisition journey automatically creates a replacement workspace with a new broker-issued reference and reports both the ended workspace and its replacement.
 
 ### Every successful workspace acquisition gives the agent at least one managed-tab target
 
 The managed browser tab is the unit of agent control. Every successful workspace acquisition includes at least one current tab together with opaque broker-issued logical workspace and tab references.
 
-Octopus can add another tab to an existing workspace, establish its workspace membership, and provide its broker-issued logical tab reference.
+Tabro can add another tab to an existing workspace, establish its workspace membership, and provide its broker-issued logical tab reference.
 
 ### Opener-linked child tabs inherit browser-work ownership without exposing Chrome target identity
 
-When a page in a managed tab opens a child tab in the same browser window, Octopus adopts the child into the opener's workspace and tab group and issues a `tab_ref`. When the opener-linked child appears in a new browser window, Octopus creates a related child workspace and issues a new `workspace_ref` and `tab_ref` for it.
+When a page in a managed tab opens a child tab in the same browser window, Tabro adopts the child into the opener's workspace and tab group and issues a `tab_ref`. When the opener-linked child appears in a new browser window, Tabro creates a related child workspace and issues a new `workspace_ref` and `tab_ref` for it.
 
 ### The paired extension is the browser-control transport
 
 The broker resolves a logical workspace-and-tab target to the paired extension. That extension relays CDP traffic through `chrome.debugger`.
 
-Chrome remote-debugging ports and pipes are not part of this execution path. Extension attachment details and broker-private routing identifiers remain inside Octopus.
+Chrome remote-debugging ports and pipes are not part of this execution path. Extension attachment details and broker-private routing identifiers remain inside Tabro.
 
 ### The CDP surface stays inside the selected managed-tab tree
 
-Octopus exposes the portion of `chrome.debugger` that it can prove remains within the selected managed-tab target tree. A domain or method that the extension API does not support, or whose effects cannot be confined to that tree, is unavailable instead of being routed through a browser-wide fallback.
+Tabro exposes the portion of `chrome.debugger` that it can prove remains within the selected managed-tab target tree. A domain or method that the extension API does not support, or whose effects cannot be confined to that tree, is unavailable instead of being routed through a browser-wide fallback.
 
-Every CDP call names one logical workspace and one managed tab. Octopus does not expose browser-wide or exclusive-browser control.
+Every CDP call names one logical workspace and one managed tab. Tabro does not expose browser-wide or exclusive-browser control.
 
 Agents can inspect a paginated capability view through their browser context before submitting a command. An unsupported or out-of-managed-tab-scope method is also rejected precisely before admission, so discovery and reactive correction use the same current capability boundary without adding a separate capability product.
 
 ### Raw CDP facts remain protocol data rather than typed website outcomes
 
-The agent uses CDP methods and parameters and can receive raw CDP results, extension-debugger errors, and event data without Octopus replacing them with typed website-operation outcomes.
+The agent uses CDP methods and parameters and can receive raw CDP results, extension-debugger errors, and event data without Tabro replacing them with typed website-operation outcomes.
 
 Browser-generated CDP handles may be passed back unchanged when a later permitted command in the same managed-tab scope requires them; the agent does not invent those handles.
 
-Octopus does not define typed website operations or decide whether a CDP result proves that a click, navigation, or website task succeeded. The agent selects the permitted CDP commands and interprets their results.
+Tabro does not define typed website operations or decide whether a CDP result proves that a click, navigation, or website task succeeded. The agent selects the permitted CDP commands and interprets their results.
 
 ### Every managed tab begins with a broker-issued event cursor
 
@@ -129,19 +129,19 @@ The broker is the source of truth for the relationships and facts needed to coor
 
 ### Every asynchronous CDP command is durably ticketed and acknowledged before dispatch
 
-Every CDP command, including one expected to finish quickly, is an asynchronous browser request. Octopus durably records its broker-issued request ticket and delivers that ticket to the caller before dispatching the command to the extension. If the acknowledgement cannot be delivered, Octopus treats that as an immediate transport failure and does not dispatch the command.
+Every CDP command, including one expected to finish quickly, is an asynchronous browser request. Tabro durably records its broker-issued request ticket and delivers that ticket to the caller before dispatching the command to the extension. If the acknowledgement cannot be delivered, Tabro treats that as an immediate transport failure and does not dispatch the command.
 
 A disconnected extension preserves a nonterminal request at a durable checkpoint. Its pause condition remains separate from its lifecycle state instead of becoming another terminal outcome.
 
 ### An ambiguous raw CDP effect after reconnect waits for explicit human resolution
 
-After the same endpoint reconnects, Octopus first reconciles the selected tab and current browser state. If a previously dispatched raw CDP effect still cannot be proved, the request stays nonterminal and waits for human confirmation rather than finishing as uncertain or being repeated automatically.
+After the same endpoint reconnects, Tabro first reconciles the selected tab and current browser state. If a previously dispatched raw CDP effect still cannot be proved, the request stays nonterminal and waits for human confirmation rather than finishing as uncertain or being repeated automatically.
 
-The owning agent asks the human what happened and records either confirmed completion or a failed restart decision through Octopus. Confirmed completion finishes the request successfully. A failed restart records that the effect may have occurred, keeps the old tab in the active group for inspection, and starts replacement-tab creation.
+The owning agent asks the human what happened and records either confirmed completion or a failed restart decision through Tabro. Confirmed completion finishes the request successfully. A failed restart records that the effect may have occurred, keeps the old tab in the active group for inspection, and starts replacement-tab creation.
 
 Replacement creation makes one initial attempt and no more than two retries, reconciling the workspace before each retry. Accepted later commands targeting the old tab finish failed without browser dispatch and are never redirected to the replacement, and the old tab remains managed for inspection.
 
-When creation succeeds, Octopus issues a new `tab_ref` and initial event cursor so the agent can restart its workflow on the replacement. If all three attempts fail, the original CDP ticket and its resolution ticket both finish failed, the original records that its effect may have occurred, no replacement reference is returned, and the old managed-tab lane releases atomically. The workspace remains active, and the agent can use the existing managed-tab creation capability to recover deliberately.
+When creation succeeds, Tabro issues a new `tab_ref` and initial event cursor so the agent can restart its workflow on the replacement. If all three attempts fail, the original CDP ticket and its resolution ticket both finish failed, the original records that its effect may have occurred, no replacement reference is returned, and the old managed-tab lane releases atomically. The workspace remains active, and the agent can use the existing managed-tab creation capability to recover deliberately.
 
 ### Independent sessions remain separate while related subagents can continue shared work
 
@@ -167,7 +167,7 @@ A workspace task-stop pauses automation for one `workspace_ref`, blocks new ordi
 
 An explicit asynchronous workspace resume reconciles the workspace and clears only its manual workspace-stop cause. It does not clear an endpoint-kill cause.
 
-An endpoint-wide kill switch pauses automation for every workspace on one endpoint and remains in effect until an explicit endpoint resume. Endpoint kill or resume is admitted only when the caller owns every active workspace on that endpoint. Otherwise Octopus rejects the control synchronously without a ticket and offers workspace-level stop instead. Once either endpoint control is accepted, ownership of every workspace on that endpoint remains unchanged until that control ticket becomes terminal. This freeze applies only to ownership and does not establish another lifecycle or allocation rule.
+An endpoint-wide kill switch pauses automation for every workspace on one endpoint and remains in effect until an explicit endpoint resume. Endpoint kill or resume is admitted only when the caller owns every active workspace on that endpoint. Otherwise Tabro rejects the control synchronously without a ticket and offers workspace-level stop instead. Once either endpoint control is accepted, ownership of every workspace on that endpoint remains unchanged until that control ticket becomes terminal. This freeze applies only to ownership and does not establish another lifecycle or allocation rule.
 
 Endpoint resume reconciles the endpoint's live browser state, clears only the endpoint-kill cause, and continues work whose workspace has no remaining independent stop cause.
 
@@ -175,7 +175,7 @@ Endpoint resume reconciles the endpoint's live browser state, clears only the en
 
 After its ticket acknowledgement is delivered, endpoint kill has the highest control priority, workspace stop has the next priority within its workspace, termination and takeover have priority over ordinary CDP work, and ordinary CDP has the lowest priority. Endpoint kill and workspace stop remain independent pause causes rather than replacing each other.
 
-Takeover and termination may proceed while a workspace is paused. Takeover preserves both pause causes, endpoint resume clears only the endpoint-kill cause, and successful termination ends the workspace regardless of either pause. Concurrent termination and takeover are resolved by the first eligible valid workspace-state commit. An eligible winning takeover does not wait for an already-dispatched effect: ownership and active-ticket authority move immediately, and Octopus reconciles that effect under the replacement owner instead of cancelling it.
+Takeover and termination may proceed while a workspace is paused. Takeover preserves both pause causes, endpoint resume clears only the endpoint-kill cause, and successful termination ends the workspace regardless of either pause. Concurrent termination and takeover are resolved by the first eligible valid workspace-state commit. An eligible winning takeover does not wait for an already-dispatched effect: ownership and active-ticket authority move immediately, and Tabro reconciles that effect under the replacement owner instead of cancelling it.
 
 An accepted takeover, termination, or resolution control that loses its state-changing race finishes failed rather than uncertain. A `confirmed_succeeded` resolution can finish under a workspace stop or endpoint kill because it does not mutate the browser. The browser-mutating `restart_failed` recovery waits until every applicable workspace-stop and endpoint-kill fence has cleared.
 
@@ -185,14 +185,14 @@ Ticket access follows either requester scope or current workspace-owner authorit
 
 A terminal ticket has no visibility timeout. Its applicable requester or current owner can close it to remove it from that authority's agent-visible request view; closing has no undo and does not remove the broker's internal audit record.
 
-Octopus does not expose per-request cancellation and does not impose a broker terminal timeout. Elapsed time or a reported stall can remain visible as a nonterminal fact but cannot by itself finish a request.
+Tabro does not expose per-request cancellation and does not impose a broker terminal timeout. Elapsed time or a reported stall can remain visible as a nonterminal fact but cannot by itself finish a request.
 
 ## Capability summary
 
 | Capability | Product outcome |
 | --- | --- |
 | Endpoint discovery and workspace acquisition | An agent can discover paired browser profiles by nickname and condition, then request one or more session-time workspaces without a permanent agent-to-profile binding. |
-| Managed-tab lifecycle | A workspace request counts each endpoint once, creates or resumes each admitted tab-group workspace in an eligible existing window, and supplies a broker-issued managed-tab target; Octopus can create additional tabs and adopt opener-linked child tabs without exposing Chrome target identity. |
+| Managed-tab lifecycle | A workspace request counts each endpoint once, creates or resumes each admitted tab-group workspace in an eligible existing window, and supplies a broker-issued managed-tab target; Tabro can create additional tabs and adopt opener-linked child tabs without exposing Chrome target identity. |
 | Extension-relayed CDP | An agent can send permitted raw CDP commands and receive raw results, extension-debugger errors, and events without handling a debugging port, pipe, attachment, or private browser target. |
 | Capability discovery and correction | An agent can inspect a paginated capability view and receives precise pre-admission rejection for a method that the current extension-backed managed-tab surface cannot execute. |
 | Durable request recovery | Every CDP command is ticketed and acknowledged before dispatch, disconnect pauses remain visible without adding a request state, ambiguous reconnect effects wait for explicit human resolution, exhausted replacement recovery fails both the original and resolver tickets and releases the old lane without losing the managed tab or workspace, and elapsed time does not cancel or terminalize a request. |
@@ -208,7 +208,7 @@ Octopus does not expose per-request cancellation and does not impose a broker te
 
 The product succeeds when an agent can:
 
-- discover Octopus Browser Relay through MCP;
+- discover Tabro through MCP;
 - discover paired browser endpoints by nickname and condition;
 - acquire each requested workspace on a distinct browser endpoint and an eligible existing window, with at least one broker-issued managed-tab reference;
 - create another managed tab inside an existing workspace and receive its logical reference;
@@ -253,16 +253,26 @@ When a reconnect leaves a raw CDP effect ambiguous after tab reconciliation, the
 | One browser profile could be counted repeatedly while requested capacity remains unavailable. | Workspace counts use distinct connected eligible endpoints, reject an admission-time shortfall without creation, and retain created workspace facts if an admitted multi-profile operation later fails. |
 | Long tasks can lose browser-target context. | The broker retains session, workspace, and managed-tab relationships outside the agent's working memory. |
 | Direct CDP requires socket, attachment, and target management. | The paired extension relays permitted CDP through logical workspace-and-tab targets. |
-| CDP-created tabs do not automatically carry Octopus workspace identity. | Octopus creates agent-requested workspace tabs, establishes their membership, and returns broker-issued logical references. |
-| Page-created child tabs can escape the opener's logical workspace. | Octopus adopts an opener-linked child in the same window or creates a related child workspace when it opens in another window. |
-| A fixed typed-operation catalog would constrain CDP and require operation-specific semantics. | Octopus forwards managed-tab-confined methods, parameters, raw results, debugger errors, and events without inventing website-operation outcomes. |
+| CDP-created tabs do not automatically carry Tabro workspace identity. | Tabro creates agent-requested workspace tabs, establishes their membership, and returns broker-issued logical references. |
+| Page-created child tabs can escape the opener's logical workspace. | Tabro adopts an opener-linked child in the same window or creates a related child workspace when it opens in another window. |
+| A fixed typed-operation catalog would constrain CDP and require operation-specific semantics. | Tabro forwards managed-tab-confined methods, parameters, raw results, debugger errors, and events without inventing website-operation outcomes. |
 | Independent sessions can interfere inside one browser. | The broker assigns separate tab-group workspaces and resolves each call through the calling session's workspace relationship. |
 | Related subagents need to continue one browser process. | Authorized members of the same lineage can share a workspace and submit concurrent raw CDP calls, while each accepted call for one managed tab retains the lane through its complete nonterminal cycle and cannot be overtaken. |
 | A replaced session can leave useful browser state and in-flight work behind. | A replacement session can deliberately take over the exact existing workspace, receive its active ticket authority immediately at an eligible winning commit, and continue reconciliation without cancelling dispatched work; a losing lifecycle or ownership control finishes failed. |
 | A damaged or unwanted workspace should not continue. | Its owning session can fence new work, fail accepted work that has not started, reconcile dispatched work, confirm the archived group, and then end the workspace; failed reconciliation or archiving leaves the workspace active and paused. |
 | A workspace or endpoint may need to stop before browser context is discarded. | Endpoint kill and workspace stop install independent prioritized fences ahead of ordinary CDP; explicit workspace resume and endpoint resume reconcile and clear only their own pause causes, endpoint-wide control requires ownership of every active workspace in scope, and accepted endpoint control freezes that ownership until it becomes terminal. |
-| A command response can disappear after dispatch. | Octopus reconciles the current tab, then waits for explicit human resolution if the effect remains ambiguous; it neither claims success nor repeats the command automatically, and exhausted replacement recovery fails both the original and resolver tickets while preserving a deliberate tab-creation recovery path. |
-| A broker or extension outage can invalidate an event stream. | Octopus preserves logical workspace and tab identity, reconciles the current live page, and issues a fresh initial cursor without reload or event replay. |
+| A command response can disappear after dispatch. | Tabro reconciles the current tab, then waits for explicit human resolution if the effect remains ambiguous; it neither claims success nor repeats the command automatically, and exhausted replacement recovery fails both the original and resolver tickets while preserving a deliberate tab-creation recovery path. |
+| A broker or extension outage can invalidate an event stream. | Tabro preserves logical workspace and tab identity, reconciles the current live page, and issues a fresh initial cursor without reload or event replay. |
 | Browser failures are difficult to reconstruct. | Broker-owned operational history preserves the relationships and lifecycle facts needed for diagnosis and recovery. |
 
 Parent: [`01-Product`](./_MOC.md).
+
+## Managed Profiles
+
+### Agents can create and reopen persistent Profiles with an automatically connected extension
+
+The approved managed-Profile journey adds an owned persistent Profile directory to the endpoint model. Agents can list both open and closed Profiles, create an independent Profile, ensure an existing Profile is ready, and normally stop it while retaining its data and extension identity. Management authority belongs to the authenticated installation principal across sessions; workspace authority remains session and lineage based. Existing manually connected endpoints do not acquire process-management rights.
+
+### Lifecycle management keeps browser-wide debugging private to Tabro
+
+On the verified Windows runtime, Tabro uses a private loopback browser connection only to load its extension, inspect the owned instance, prepare an empty window and close normally. Website actions and native tab-group workspaces continue through the extension. Active work prevents a Profile stop.

@@ -17,14 +17,14 @@ afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-describe.runIf(process.platform === 'win32')('local broker stop command', () => {
+describe.runIf(process.platform === 'win32').each(['pwsh', 'powershell'])('local broker stop command (%s)', (shell) => {
   it('refuses an unrelated Node PID and retains its PID file', () => {
     const dataRoot = temporaryDataRoot();
     const child = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore' });
     children.push(child);
     writeFileSync(join(dataRoot, 'broker.pid'), String(child.pid));
 
-    const result = runStop(dataRoot);
+    const result = runStop(dataRoot, shell);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('Refusing to stop process');
     expect(child.exitCode).toBeNull();
@@ -48,7 +48,7 @@ describe.runIf(process.platform === 'win32')('local broker stop command', () => 
     children.push(child);
     writeFileSync(join(dataRoot, 'broker.pid'), String(child.pid));
 
-    const result = runStop(dataRoot);
+    const result = runStop(dataRoot, shell);
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({ status: 'stopped', stopped: true, processId: child.pid });
     expect(existsSync(join(dataRoot, 'broker.pid'))).toBe(false);
@@ -62,15 +62,14 @@ function temporaryDataRoot(): string {
   return root;
 }
 
-function runStop(dataRoot: string): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync('pwsh', [
+function runStop(dataRoot: string, shell: string): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(shell, [
     '-NoProfile',
     '-NonInteractive',
     '-File', stopScript,
     '-WorkspaceRoot', workspace,
     '-DataRoot', dataRoot,
-    '-BrokerEntryPath', sourceBrokerEntry,
-    '-Confirm:$false'
+    '-BrokerEntryPath', sourceBrokerEntry
   ], { encoding: 'utf8', windowsHide: true });
   return { status: result.status, stdout: String(result.stdout), stderr: String(result.stderr) };
 }

@@ -11,6 +11,7 @@ export interface LiveExtensionConnection {
   socket: WebSocket;
   connectedAt: number;
   lastHeartbeatAt: number;
+  lastProbeAt: number;
   inventoryGeneration: number;
   maxEnvelopeBytes: number;
 }

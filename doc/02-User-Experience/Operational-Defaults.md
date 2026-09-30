@@ -6,19 +6,19 @@ These defaults complete the agent-visible behavior needed to implement and test 
 
 ### Debugger detach pauses affected work until attachment reconciliation succeeds
 
-When Chrome reports that the extension debugger detached, Octopus marks the affected tab attachment unusable and pauses work that requires it. The extension may reattach automatically after the conflicting debugger is gone, but it must reconcile the live tab before browser work continues and must never infer that an interrupted command succeeded.
+When Chrome reports that the extension debugger detached, Tabro marks the affected tab attachment unusable and pauses work that requires it. The extension may reattach automatically after the conflicting debugger is gone, but it must reconcile the live tab before browser work continues and must never infer that an interrupted command succeeded.
 
 The agent sees the detach fact, the affected tab, the observation time, and the currently available retry, resolve, stop, or terminate actions. Opening DevTools must not silently move the workspace or retarget a command.
 
 ### Broker restart preserves public tickets and reconciles nonterminal work before continuation
 
-Open public request tickets survive a broker-process restart. Queued work that never dispatched may continue from its durable lane position. Work that may have reached the extension is reconciled before any continuation; Octopus does not automatically replay an ambiguous raw CDP effect.
+Open public request tickets survive a broker-process restart. Queued work that never dispatched may continue from its durable lane position. Work that may have reached the extension is reconciled before any continuation; Tabro does not automatically replay an ambiguous raw CDP effect.
 
 Each recovered tab starts a fresh current-page event baseline. The agent should treat it as beginning work on the currently loaded page with the same logical `workspace_ref` and `tab_ref`, not as a replay of missed events.
 
 ### A valid event cursor is retained within a bounded broker-managed window
 
-Agents must not depend on a fixed retention duration or event count. A valid cursor reads the retained stream while it remains available. When its retained segment has expired, Octopus returns an explicit recovery result containing a fresh broker-issued cursor and current-page baseline rather than returning an empty page or replaying browser history.
+Agents must not depend on a fixed retention duration or event count. A valid cursor reads the retained stream while it remains available. When its retained segment has expired, Tabro returns an explicit recovery result containing a fresh broker-issued cursor and current-page baseline rather than returning an empty page or replaying browser history.
 
 The broker publishes its current retention limits as status or capability facts. Changing numeric retention limits does not change cursor semantics.
 
@@ -30,9 +30,11 @@ Browser restart, extension service-worker restart, Native Messaging restart, and
 
 Reset pairing, explicit re-pair, or extension reinstall creates a new endpoint identity. It does not inherit old workspaces or routing merely because it proposes the same nickname.
 
-### Nickname collisions trigger another automatic two-word selection
+### Existing and manually configured identities preserve their label after a nickname collision
 
-The extension proposes the compact nickname formed by combining its two generated words. If that nickname is already active or reserved for another profile identity, the broker returns a retryable conflict and the unpaired extension generates another two-word code and nickname before retrying automatically. The cryptographic profile identity remains unchanged during collision retry. Resetting pairing creates a new profile identity, code, and nickname candidate.
+The extension proposes the compact nickname formed by combining the two words in its saved generated or customized code. If that nickname is already active or reserved for another profile identity, the broker returns a non-retryable conflict for that code and the extension shows the error without changing the saved label. The operator chooses another code and saves again, while the cryptographic profile identity remains unchanged. Resetting pairing creates a new profile identity, generated code, and nickname candidate.
+
+A new managed Profile without an endpoint may generate a different candidate up to five times on collision, preserving its cryptographic identity and bootstrap binding. Established endpoints and ordinary extensions retain operator-controlled labels.
 
 A retired nickname remains reserved until its endpoint is explicitly revoked or the broker's local maintenance operation releases it. Reusing text never restores the retired endpoint identity.
 
@@ -54,7 +56,7 @@ The broker may label a request stalled and report its last phase, checkpoint, an
 
 A takeover that would change ownership while an accepted endpoint kill or resume is nonterminal is rejected synchronously without a ticket. The result identifies the ownership freeze and exposes the existing endpoint-control ticket when the caller has authority to inspect it.
 
-The agent may retry takeover after the endpoint-control ticket becomes terminal. Octopus does not create a waiting takeover ticket behind the private freeze.
+The agent may retry takeover after the endpoint-control ticket becomes terminal. Tabro does not create a waiting takeover ticket behind the private freeze.
 
 ### Endpoint-control tickets remain requester-scoped after terminalization
 
@@ -72,16 +74,24 @@ Agents may poll less often. Polling never advances, releases, or reorders a brow
 
 ### Oversized raw CDP values fail explicitly instead of being truncated
 
-Raw CDP parameters, results, errors, and event pages remain inline in contract version `1`. When a value exceeds the active inline or message limit, Octopus returns `PAYLOAD_TOO_LARGE` with the applicable limit and never silently truncates JSON.
+Raw CDP parameters, results, errors, and event pages remain inline in contract version `2`. When a value exceeds the active inline or message limit, Tabro returns `PAYLOAD_TOO_LARGE` with the applicable limit and never silently truncates JSON.
 
 Numeric inline, page, and retention limits are broker configuration published through capability facts. Broker-issued resource retrieval can be added in a later contract version after Codex and Hermes prove equivalent support.
 
 ## Compatibility
 
-### Contract version one uses exact schemas and evidence-gated changes
+### Contract version two uses exact schemas and evidence-gated changes
 
-The initial public wire contract is version `1`. Inputs and structured outputs are closed against unknown fields. A compatible implementation may tune documented numeric limits and polling hints; adding, removing, or changing a required public field, discriminator, tool name, state, or ownership rule requires a new contract version and a vault proposal.
+The current public wire contract is version `2`. Inputs and structured outputs are closed against unknown fields. A compatible implementation may tune documented numeric limits and polling hints; adding, removing, or changing a required public field, discriminator, tool name, state, or ownership rule requires a new contract version and a vault proposal.
 
 Codex and Hermes must load the same tool definitions and produce equivalent structured results. Runtime quirks are handled in adapters and conformance profiles rather than by changing browser semantics for one agent.
 
 Parent: [`User Experience MOC`](./_MOC.md).
+
+## Managed Profiles
+
+### Lifecycle operations have bounded waits without changing raw CDP recovery semantics
+
+The first release supports Windows with verified Chrome 153.0.8010.53. Profiles are owned by the authenticated principal and require profiles:read or profiles:manage; workspace authority remains session-based. Default page size is 50 (maximum 100), display names contain 1–80 characters, create keys contain 8–128 characters, and the pending lifecycle queue is bounded at 32 with three active operations. Queue and extension-ready waits are 120 seconds; launch and normal-close waits are 30 seconds. Bootstrap grants expire after five minutes. Request and Profile leases are renewed during long operations.
+
+The directory reports process and extension observations separately from ready and automation_paused. State is reconciled on Broker startup and every ten seconds. Unverified ownership remains unknown. Disabling launchesEnabled in the managed configuration rejects create/open while preserving authorized list/stop. Stop retains Profile data and refuses active browser work.

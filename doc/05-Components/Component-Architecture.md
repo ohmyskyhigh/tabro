@@ -11,7 +11,7 @@ Components are operational owners of confirmed System responsibilities. They may
 | Component | Repository owner | Primary responsibility |
 | --- | --- | --- |
 | Broker Runtime | `apps/broker/src/runtime` | Process composition, validated configuration, lifecycle, health, and dependency wiring |
-| MCP Gateway | `apps/broker/src/mcp` and `apps/mcp-stdio-adapter` | Codex/Hermes transport adapters, caller evidence, fourteen tools, schema publication, and acknowledgement-delivery confirmation |
+| MCP Gateway | `apps/broker/src/mcp` and `apps/mcp-stdio-adapter` | Codex/Hermes transport adapters, caller evidence, eighteen tools, schema publication, and acknowledgement-delivery confirmation |
 | Broker Core | `apps/broker/src/core` | Logical identity, authority, admission, routing, request lifecycle, scheduling, reconciliation, controls, status, and audit decisions |
 | Durable Store | `apps/broker/src/storage` | Atomic persistence, migrations, repositories, request/event/audit retention, and restart recovery queries |
 | Extension Gateway | `apps/broker/src/extension-relay` and `apps/native-host` | Automatic relay-v2 endpoint registration, authenticated live connections, bounded framing, generation fencing, and extension message correlation |
@@ -144,9 +144,9 @@ Read-model queries implement bounded context and ticket-discovery pages with que
 
 ### Extension Gateway registers first connections and authenticates later generations
 
-For an unpaired relay-v2 extension, the gateway validates the two-word code format, proposed nickname, profile public key, and negotiated capability manifest, then asks the broker to register the endpoint automatically. The readable code supports human correlation and does not grant authority. A duplicate nickname belonging to another profile key returns the retryable `ENDPOINT_NICKNAME_CONFLICT` relay error so the extension can choose another two-word label.
+For an unpaired relay-v2 extension, the gateway validates the two-word code format, proposed nickname, profile public key, and negotiated capability manifest, then asks the broker to register the endpoint automatically. The readable code supports human correlation and does not grant authority. A duplicate nickname belonging to another profile key returns `ENDPOINT_NICKNAME_CONFLICT` so the extension can preserve the requested label and wait for operator correction.
 
-After registration, the gateway validates the persisted endpoint identity through challenge authentication, negotiates relay-protocol and capability versions, and registers one current connection generation. A replacement connection fences the older generation before it can return results. Relay-v1 broker-generated one-time codes remain migration-only behavior and are not part of the current installation journey.
+After registration, the gateway validates the persisted endpoint identity through challenge authentication, applies any requested alias change only after that proof, negotiates relay-protocol and capability versions, and registers one current connection generation. A replacement connection fences the older generation before it can return results. Relay-v1 broker-generated one-time codes remain migration-only behavior and are not part of the current installation journey.
 
 Connection presence is a fact sent to Broker Core. Gateway never derives `usable`, `busy`, `failing`, workspace ownership, or retry policy itself.
 
@@ -164,9 +164,9 @@ Private relay message and command-attempt identifiers correlate extension acknow
 
 ### Each profile-local extension persists one identity, readable code, and nickname
 
-The extension creates a cryptographic profile identity in profile-local extension storage, randomly selects and persists two short English words, combines them into a lowercase nickname without separators or digits, and starts automatic registration when the local transport connects. The options page displays the hyphenated two-word code, proposed or final nickname, Native Messaging readiness, and connection status without accepting a pairing-code input. Before pairing completes, a nickname-conflict response replaces only the readable label and retries; it does not replace the cryptographic identity.
+The extension creates a cryptographic profile identity in profile-local extension storage, randomly selects and persists two short English words as its default code, combines them into a lowercase nickname without separators or digits, and starts automatic registration when the local transport connects. The options page accepts a replacement two-word code, previews the derived nickname, and displays Native Messaging readiness and connection status. Saving preserves the key and reconnects; a nickname-conflict response preserves the readable label and waits for another operator choice.
 
-Ordinary service-worker or browser restart preserves the identity, code, and endpoint. Reset, reinstall, or re-pair creates a new identity, code, and nickname candidate and cannot inherit old logical workspaces.
+Ordinary service-worker or browser restart preserves the identity, saved code, and endpoint. When a paired profile changes its code, the broker authenticates the persisted key before atomically changing the legacy and canonical endpoint names. Reset, reinstall, or re-pair creates a new identity, generated code, and nickname candidate and cannot inherit old logical workspaces.
 
 ### Browser inventory reconciliation precedes managed-tab mutation
 
@@ -205,7 +205,7 @@ The manifest describes scope and support; Browser Extension executes. Broker Cor
 
 ### Installation scripts are idempotent and report explicit readiness
 
-Setup scripts build artifacts, register the native host, register MCP configuration for Codex and Hermes, print extension load paths, verify broker health, and explain automatic extension pairing. They do not issue or ask the human to enter a pairing code. Re-running them repairs matching configuration without deleting pairing or workspace state unless reset is explicitly requested.
+Setup scripts build artifacts, register the native host, generate MCP configuration for Codex, register MCP configuration separately in the default and every installed named Hermes profile, print extension load paths, verify broker health, and explain automatic extension pairing. The Hermes helper discovers the installed profile directories when it runs and must run again after another profile is created. The scripts do not issue or require a pairing code; optional profile-local customization happens in the extension options. Re-running them repairs matching configuration without deleting pairing or workspace state unless reset is explicitly requested.
 
 Runtime-specific templates remain separate from agent-visible MCP schemas.
 
@@ -230,3 +230,9 @@ Extension Gateway compares the connected extension version with the broker's req
 A failing test can fix an implementation defect directly when the canonical behavior is clear. A test that demonstrates an incompatible runtime or unusable threshold produces a proposal at the owning UX, UI, System, Component, or File level before changing canonical behavior.
 
 Parent: [`Components MOC`](./_MOC.md).
+
+## Profile management
+
+### The Broker Profile Manager coordinates lifecycle operations before workspace allocation
+
+The Profile Manager under `apps/broker/src/profiles` owns the persistent directory, launcher coordination, instance observations, ready predicate and stopping barrier. ProfileRequestService integrates principal-scoped lifecycle requests with durable admission, acknowledgement, worker claims and terminal facts. ChromeLauncher owns the Windows process check and private lifecycle connection. BootstrapGrants owns credential validation and atomic binding after signed AUTH. The existing extension relay remains the website execution owner.
