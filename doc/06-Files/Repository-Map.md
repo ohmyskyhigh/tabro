@@ -4,7 +4,6 @@ Status: canonical map of the app-owned implementation and verification paths as 
 
 This File-level document says where confirmed Component responsibilities are implemented. Source and tests remain the authority for the runtime behavior they execute. Relay-v1 files retained for migration do not redefine the canonical eighteen-tool MCP contract.
 
-Parent: [`Files MOC`](./_MOC.md).
 
 ## Repository root
 
@@ -12,7 +11,7 @@ Parent: [`Files MOC`](./_MOC.md).
 
 | Path | Current responsibility | Component owner |
 | --- | --- | --- |
-| `package.json` | Version `0.3.0`, Node engine, pnpm version, broker, migration-only relay-v1 pairing, build, test, verification, and smoke scripts | Broker Runtime and Setup and Qualification |
+| `package.json` | Source package version, Node engine, pnpm version, broker, migration-only relay-v1 pairing, build, test, verification, and smoke scripts | Broker Runtime and Setup and Qualification |
 | `pnpm-lock.yaml` | Locked JavaScript dependency graph | Setup and Qualification |
 | `pnpm-workspace.yaml` | App workspace discovery plus allowed native package builds | Setup and Qualification |
 | `tsconfig.json` | Editor and full TypeScript typecheck configuration | Protocol Contract |
@@ -34,8 +33,8 @@ The root `package.json` owns the monorepo scripts and dependencies. `apps/mcp-st
 
 | Path | Current responsibility | Verification |
 | --- | --- | --- |
-| `apps/broker/src/runtime/main.ts` | Loads configuration, starts the application, and handles `SIGINT` and `SIGTERM` shutdown | `tools/smoke-test.ts` and integration tests that create the application |
-| `apps/broker/src/runtime/config.ts` | Validates listener, database, logging, heartbeat, legacy threshold, and token environment values; creates the local token file when needed | Broker startup tests and setup preflight |
+| `apps/broker/src/runtime/main.ts` | Loads configuration, acquires the data-directory PID lock, publishes bound runtime addresses, and removes owned discovery records on shutdown | `tools/smoke-test.ts` and integration tests that create the application |
+| `apps/broker/src/runtime/config.ts` | Validates dynamic listener ports (default 0), database, logging, heartbeat, legacy threshold, and token environment values; creates the local token file when needed | Broker startup tests and setup preflight |
 | `apps/broker/src/runtime/bootstrap.ts` | Constructs SQLite, canonical and legacy broker cores, relay gateway, canonical MCP gateway, health facts, recovery, sweeps, and orderly shutdown | `tests/integration/mcp-gateway.test.ts`, `tests/integration/websocket-gateway.test.ts`, and `tools/smoke-test.ts` |
 
 `apps/broker/src/runtime/bootstrap.ts` exposes the canonical `OctopusBroker` to MCP and retains `BrokerCore` as the relay-v1 migration bridge.
@@ -58,8 +57,8 @@ The HTTP server owns `/mcp` and `/health` on the configured MCP port and rejects
 | Path | Current responsibility | Verification |
 | --- | --- | --- |
 | `apps/mcp-stdio-adapter/package.json` | Declares the private adapter package, version, and compiled binary entry | Workspace install and build |
-| `apps/mcp-stdio-adapter/src/config.ts` | Loads the loopback broker URL and token or token file; resolves Codex, Hermes, explicit, or process-local session evidence | `tests/integration/mcp-stdio-adapter.test.ts` |
-| `apps/mcp-stdio-adapter/src/server.ts` | Publishes eighteen tools over stdio, forwards calls to HTTP MCP with injected caller headers, validates broker results, and strips remote metadata | `tests/integration/mcp-stdio-adapter.test.ts` |
+| `apps/mcp-stdio-adapter/src/config.ts` | Prefers `TABRO_RUNTIME_FILE` discovery over a legacy loopback URL and loads a token or token file; resolves Codex, Hermes, explicit, or process-local session evidence | `tests/integration/mcp-stdio-adapter.test.ts` |
+| `apps/mcp-stdio-adapter/src/server.ts` | Validates Broker health/version/instance, reconnects before new calls on instance change, forwards eighteen tools with caller headers, validates results, and never retries dispatched calls | `tests/integration/mcp-stdio-adapter.test.ts` |
 | `apps/mcp-stdio-adapter/src/main.ts` | Starts the adapter and closes both MCP transports on signals or stdin end | Adapter integration test and compiled launch path |
 | `apps/mcp-stdio-adapter/src/index.ts` | Exports adapter configuration and server APIs | Typecheck and tests |
 | `apps/mcp-stdio-adapter/README.md` | Records adapter configuration, identity fallback, and the two-transport delivery boundary | Source review |
@@ -182,7 +181,7 @@ The same listener exposes `/relay` for WebSocket upgrades and `/health` for setu
 
 | Path | Current responsibility | Verification |
 | --- | --- | --- |
-| `apps/native-host/src/relay-native-host.cpp` | Chrome Native Messaging length framing, bounded JSON control messages, loopback-only URL validation, WinHTTP WebSocket upgrade, bidirectional relay, and closure/error signals | `tests/real-world/native-host-smoke.ts` and physical preflight |
+| `apps/native-host/src/relay-native-host.cpp` | Native Messaging framing, adjacent relay-runtime discovery and process/URL checks, legacy fallback only when discovery is absent, WinHTTP forwarding, and closure/error signals | `tests/real-world/native-host-smoke.ts` and physical preflight |
 
 `dist/native-host/relay-native-host.exe` is generated by `tools/build-native-host.ps1`. The current host name is `io.github.ohmyskyhigh.octopus_browser_relay`; installation removes the prototype registration only when its manifest can be attributed to this extension identity.
 
@@ -197,6 +196,15 @@ The same listener exposes `/relay` for WebSocket upgrades and `/health` for setu
 | `apps/shared/protocol/src/mcp/validators.ts` | Runtime input/output validators and public per-tool JSON Schema roots derived from the canonical schema | `tests/contract/mcp-contract-v2.test.ts` |
 | `apps/shared/protocol/src/domain/references.ts` | Branded canonical public and private reference types | Typecheck and protocol tests |
 | `apps/shared/protocol/src/domain/facts.ts` | Shared endpoint, window, workspace, tab, request, and result facts | Typecheck and broker tests |
+
+### Runtime discovery locates a Broker without becoming a browser authority
+
+| Path | Current responsibility | Verification |
+| --- | --- | --- |
+| `apps/shared/protocol/src/runtime-discovery.ts` | Closed discovery schema, local URLs, process liveness, atomic publication and instance-owned removal | `tests/integration/runtime-discovery.test.ts` |
+| `apps/shared/protocol/src/version.ts` | Shared service version used by Broker and adapter | Version consistency during release staging |
+| `tests/integration/runtime-discovery.test.ts` | Discovery priority, invalid/dead records, replacement ownership and restart with stable caller identity | Isolated dynamic-port Broker/stdio integration |
+| `tests/integration/native-runtime-discovery.test.ts` | Native relay discovery overrides an obsolete URL and rejects an invalid record | Windows; requires `dist/native-host/relay-native-host-dynamic.exe`, otherwise skipped |
 
 ### Relay-v2 schemas define profile inventory, generations, operations, results, and events
 
@@ -228,31 +236,52 @@ The same listener exposes `/relay` for WebSocket upgrades and `/health` for setu
 | `doc/zh-CN/Installation-and-Setup.md` | Chinese GitHub Release, source build, browser extension, Codex, Hermes, update, stop, and troubleshooting procedure | `tests/contract/public-documentation.test.ts`, release rehearsal, and physical runbook evidence |
 | `doc/zh-CN/Architecture-and-MCP.md` | Chinese explanatory map of components, request lifecycle, controls, tools, CDP boundary, and update gate | `tests/contract/public-documentation.test.ts`, canonical English parent links, and contract tests |
 
-### Build and installation scripts create reproducible local artifacts without editing agent configuration
+### Build and installation scripts generate handoffs while Hermes registration applies them
 
 | Path | Current responsibility | Verification |
 | --- | --- | --- |
 | `tools/build-extension.ts` | Bundles the service worker and options page, then copies the manifest and HTML into `dist/browser-extension` | `pnpm build:extension` and manifest contract test |
-| `tools/build-native-host.ps1` | Locates the Visual Studio x64 tools and builds the WinHTTP companion into `dist/native-host` | `pnpm build:native` and native smoke test |
-| `tools/stage-release.ts` | Bundles portable broker and MCP adapter entries, copies release runtime files plus English/Chinese public guides, checks synchronized versions, and writes the per-file release manifest | `pnpm stage:release` and release-package rehearsal |
+| `tools/build-native-host.ps1` | Locates the Visual Studio x64 tools and builds the WinHTTP companion into `dist/native-host`; accepts an output path for isolated builds | `pnpm build:native` and native smoke test |
+| `tools/stage-release.ts` | Bundles portable broker and MCP adapter entries, copies release runtime files plus English/Chinese public guides, checks synchronized versions, and writes the per-file release manifest with runtime discovery version 1 | `pnpm stage:release` and release-package rehearsal |
 | `tools/package-release.ps1` | Runs verification/build, stages the Windows release, produces the ZIP, archive checksum, and standalone updater asset | `pnpm package:release` and the tag release workflow |
-| `tools/update-local.ps1` | Resolves a GitHub Release or local rehearsal package, verifies archive and file hashes, installs versioned runtime files, preserves data, refreshes stable extension/MCP/native paths including the Hermes all-profile helper, starts and health-checks the broker, and rolls back failed startup | Local update rehearsal and release runbook |
+| `tools/update-local.ps1` | Resolves a GitHub Release or local rehearsal package, verifies archive/file hashes and discovery support before shutdown, installs versioned runtime files, preserves data, refreshes stable extension/MCP/native paths including the Hermes all-profile helper, starts and health-checks the broker, and rolls back failed startup | Local update rehearsal and release runbook |
 | `tools/stop-installed-broker.ps1` | Stops only the PID whose command line names the stable installed broker launcher | Local update rehearsal |
 | `tools/register-hermes-profiles.ps1` | Discovers the default and installed named Hermes profiles, then registers the same Tabro stdio adapter and all eighteen tools in each isolated profile | `tests/real-world/register-hermes-profiles.test.ts` and per-profile `hermes mcp list`/`test` |
-| `tools/installed-broker-launcher.mjs` | Loads the broker entry selected by installed `current-release.json` | Installed broker startup and health check |
-| `tools/installed-mcp-adapter-launcher.mjs` | Loads the MCP adapter entry selected by installed `current-release.json` | Codex/Hermes tool discovery through an installed release |
+| `tools/installed-broker-launcher.mjs` | Loads the selected broker, supplies installed discovery paths and dynamic-port defaults, and loads managed configuration | Installed broker startup and health check |
+| `tools/installed-mcp-adapter-launcher.mjs` | Loads the selected adapter and supplies installed runtime-file discovery | Codex/Hermes tool discovery through an installed release |
 | `tools/copy-assets.ts` | Copies SQLite migrations into the compiled `dist` tree | `pnpm build` |
 | `tools/create-pairing-code.ts` | Retains broker-generated short-lived codes only for relay-v1 migration fixtures | `pnpm pair:legacy --nickname <name>` and storage pairing tests |
 | `tools/install-local.ps1` | Builds dependencies/artifacts, verifies the compiled stdio adapter, writes and registers the current-user Native Messaging manifest, generates automatic-pairing and Codex plus all-installed-profile Hermes stdio handoffs, optionally starts the broker, or runs readiness without `-Install` | `tests/real-world/setup-readiness.ts` and physical runbook |
-| `tools/real-world-preflight.ps1` | Runs setup readiness and optionally the retained earlier run-manifest checkpoint | Setup readiness and operator output |
+| `tools/real-world-preflight.ps1` | Runs setup readiness with explicit discovered URLs; legacy fixed defaults remain and `-RunId` is rejected | Setup readiness and operator output |
 | `tools/smoke-test.ts` | Starts an in-memory application and checks the MCP transport/tool surface | `pnpm smoke` |
+
+### Shared startup, Demo evidence and offline migrations have explicit file owners
+
+| Path | Current responsibility | Verification |
+| --- | --- | --- |
+| `tools/start-local-broker.ps1` | Startup mutex, matching healthy process reuse, data/discovery paths and dynamic ports | Recorded local startup and duplicate-start qualification |
+| `tools/stop-local-broker.ps1` | Checks recorded PID and exact compiled entry before stopping | `tests/real-world/stop-local-broker.test.ts` |
+| `tools/prepare-single-agent-demo.ts` | Starts/reuses the shared Broker, starts a fixture and saves its runtime/trace manifest; shutdown closes only the fixture | Shared-runtime qualification record and Demo runbook |
+| `tools/single-agent-demo-call.ts` | Forwards explicit Agent calls and polls tickets using the manifest URL and stable session | `tests/e2e/single-agent-multi-extension.test.ts`; restart caveat in Demo runbook |
+| `tools/snapshot-demo-runtime.ts` | Captures owned Profile process observations for a run | Demo evidence verifier |
+| `tools/verify-single-agent-demo.ts` | Invokes the evidence verifier for a recorded run | `tests/demo/evidence-verifier.test.ts` |
+| `apps/mcp-stdio-adapter/src/demo-trace.ts` | Writes bounded redacted MCP call/result evidence | `tests/unit/demo-trace.test.ts` |
+| `tests/demo/fixture-server.ts` | Local three-account task and summary fixture | `tests/demo/fixture-server.test.ts` |
+| `tests/demo/evidence-verifier.ts` | Checks assignments, traces, process identity and fixture outcomes | `tests/demo/evidence-verifier.test.ts` |
+| `tests/demo/RUNBOOK.md` | Physical managed-Profile Demo preparation, Agent execution and cleanup | Dated implementation report; does not assert a fresh physical run |
+| `tools/migrate-hermes-tabro.py` | Plans/applies/verifies active-reference migration with backups and checked rollback | `tests/migrations/test_hermes_tabro.py` |
+| `tools/hermes-tabro-rules.json` | Scoped rename and preservation rules for the migration CLI | Migration tests |
+| `tools/merge-broker-databases.py` | Produces a separate merged SQLite store, offsets integer history IDs and rejects schema/identity/integrity conflicts | `tests/migrations/test_broker_store_merge.py` |
+
+Migration backups, live configurations, credentials and browser data remain local ignored evidence. These CLIs do not run during ordinary startup. The Demo caller currently uses a saved MCP URL, while generated ordinary MCP registrations use runtime discovery; the runbook documents how to refresh a Demo after Broker restart.
 
 ### The canonical physical procedure lives beside the File map
 
 | Path | Current responsibility |
 | --- | --- |
 | `doc/06-Files/Real-World-Runbook.md` | Native installation, profile pairing, fixture, Codex/Hermes handoff, ticketed CDP, multi-profile behavior, recovery, controls, evidence, and cleanup |
-| `tests/real-world/setup-readiness.ts` | Machine-readable checks for built and installed runtime readiness |
+| `tests/real-world/setup-readiness.ts` | Machine-readable readiness checks; direct CLI defaults still require explicit dynamic health/MCP URL arguments |
+| `tests/real-world/setup-readiness-checks.ts` | Handoff and native-registration checks; literal broker-URL checks still need adaptation for runtime-file handoffs |
 | `tests/real-world/fixture-server.ts` | Loopback A/B/C browser-isolation fixture pages |
 | `tests/real-world/native-host-smoke.ts` | Native Messaging companion framing and forwarding evidence |
 
@@ -312,7 +341,7 @@ The E2E extension clients are simulated. Canonical physical acceptance remains t
 | --- | --- |
 | `dist/browser-extension/` | Unpacked extension bundle loaded by Chrome and AdsPower |
 | `dist/` | Compiled JavaScript, copied migrations, and native executable |
-| `.relay-data/` | Local token, SQLite database, PID, Native Messaging manifest, and generated registration/pairing handoff |
+| `.relay-data/` | Local token, SQLite database, runtime discovery, startup lock, PID, Native Messaging manifest, and generated registration/pairing handoff |
 | `artifacts/` | Local automated and physical test evidence |
 | `artifacts/release/` | Staged release tree, Windows ZIP, checksum, and standalone updater generated by release packaging |
 
@@ -326,7 +355,7 @@ These paths do not become canonical documentation and must not be committed with
 - Native browser-to-loopback forwarding stays under `apps/native-host`.
 - MCP SDK and HTTP transport code stay under `apps/broker/src/mcp`.
 - SQL and migrations stay under `apps/broker/src/storage`.
-- logical routing, authority, lifecycle, recovery, and control decisions stay under `apps/broker/src/core`.
+- workspace routing, authority, recovery and control stay under `apps/broker/src/core`; managed Profile lifecycle and its request service stay under `apps/broker/src/profiles`.
 - shared public, relay, and capability schemas stay under `apps/shared/protocol`.
 - process composition stays under `apps/broker`.
 - local installation and artifact construction stay under `tools`.
@@ -347,3 +376,20 @@ Tests may import public Component ports and dedicated fixtures. Production code 
 | `apps/broker/src/storage/sqlite/profile-repository.ts` | Persistent directory, leases and request associations | `tests/integration/profile-repository.test.ts` |
 | `apps/browser-extension/src/identity/managed-bootstrap.ts` | Initialize the managed relay before every connect entry point | managed Profile physical probe |
 | `tools/configure-managed-profiles.ps1` | Verified runtime configuration and directory ACL | isolated configuration smoke check |
+
+### Managed runtime support files preserve launch identity and upgrade evidence
+
+| Source | Responsibility | Verification |
+| --- | --- | --- |
+| `apps/broker/src/profiles/runtime-config.ts` | Validates managed browser, extension and storage configuration | `tests/real-world/managed-profile-installation.test.ts` |
+| `apps/broker/src/profiles/types.ts` | Internal Profile, instance, launcher and observation contracts | Typecheck and managed Profile tests |
+| `apps/broker/src/profiles/management-connection.ts` | Private browser lifecycle connection | Launcher and physical Profile probes |
+| `apps/broker/src/storage/sqlite/migrations/006-managed-profiles.sql` | Profile directory, instance, request, idempotency, grant and lease persistence | `tests/integration/profile-repository.test.ts` |
+| `tools/managed-upgrade-snapshot.mjs` | Busy checks, consistent database snapshots and retained Profile metadata | `tests/real-world/managed-profile-installation.test.ts` |
+| `tools/probe-managed-chrome.ts` | Isolated physical Chrome bootstrap and retained-state probe | `tests/real-world/managed-chrome-probe.test.ts` checks harness behavior; physical run remains separate |
+| `tools/probe-profile-manager.ts` | Physical Profile Manager lifecycle and Broker restart qualification | Dated implementation report |
+| `tools/probe-profile-upgrade.ts` | Isolated old/new runtime upgrade and downgrade evidence | Dated implementation report |
+| `tools/lib/chrome-probe-control.ts` | Scoped probe-root and process controls | Managed Chrome probe tests |
+| `tests/e2e/single-agent-multi-extension.test.ts` | Simulated single-session multi-endpoint execution and recovery | Automated E2E, not a physical Chrome run |
+
+Parent: [`Files MOC`](./_MOC.md).

@@ -9,6 +9,8 @@ artifacts/release/
 outputs/
 work/
 coverage/
+__pycache__/
+*.py[cod]
 *.log
 *.obj
 *.sqlite

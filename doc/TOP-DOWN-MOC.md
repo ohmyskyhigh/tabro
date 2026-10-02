@@ -17,8 +17,22 @@ This is the entry point for project knowledge. Read canonical knowledge in autho
 - [`90-Proposals/`](./90-Proposals/_MOC.md) contains proposed vault changes and migration material.
 - [`99-Changelog/`](./99-Changelog/_MOC.md) records applied vault changes.
 
-The Product contract is confirmed. Each participating browser profile installs a separate Tabro extension instance, generates or accepts a customized readable pairing code, persists its derived endpoint nickname, and registers automatically as one uniquely named local-broker endpoint without a copied broker code. A requested-name collision remains visible until the operator chooses another code. Workspace capacity counts distinct connected eligible profiles. Agents select broker-issued logical windows or accept the most-recently-focused eligible default; the broker creates tab-group workspaces there, supplies managed tabs and initial event cursors, and routes confined CDP through the paired extension. Request tickets precede browser dispatch, pause and recovery facts remain broker-owned, and workspace or endpoint controls preserve inspectable browser state.
+## Current baseline
 
-The User Experience contract and operational defaults are confirmed for implementation. The canonical User Interface exposes eighteen tools through one exact Draft 2020-12 wire schema. The canonical System keeps logical truth in the broker, confines raw CDP to managed tabs through one extension per profile, issues durable request tickets before dispatch, serializes each tab's full request cycle, and recovers through explicit reconciliation and controls. The Component layer assigns this behavior to eight owners nested beneath their owning applications, while the File layer maps broker modules under `apps/broker`, independent runtimes under sibling app directories, shared protocol source under `apps/shared/protocol`, setup under `tools`, tests under `tests`, and generated output under root `dist`. Numeric limits, runtime adapters, capability fixtures, and operational thresholds may be tuned through evidence-backed proposals; logical identity, ownership, ticket ordering, recovery, and control semantics remain fixed.
+### Canonical owners cover managed Profiles and the shared dynamic runtime
 
-The active implementation plan is [`80-Plans/octopus-browser-relay-implementation-2026-08-31`](./80-Plans/octopus-browser-relay-implementation-2026-08-31/README.md). Existing implementation documentation and the earlier plan remain preserved as migration evidence rather than delivered proof of the new architecture.
+The Product and UX contracts include principal-owned persistent Profiles alongside session-owned tab-group workspaces. User Interface owns MCP contract version `2`: eighteen tools, including Profile list/create/open/stop. System owns the shared local Broker, runtime discovery and recovery rules; Components assigns their owners; Files maps their source, tests and operator procedures. Follow those owners for the normative details.
+
+The source package version is recorded in `package.json`. Repository publication evidence is in [the September 30 source publication](./99-Changelog/2026-09-30-tabro-source-publication.md); publication of source does not establish publication of an equivalent installer package.
+
+## Delivery records
+
+### Completed migrations and pending integration work have separate evidence
+
+- [Managed Profile implementation report](./80-Plans/single-agent-multi-chrome-demo-2026-09-27/implementation-report.md) records the September 27 Windows qualification and its limits.
+- [Hermes reference migration](./99-Changelog/2026-10-01-hermes-tabro-migration.md) and [shared dynamic runtime](./99-Changelog/2026-10-01-shared-dynamic-runtime.md) record the October 1 changes in execution order.
+- [Hermes Provider plan](./80-Plans/tabro-hermes-provider-2026-10-01/README.md) owns the remaining Plugin, cross-platform installation and upstream menu work. Shared-runtime consolidation is complete in that plan; those later milestones remain pending.
+- [Runtime conformance follow-up](./80-Plans/runtime-conformance-follow-up-2026-10-02/README.md) records the audit's pending discovery-helper, isolated-probe, scheduler-bound and retention work. Canonical requirements do not by themselves prove these implementations exist.
+- [The August implementation plan](./80-Plans/octopus-browser-relay-implementation-2026-08-31/README.md) remains a historical implementation and qualification record. Its original fourteen-tool scope does not override the current MCP contract.
+
+[Development plans](./80-Plans/_MOC.md) routes other work; [the changelog](./99-Changelog/_MOC.md) records applied documentation updates. These records do not override the canonical owners above.

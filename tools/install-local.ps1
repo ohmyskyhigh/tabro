@@ -11,8 +11,8 @@ param(
   [string]$ExtensionPath = '',
   [string]$NativeHostPath = '',
   [string]$BootstrapRoot = '',
-  [string]$McpUrl = 'http://127.0.0.1:7331/mcp',
-  [string]$RelayUrl = 'ws://127.0.0.1:7332/relay',
+  [string]$McpUrl = 'http://127.0.0.1:0/mcp',
+  [string]$RelayUrl = 'ws://127.0.0.1:0/relay',
   [string[]]$NativeRegistryRoots = @(
     'HKCU:\Software\Google\Chrome\NativeMessagingHosts',
     'HKCU:\Software\Chromium\NativeMessagingHosts',
@@ -82,11 +82,19 @@ $codexTemplate = Join-Path $bootstrap 'codex-mcp.toml'
 $hermesTemplate = Join-Path $bootstrap 'hermes-mcp.txt'
 $adminTokenFile = Join-Path $data 'admin-token.txt'
 $brokerPidFile = Join-Path $data 'broker.pid'
+$runtimeFile = Join-Path $data 'runtime.json'
 $mcpUri = Assert-LoopbackUri $McpUrl @('http', 'https') 'MCP URL'
 $relayUri = Assert-LoopbackUri $RelayUrl @('ws', 'wss') 'Relay URL'
 $mcpHealthUrl = $McpUrl -replace '/mcp$', '/health'
 $relayHealthScheme = $relayUri.Scheme -replace '^ws$', 'http' -replace '^wss$', 'https'
 $relayHealthUrl = '{0}://{1}/health' -f $relayHealthScheme, $relayUri.Authority
+if (Test-Path -LiteralPath $runtimeFile) {
+  try {
+    $running = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
+    $mcpHealthUrl = $running.mcpUrl -replace '/mcp$', '/health'
+    $relayHealthUrl = ($running.relayUrl -replace '^ws:', 'http:') -replace '/relay$', '/health'
+  } catch { }
+}
 
 if (-not (Test-Path -LiteralPath (Join-Path $workspace 'package.json'))) {
   throw "Workspace does not contain package.json: $workspace"
@@ -192,13 +200,13 @@ if (-not $SkipNativeRegistration) {
 $nodeExecutable = (Get-Command node -ErrorAction Stop).Source
 $codexNodeJson = ConvertTo-Json $nodeExecutable -Compress
 $codexAdapterJson = ConvertTo-Json $mcpAdapter -Compress
-$codexBrokerUrlJson = ConvertTo-Json $McpUrl -Compress
+$codexRuntimeFileJson = ConvertTo-Json $runtimeFile -Compress
 $codexTokenFileJson = ConvertTo-Json $adminTokenFile -Compress
 $codexConfig = @"
 [mcp_servers.tabro]
 command = $codexNodeJson
 args = [$codexAdapterJson]
-env = { TABRO_BROKER_URL = $codexBrokerUrlJson, TABRO_TOKEN_FILE = $codexTokenFileJson, TABRO_RUNTIME = "codex" }
+env = { TABRO_RUNTIME_FILE = $codexRuntimeFileJson, TABRO_TOKEN_FILE = $codexTokenFileJson, TABRO_RUNTIME = "codex" }
 "@
 $codexConfig | Set-Content -LiteralPath $codexTemplate -Encoding utf8
 
@@ -209,8 +217,8 @@ $hermesCommand = @(
   (ConvertTo-PowerShellLiteral $nodeExecutable),
   '-AdapterPath',
   (ConvertTo-PowerShellLiteral $mcpAdapter),
-  '-BrokerUrl',
-  (ConvertTo-PowerShellLiteral $McpUrl),
+  '-RuntimeFile',
+  (ConvertTo-PowerShellLiteral $runtimeFile),
   '-TokenFile',
   (ConvertTo-PowerShellLiteral $adminTokenFile)
 ) -join ' '
@@ -221,15 +229,15 @@ $mcpGuide = @"
 
 The installer generated instructions but did not overwrite Codex or Hermes configuration.
 
-1. Start the broker and confirm $mcpHealthUrl returns status: ok.
+1. Start the shared Broker, read mcpUrl from $runtimeFile, replace /mcp with /health, and require status: ok.
 2. Codex: merge the contents of $codexTemplate into the applicable Codex config.toml, then start a new Codex session.
 3. Hermes: run the command stored in $hermesTemplate. It registers Tabro in the default profile and every named profile installed when the command runs. Start a new session in each profile, then run: hermes -p <profile> mcp test tabro
-4. Both registrations launch $mcpAdapter as a stdio MCP server. Each adapter process injects its Codex or Hermes session evidence outside tool arguments and forwards the canonical eighteen tools to $McpUrl. Broker and adapter must both use MCP contract v2.
+4. Both registrations launch $mcpAdapter as a stdio MCP server. Each adapter process injects its Codex or Hermes session evidence outside tool arguments and discovers the shared Broker through $runtimeFile and forwards the canonical eighteen tools. Broker and adapter must both use MCP contract v2.
 5. The adapter prefers CODEX_THREAD_ID, CODEX_SESSION_ID, HERMES_SESSION_ID, or HERMES_AGENT_SESSION_ID. When the runtime supplies none of them, it creates one random session key for that adapter process. A runtime must launch a separate adapter process for each independent agent session when it supplies no session ID.
 6. The generated registrations point to $adminTokenFile; they do not embed the bearer token. Do not paste the token into chat, documentation, source control, or retained shell history.
 7. Rerun the Hermes command after creating another Hermes profile so the new isolated profile receives the MCP registration.
 
-The broker URL is parameterized as $McpUrl.
+The Broker publishes actual MCP and relay addresses to $runtimeFile. Port 0 requests free ports from the operating system. Demo and ordinary sessions share this runtime.
 "@
 $mcpGuide | Set-Content -LiteralPath $mcpInstructions -Encoding utf8
 
@@ -239,7 +247,7 @@ $pairingGuide = @"
 1. Open chrome://extensions in each intended Chrome or AdsPower profile.
 2. Enable developer mode, choose **Load unpacked**, and select $extension.
 3. Confirm extension ID $extensionId and accept the debugger, tabGroups, and Native Messaging permissions.
-4. Open Tabro settings. Keep **Native companion** selected and relay URL $RelayUrl.
+4. Open Tabro settings. Keep **Native companion** selected. It discovers the actual relay address from relay-runtime.json beside the native executable; a saved legacy URL is only used when no discovery record exists.
 5. The extension generates and displays a two-word profile-local pairing code and compact combined endpoint nickname, such as MINT-WAVE and mintwave. It registers automatically with the running local broker; do not request or enter a broker-generated code. A nickname collision selects another two-word label and retries automatically.
 6. Choose **Save connection settings** only if you changed the transport or relay URL.
 7. Wait for Status: connected, then confirm the broker context lists the final nickname and at least one browser window.
@@ -259,14 +267,24 @@ if ($StartBroker -and -not (Test-Health $mcpHealthUrl)) {
     RELAY_DB_PATH = (Join-Path $data 'relay.sqlite')
     RELAY_MCP_PORT = $mcpUri.Port.ToString()
     RELAY_WS_PORT = $relayUri.Port.ToString()
+    TABRO_RUNTIME_FILE = $runtimeFile
+    TABRO_NATIVE_RUNTIME_FILE = (Join-Path (Split-Path -Parent $nativeHost) 'relay-runtime.json')
   }
   $managedConfig = Join-Path $data 'managed-profiles.json'
   if (Test-Path -LiteralPath $managedConfig) { $environment.RELAY_PROFILES_CONFIG = $managedConfig }
   $process = Start-Process -FilePath $node -ArgumentList @("`"$brokerEntry`"") -WorkingDirectory $workspace -WindowStyle Hidden -PassThru -Environment $environment
   Set-Content -LiteralPath $brokerPidFile -Value $process.Id -Encoding ascii
   $deadline = [DateTime]::UtcNow.AddSeconds(15)
-  while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Health $mcpHealthUrl)) {
+  while ([DateTime]::UtcNow -lt $deadline) {
     Start-Sleep -Milliseconds 250
+    if ($process.HasExited) { throw 'Broker exited during installation.' }
+    try {
+      $running = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
+      if ($running.processId -ne $process.Id) { continue }
+      $mcpHealthUrl = $running.mcpUrl -replace '/mcp$', '/health'
+      $relayHealthUrl = ($running.relayUrl -replace '^ws:', 'http:') -replace '/relay$', '/health'
+      if (Test-Health $mcpHealthUrl) { break }
+    } catch { }
   }
   if (-not (Test-Health $mcpHealthUrl)) {
     throw "Broker process $($process.Id) started but did not become healthy at $mcpHealthUrl."

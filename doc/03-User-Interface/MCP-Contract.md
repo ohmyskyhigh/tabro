@@ -59,7 +59,7 @@ These reads create no request ticket and never release, reorder, or advance brow
 
 ### Agents only echo references that Tabro previously returned
 
-The broker issues session, lineage, window, workspace, tab, request, pagination-cursor, and event-cursor values. The model must not generate, derive, parse, or modify them.
+The broker issues Profile, session, lineage, window, workspace, tab, request, pagination-cursor, and event-cursor values. The caller supplies the Profile display name and creation idempotency key; that key deduplicates creation and is not a broker-issued resource reference. The model must not generate, derive, parse, or modify them.
 
 The extension proposes a human-readable endpoint nickname during pairing. Raw browser-issued CDP values such as `sessionId`, `objectId`, or `nodeId` may be echoed only where the selected supported CDP method accepts them; they are not Tabro references.
 
@@ -127,7 +127,9 @@ The endpoint-control ticket remains requester-scoped through terminal closure, i
 
 ### Page limits are advertised and invalid requests fail explicitly
 
-Every paginated view and event read accepts `page_size` from 1 through 100, as advertised by the tool schema and enforced by the broker. Cursors bind the query, ordering snapshot, caller visibility, and relevant owner or connection generation.
+Context collection views and event reads accept `page_size` from 1 through 100, as advertised by the tool schema and enforced by the broker. Cursors bind the query, ordering snapshot, caller visibility, and relevant owner or connection generation.
+
+`list_browser_profiles` instead uses `limit` (1–100, default 50) and its Profile cursor, as defined in the same schema.
 
 Changing a query or crossing an authority, stream, or connection generation invalidates the cursor rather than silently continuing a different collection.
 
@@ -145,7 +147,6 @@ Numeric queue, page, payload, retention, and polling guidance may be tuned from 
 
 Codex and Hermes conformance must prove the same tool catalog, non-model caller injection, broker-issued-reference behavior, ticket-before-dispatch ordering, structured outputs, recovery facts, and raw CDP bytes.
 
-Parent: [`User Interface MOC`](./_MOC.md).
 
 ## Managed Profiles
 
@@ -163,3 +164,5 @@ Profile facts separate browser state, extension state, readiness and automation 
 ### Contract version 2 requires a matching Broker and adapter before tool execution
 
 The Broker exposes eighteen tools and returns `contract_version: "2"`. The HTTP MCP transport requires `x-octopus-contract-version: 2`; authenticated mismatches return HTTP 409 before admission, while unauthenticated requests remain HTTP 401. The stdio adapter checks `/health` before connecting and sends the version header. Browser extension relay protocol remains version 2 independently.
+
+Parent: [`User Interface MOC`](./_MOC.md).

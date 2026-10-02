@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { OCTOPUS_VERSION } from '../../shared/protocol/src/version.js';
 import type { DemoTraceConfig } from './demo-trace.js';
+import { readBrokerRuntime } from '../../shared/protocol/src/runtime-discovery.js';
 
 const SAFE_RUNTIME_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$/u;
 const SAFE_SESSION_KEY = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/u;
@@ -14,6 +15,7 @@ export interface StdioAdapterIdentity {
 }
 
 export interface StdioAdapterConfig {
+  runtimeFile?: string;
   demoTrace?: DemoTraceConfig;
   brokerUrl: URL;
   bearerToken: string;
@@ -107,7 +109,8 @@ const readBearerToken = (environment: AdapterEnvironment): string => {
 };
 
 const readBrokerUrl = (environment: AdapterEnvironment): URL => {
-  const url = new URL(valueOf(environment, 'OCTOPUS_BROKER_URL') ?? 'http://127.0.0.1:7331/mcp');
+  const runtimeFile = valueOf(environment, 'TABRO_RUNTIME_FILE');
+  const url = new URL(runtimeFile ? readBrokerRuntime(runtimeFile).mcpUrl : valueOf(environment, 'OCTOPUS_BROKER_URL') ?? 'http://127.0.0.1:7331/mcp');
   if (!['127.0.0.1', 'localhost', '::1'].includes(url.hostname.toLowerCase())) {
     throw new Error('TABRO_BROKER_URL must use a loopback host.');
   }
@@ -125,6 +128,7 @@ export function loadStdioAdapterConfig(
   const runId = valueOf(environment, 'OCTOPUS_DEMO_RUN_ID');
   if (!!traceRoot !== !!runId) throw new Error('Demo trace requires both root and run ID.');
   return {
+    ...(valueOf(environment, 'TABRO_RUNTIME_FILE') ? { runtimeFile: valueOf(environment, 'TABRO_RUNTIME_FILE')! } : {}),
     ...(traceRoot && runId ? { demoTrace: { root: traceRoot, runId } } : {}),
     brokerUrl: readBrokerUrl(environment),
     bearerToken: readBearerToken(environment),

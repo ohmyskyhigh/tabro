@@ -262,7 +262,11 @@ describe('canonical Tabro broker', () => {
     });
   });
 
-  afterEach(() => store.close());
+  afterEach(async () => {
+    broker.beginShutdown();
+    await broker.waitForIdle();
+    store.close();
+  });
 
   it.each([
     { method: 'Runtime.evaluate', params: { expression: '2 + 2' } },

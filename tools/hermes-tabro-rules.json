@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "historyPolicy": "preserve",
+  "env": {
+    "OCTOPUS_BROKER_URL": "TABRO_BROKER_URL",
+    "OCTOPUS_BROWSER_RELAY_TOKEN_FILE": "TABRO_TOKEN_FILE",
+    "OCTOPUS_BROWSER_RELAY_TOKEN": "TABRO_TOKEN",
+    "OCTOPUS_AGENT_TOKEN": "TABRO_AGENT_TOKEN",
+    "OCTOPUS_RUNTIME": "TABRO_RUNTIME",
+    "OCTOPUS_RUNTIME_SESSION": "TABRO_RUNTIME_SESSION",
+    "OCTOPUS_PARENT_RUNTIME_SESSION": "TABRO_PARENT_RUNTIME_SESSION",
+    "OCTOPUS_DEMO_TRACE_ROOT": "TABRO_DEMO_TRACE_ROOT",
+    "OCTOPUS_DEMO_RUN_ID": "TABRO_DEMO_RUN_ID",
+    "OCTOPUS_ADAPTER_VERSION": "TABRO_ADAPTER_VERSION"
+  },
+  "identities": [
+    "io.github.ohmyskyhigh.octopus_browser_relay",
+    "octopus-extension-baseline-v1"
+  ],
+  "thirdParty": ["OctopusDeploy", "Octopus Deploy", "SiOctopusdeploy"],
+  "historyDirectories": ["backups", ".curator_backups", "logs", "sessions", "state-snapshots", "terminal-sessions"],
+  "historicalSkillFiles": [".curator_ledger.jsonl"],
+  "textExtensions": [".md", ".txt", ".yaml", ".yml", ".json", ".jsonl", ".js", ".ts", ".py", ".ps1", ".toml"]
+}

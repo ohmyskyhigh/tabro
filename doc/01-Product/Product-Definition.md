@@ -248,6 +248,7 @@ When a reconnect leaves a raw CDP effect ambiguous after tab reconciliation, the
 
 | Agent problem | Product response |
 | --- | --- |
+| An agent needs browser identities that survive closing Chrome and changing agent sessions. | Principal-owned persistent Profiles support list/create/open/stop while preserving browser data; session/lineage authority continues to govern workspaces. |
 | A debugging connection can stop representing a usable browser. | The broker exposes current connection and endpoint truth independently from its routing decisions. |
 | The agent must remember ports, profiles, windows, targets, and tabs. | Named extension endpoints, logical workspaces, and broker-issued managed-tab references replace physical routing details. |
 | One browser profile could be counted repeatedly while requested capacity remains unavailable. | Workspace counts use distinct connected eligible endpoints, reject an admission-time shortfall without creation, and retain created workspace facts if an admitted multi-profile operation later fails. |
@@ -265,7 +266,6 @@ When a reconnect leaves a raw CDP effect ambiguous after tab reconciliation, the
 | A broker or extension outage can invalidate an event stream. | Tabro preserves logical workspace and tab identity, reconciles the current live page, and issues a fresh initial cursor without reload or event replay. |
 | Browser failures are difficult to reconstruct. | Broker-owned operational history preserves the relationships and lifecycle facts needed for diagnosis and recovery. |
 
-Parent: [`01-Product`](./_MOC.md).
 
 ## Managed Profiles
 
@@ -276,3 +276,7 @@ The approved managed-Profile journey adds an owned persistent Profile directory 
 ### Lifecycle management keeps browser-wide debugging private to Tabro
 
 On the verified Windows runtime, Tabro uses a private loopback browser connection only to load its extension, inspect the owned instance, prepare an empty window and close normally. Website actions and native tab-group workspaces continue through the extension. Active work prevents a Profile stop.
+
+The workspace/raw-CDP no-terminal-timeout rule does not eliminate the approved managed lifecycle's bounded startup and normal-close waits. A lifecycle failure reports its known state while preserving data and refusing unverified process termination; it does not decide whether an ambiguous website effect succeeded.
+
+Parent: [`01-Product`](./_MOC.md).

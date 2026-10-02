@@ -1,10 +1,9 @@
 # Real-world Chrome, AdsPower, Codex, and Hermes runbook
 
-Status: executable operator runbook for the `0.3.0` development runtime.
+Status: executable operator runbook for the `0.3.1` source runtime with MCP contract v2 and shared dynamic discovery.
 
 This runbook proves physical behavior separately from simulated tests. A failed checkpoint is evidence of a runtime or setup gap; it must not be rewritten as a pass because a lower-level unit or integration test succeeded.
 
-Parent: [`Files MOC`](./_MOC.md).
 
 ## Scope
 
@@ -17,7 +16,7 @@ The complete run uses:
 - at least three browser profiles, with one Tabro extension instance in each;
 - Native Messaging for every normal profile connection;
 - the checked-in local fixture server; and
-- broker-issued endpoint nicknames, window references, workspace references, tab references, request references, and event cursors.
+- extension-proposed endpoint nicknames and broker-issued Profile, window references, workspace references, tab references, request references, and event cursors.
 
 Chrome and AdsPower can be mixed. Each profile must retain separate extension storage, and every extension must pair with a distinct nickname.
 
@@ -58,7 +57,7 @@ The command writes local generated state below `.relay-data/`. Keep the final JS
 
 ### A GitHub Release installation keeps one extension path across updates
 
-The release path uses the standalone updater instead of a source checkout:
+The historical published-package path uses the standalone updater below. Repository publication records identify `v0.3.0` as the earlier fourteen-tool runtime. It cannot pass this runbook’s eighteen-tool/shared-discovery qualification; use the current source installer or a locally built discovery-capable package for that scope:
 
 ```powershell
 Invoke-WebRequest `
@@ -71,13 +70,24 @@ The result names the stable extension directory under `%LOCALAPPDATA%\Octopus Br
 
 Before qualifying an update, require the updater's broker health to report the selected version and require every intended endpoint to reconnect. A repeated extension-version mismatch is a failed checkpoint, not permission to reload indefinitely.
 
-### The preflight must report READY before browser work begins
+### Preflight exposes setup gaps and the remaining legacy handoff check
 
 Run:
 
 ```powershell
-pwsh -NoProfile -File .\tools\real-world-preflight.ps1
+pwsh -NoProfile -File .\tools\install-local.ps1
 ```
+
+The installer without `-Install` reads the current data-directory discovery record for health checks. The standalone preflight still has legacy fixed-port defaults; when using it directly, supply actual URLs:
+
+```powershell
+$runtime = Get-Content -Raw .relay-data/runtime.json | ConvertFrom-Json
+$mcpHealth = $runtime.mcpUrl -replace '/mcp$', '/health'
+$relayHealth = ($runtime.relayUrl -replace '^ws:', 'http:') -replace '/relay$', '/health'
+pwsh -NoProfile -File .\tools\real-world-preflight.ps1 -McpUrl $runtime.mcpUrl -McpHealthUrl $mcpHealth -RelayHealthUrl $relayHealth
+```
+
+The handoff validator in `tests/real-world/setup-readiness-checks.ts` still requires a literal broker URL in both registration files. Discovery-based handoffs may therefore report `mcp_registration_handoffs: ACTION_REQUIRED` even when health and tool discovery succeed. Record that implementation gap, inspect runtime/token paths and test MCP discovery directly; do not report a fully passed preflight or repeatedly reinstall to satisfy the obsolete comparison.
 
 Expected top-level result:
 
@@ -101,7 +111,7 @@ The stop command requires the recorded process to be `node.exe` running this wor
 
 ### Development runs can replace the compiled broker after one-time registration
 
-Stop the installer-started broker with `tools\stop-local-broker.ps1` before opening a second process on the same ports. Then run:
+Stop the installer-started broker with `tools\stop-local-broker.ps1` before replacing the process that owns the same data directory. The data-directory lock rejects a second live owner even when both request dynamic ports. Then run:
 
 ```powershell
 pnpm build:extension
@@ -129,7 +139,7 @@ In that profile's extension options:
 
 1. keep the generated pairing code or enter two three-to-eight-letter words separated by a hyphen, space, or underscore;
 2. keep **Native companion** selected;
-3. keep the relay URL aligned with the broker, normally `ws://127.0.0.1:7332/relay`;
+3. let Native Host discover `relayUrl` from `relay-runtime.json` beside its executable; only direct-WebSocket diagnostics require copying the current runtime URL into extension options;
 4. choose **Save settings and reconnect** after any change; and
 5. wait for `Status: connected`.
 
@@ -142,8 +152,9 @@ Repeat this in every profile. Each profile has separate extension storage and th
 Read both health endpoints:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:7331/health | ConvertTo-Json -Depth 8
-Invoke-RestMethod http://127.0.0.1:7332/health | ConvertTo-Json -Depth 8
+$runtime = Get-Content -Raw .relay-data/runtime.json | ConvertFrom-Json
+Invoke-RestMethod ($runtime.mcpUrl -replace '/mcp$', '/health') | ConvertTo-Json -Depth 8
+Invoke-RestMethod (($runtime.relayUrl -replace '^ws:', 'http:') -replace '/relay$', '/health') | ConvertTo-Json -Depth 8
 ```
 
 Record the observed `connectedEndpoints` count from MCP health. It must equal the number of profile extensions that currently show `Status: connected`. An endpoint count alone does not prove CDP execution; the later checkpoints do.
@@ -172,13 +183,13 @@ Check `http://127.0.0.1:7340/health` before assigning browser work.
 
 ### Codex launches a session-owned stdio adapter from the generated fragment
 
-Open `.relay-data/bootstrap/MCP-REGISTRATION.md`. Merge `.relay-data/bootstrap/codex-mcp.toml` into the active Codex configuration and start a new Codex session. Confirm the session can list an MCP server named `octopus-browser-relay` and exactly fourteen tools.
+Open `.relay-data/bootstrap/MCP-REGISTRATION.md`. Merge `.relay-data/bootstrap/codex-mcp.toml` into the active Codex configuration and start a new Codex session. Confirm the session can list an MCP server named `tabro` and exactly eighteen tools.
 
-The generated fragment launches the compiled Node stdio adapter and supplies the loopback broker URL, `.relay-data/admin-token.txt` path, and `codex` runtime label. It does not embed the token. The repository generates the fragment but does not locate or overwrite the active Codex configuration.
+The generated fragment launches the compiled Node stdio adapter and supplies `TABRO_RUNTIME_FILE` pointing to `.relay-data/runtime.json`, the `.relay-data/admin-token.txt` path, and `codex` runtime label. It does not embed the token. The repository generates the fragment but does not locate or overwrite the active Codex configuration.
 
 ### Hermes registers the generated adapter in every installed profile
 
-Open `.relay-data/bootstrap/hermes-mcp.txt` and run its exact command. The command invokes the profile-aware registration helper, discovers the default profile and every installed named profile, and registers the same stdio adapter with the loopback broker URL, local token-file path, and `hermes` runtime label in each profile. Start a new session in every profile being qualified, then run:
+Open `.relay-data/bootstrap/hermes-mcp.txt` and run its exact command. The command invokes the profile-aware registration helper, discovers the default profile and every installed named profile, and registers the same stdio adapter with the shared runtime-file path, local token-file path, and `hermes` runtime label in each profile. Start a new session in every profile being qualified, then run:
 
 ```powershell
 hermes -p <profile> mcp test tabro
@@ -228,7 +239,7 @@ For each asynchronous call, capture the acceptance result and the final `get_bro
 
 ### Both runtimes perform the same contract without runtime-specific tool bodies
 
-Run the single-session cycle once from Codex and once from Hermes, using separate fixtures or separate workspaces. Both sessions must see the same fourteen tool names, use the same MCP input structure, receive broker-issued IDs, poll tickets, and obtain the assigned marker.
+Run the single-session cycle once from Codex and once from Hermes, using separate fixtures or separate workspaces. Both sessions must see the same eighteen tool names, use the same MCP input structure, receive broker-issued IDs, poll tickets, and obtain the assigned marker.
 
 Record any difference in schema loading, structured results, authorization headers, session evidence, or polling behavior. Adapter differences are failures to investigate; they do not authorize a different browser contract for one runtime.
 
@@ -287,7 +298,7 @@ Record this table for the run:
 | --- | --- |
 | Setup | Installer output and preflight `READY` |
 | Pairing | A distinct saved generated or customized code and endpoint nickname plus `Status: connected` in every profile, with no broker-issued code entry |
-| MCP surface | Exactly fourteen canonical tools in Codex and Hermes |
+| MCP surface | Exactly eighteen canonical tools in Codex and Hermes |
 | Ticket ordering | Accepted `request_ref` observed before terminal result |
 | Routing | A/B/C workspaces return A/B/C fixture markers |
 | Concurrency | Independent workspaces and same-tab acceptance order behave as specified |
@@ -306,7 +317,9 @@ State which browser product and version, extension version, broker service versi
 - The installer generates but does not apply Codex configuration. Its generated Hermes command applies registration to every profile installed when that command runs; profiles created later require another run.
 - Independent-session proof requires one stdio adapter process per session or a supported runtime session environment value; a deliberately shared unidentified adapter process cannot pass it.
 - An adapter crash between the broker's HTTP handoff and the adapter's stdout write can leave dispatched work whose ticket was not received by the agent runtime.
-- The relay-v1 compatibility path and older real-world harness files are migration evidence; they do not substitute for the canonical fourteen-tool checkpoints above.
+- The relay-v1 compatibility path and older real-world harness files are migration evidence; they do not substitute for the canonical eighteen-tool checkpoints above.
+- The older isolated Chrome/Profile probes set their own relay URL but do not provision isolated native discovery. A Native Host already pointing at the shared Broker overrides that URL; follow the limitation in [the probe guide](../../tests/demo/README.md) before a new physical run.
+- The System's general worker/queue bounds and time/size retention policies remain implementation targets. Current source does not enforce those bounds or implement log rotation, audit expiry or event pruning; a successful routing test does not prove them.
 - Direct WebSocket proves only its diagnostic transport path.
 - The extension capability manifest excludes unsupported CDP methods and flattened child sessions.
 
@@ -321,3 +334,21 @@ Generated evidence under `artifacts/real-world/` can be preserved. The existing 
 ```powershell
 pwsh -NoProfile -File .\tools\real-world-cleanup.ps1 -RunId "<run-id>"
 ```
+
+## Shared runtime qualification
+
+### Restart discovery preserves caller identity without retrying a dispatched operation
+
+After source installation, `tools/start-local-broker.ps1` starts or reuses the matching healthy Broker and reports the actual endpoints. Compare the discovery instance UUID with MCP health; do not assume an old port still belongs to Tabro. Ordinary registrations use `TABRO_RUNTIME_FILE` and a separate token file. Native Host reads the adjacent relay record. Demo fixture shutdown must leave the shared Broker healthy.
+
+Automated coverage is in `tests/integration/runtime-discovery.test.ts` and `tests/integration/native-runtime-discovery.test.ts`. The native test requires its named Windows test binary and otherwise skips; report the actual result. A new physical qualification must record its own results rather than reusing the October 1 migration report as a fresh pass.
+
+## Managed Profile qualification
+
+### Principal-owned Profiles require enabled management before the lifecycle tools can succeed
+
+Use the current source installer with `-Install -EnableManagedProfiles -StartBroker` on the verified Windows/Chrome runtime described in [Operational defaults](../02-User-Experience/Operational-Defaults.md). Follow [the Demo runbook](../../tests/demo/RUNBOOK.md) for list/create/open/stop, Profile isolation, native tab groups and persisted identity. Existing manually connected endpoints remain valid browser endpoints but gain no automatic process-management authority.
+
+End active workspaces before stopping a managed Profile. Stop preserves its data. Broker shutdown and fixture shutdown are not commands to delete or close unrelated Chrome instances. Hermes Plugin packaging, cross-platform installation and upstream Provider discovery remain pending in [the Provider plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md).
+
+Parent: [`Files MOC`](./_MOC.md).

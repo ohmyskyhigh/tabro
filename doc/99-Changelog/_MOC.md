@@ -4,6 +4,9 @@ This directory records applied changes to vault structure and canonical document
 
 ## Entries
 
+- [`2026-10-02-source-of-truth-audit.md`](./2026-10-02-source-of-truth-audit.md)
+- [`2026-10-01-shared-dynamic-runtime.md`](./2026-10-01-shared-dynamic-runtime.md)
+- [`2026-10-01-hermes-tabro-migration.md`](./2026-10-01-hermes-tabro-migration.md)
 - [`2026-09-30-tabro-source-publication.md`](./2026-09-30-tabro-source-publication.md)
 - [`2026-09-30-tabro-branding.md`](./2026-09-30-tabro-branding.md)
 - [`2026-09-04-persistent-custom-pairing-labels.md`](./2026-09-04-persistent-custom-pairing-labels.md)

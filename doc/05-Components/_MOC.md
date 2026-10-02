@@ -16,6 +16,8 @@ The design preserves one broker consistency boundary while separating transport 
 
 The physical repository nests broker-owned components under `apps/broker`, keeps independently launched or loaded programs as sibling app directories, keeps the shared wire contract under `apps/shared/protocol`, and reserves root `dist/` for generated artifacts.
 
+Profile Manager and ProfileRequestService are Broker-owned responsibilities within this decomposition. Broker Runtime owns startup/discovery publication; Protocol Contract owns discovery validation; MCP and native transport adapters consume it; Setup and Qualification owns shared launch, Demo preparation and explicit migrations.
+
 ## Evidence-driven revision
 
 ### Component internals may change when public behavior and ownership remain stable

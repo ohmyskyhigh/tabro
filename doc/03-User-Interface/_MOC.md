@@ -8,17 +8,17 @@ Status: confirmed as wire-contract version `2` and ready for System realization.
 
 ## Canonical contract
 
-### Fourteen tools expose ten submissions, three reads, and one terminal close
+### Eighteen tools expose thirteen submissions, four reads, and one terminal close
 
 [`MCP-Contract.md`](./MCP-Contract.md) defines:
 
-- ten asynchronous submissions: `request_browser_workspace`, `create_browser_tab`, `send_cdp_command`, `take_over_workspace`, `terminate_workspace`, `resolve_browser_request`, `stop_workspace_automation`, `resume_workspace_automation`, `kill_browser_endpoint`, and `resume_browser_endpoint`;
-- three immediate reads: `get_browser_context`, `read_cdp_events`, and `get_browser_request`; and
+- thirteen asynchronous submissions: `create_browser_profile`, `open_browser_profile`, `stop_browser_profile`, `request_browser_workspace`, `create_browser_tab`, `send_cdp_command`, `take_over_workspace`, `terminate_workspace`, `resolve_browser_request`, `stop_workspace_automation`, `resume_workspace_automation`, `kill_browser_endpoint`, and `resume_browser_endpoint`;
+- four immediate reads: `list_browser_profiles`, `get_browser_context`, `read_cdp_events`, and `get_browser_request`; and
 - one immediate terminal-ticket control: `close_browser_request`.
 
 ### One Draft 2020-12 bundle defines every public body
 
-[`MCP-Contract.schema.json`](./MCP-Contract.schema.json) is the exact closed schema bundle for the fourteen input roots, fourteen output roots, common facts, request tickets, problems, raw CDP results, pause and recovery facts, pagination, and executable available actions.
+[`MCP-Contract.schema.json`](./MCP-Contract.schema.json) is the exact closed schema bundle for the eighteen input roots, eighteen output roots, common facts, principal-owned Profiles, request tickets, problems, raw CDP results, pause and recovery facts, pagination, and executable available actions.
 
 The broker issues every Tabro reference and cursor. Caller identity is injected outside model-authored inputs. Agents only echo returned references and browser-issued CDP handles accepted by a supported method.
 

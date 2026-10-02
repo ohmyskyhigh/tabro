@@ -13,8 +13,8 @@
 ### 中文资料按安装、架构和完整项目说明分成三个入口
 
 - [`../../README.zh-CN.md`](../../README.zh-CN.md) — 项目介绍、快速安装、更新、Agent 配置、验证和故障排查。
-- [`Installation-and-Setup.md`](./Installation-and-Setup.md) — 从 GitHub Release 或源码完成 Broker、扩展、配对、Codex、Hermes 和健康验证。
-- [`Architecture-and-MCP.md`](./Architecture-and-MCP.md) — Broker、扩展、Native Messaging、持久票据和 14 个 MCP 工具的中文说明。
+- [`Installation-and-Setup.md`](./Installation-and-Setup.md) — 区分历史 GitHub Release 与当前源码，完成共享 Broker、扩展、配对、Codex、Hermes 和健康验证。
+- [`Architecture-and-MCP.md`](./Architecture-and-MCP.md) — Broker、扩展、Native Messaging、持久票据和 18 个 MCP 工具的中文说明。
 
 ## 英文规范
 

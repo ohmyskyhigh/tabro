@@ -1,9 +1,11 @@
+param([string]$OutputPath = '')
 $ErrorActionPreference = 'Stop'
 
 $workspace = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $source = Join-Path $workspace 'apps\native-host\src\relay-native-host.cpp'
 $outputDirectory = Join-Path $workspace 'dist\native-host'
 $output = Join-Path $outputDirectory 'relay-native-host.exe'
+if ($OutputPath) { $output = [IO.Path]::GetFullPath($OutputPath) }
 $buildRef = [Guid]::NewGuid().ToString('N')
 $temporaryOutput = Join-Path $outputDirectory "relay-native-host.$buildRef.exe"
 $temporaryObject = Join-Path $outputDirectory "relay-native-host.$buildRef.obj"

@@ -4,8 +4,8 @@ param(
   [string]$NodeExecutable,
   [Parameter(Mandatory)]
   [string]$AdapterPath,
-  [Parameter(Mandatory)]
   [string]$BrokerUrl,
+  [string]$RuntimeFile,
   [Parameter(Mandatory)]
   [string]$TokenFile,
   [string]$HermesExecutable = 'hermes',
@@ -55,12 +55,17 @@ try {
   $node = Resolve-ExistingFile $NodeExecutable 'Node executable'
   $adapter = Resolve-ExistingFile $AdapterPath 'MCP stdio adapter'
   $token = Resolve-ExistingFile $TokenFile 'Broker token file'
+  if (-not $RuntimeFile -and -not $BrokerUrl) { throw 'RuntimeFile or BrokerUrl is required.' }
+  if ($RuntimeFile) {
+    $RuntimeFile = [IO.Path]::GetFullPath($RuntimeFile)
+  } else {
   $brokerUri = [Uri]$BrokerUrl
   if (-not $brokerUri.IsAbsoluteUri -or @('http', 'https') -notcontains $brokerUri.Scheme) {
     throw 'BrokerUrl must be an absolute HTTP or HTTPS URL.'
   }
   if (@('127.0.0.1', 'localhost', '::1') -notcontains $brokerUri.Host.ToLowerInvariant()) {
     throw 'BrokerUrl must use a loopback host.'
+  }
   }
 
   $hermes = (Get-Command $HermesExecutable -ErrorAction Stop).Source
@@ -74,7 +79,7 @@ try {
       'mcp', 'add', 'tabro',
       '--command', $node,
       '--env',
-      "TABRO_BROKER_URL=$BrokerUrl",
+      $(if ($RuntimeFile) { "TABRO_RUNTIME_FILE=$RuntimeFile" } else { "TABRO_BROKER_URL=$BrokerUrl" }),
       "TABRO_TOKEN_FILE=$token",
       'TABRO_RUNTIME=hermes',
       '--args', $adapter

@@ -10,8 +10,8 @@ const ConfigSchema = z.strictObject({
     expectedBrowserVersion: z.string().min(1), expectedExtensionDigest: z.string().regex(/^[a-f0-9]{64}$/u), relayUrl: z.string().url()
   }).optional(),
   host: z.string().default('127.0.0.1'),
-  mcpPort: z.coerce.number().int().min(0).max(65_535).default(7331),
-  wsPort: z.coerce.number().int().min(0).max(65_535).default(7332),
+  mcpPort: z.coerce.number().int().min(0).max(65_535).default(0),
+  wsPort: z.coerce.number().int().min(0).max(65_535).default(0),
   dbPath: z.string().min(1).default('.relay-data/relay.sqlite'),
   logLevel: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   heartbeatTimeoutMs: z.coerce.number().int().min(5_000).max(300_000).default(45_000),
@@ -43,6 +43,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
     heartbeatTimeoutMs: env.RELAY_HEARTBEAT_TIMEOUT_MS,
     errorThreshold: env.RELAY_ERROR_THRESHOLD,
     leaseTtlMs: env.RELAY_LEASE_TTL_MS,
-    adminToken: env.RELAY_ADMIN_TOKEN ?? localAdminToken(dbPath)
+    adminToken: env.RELAY_ADMIN_TOKEN?.trim() || localAdminToken(dbPath)
   });
 }

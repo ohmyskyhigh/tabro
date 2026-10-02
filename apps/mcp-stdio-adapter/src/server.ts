@@ -17,6 +17,7 @@ import {
 import type { StdioAdapterConfig } from './config.js';
 import { createDemoTrace } from './demo-trace.js';
 import { randomUUID } from 'node:crypto';
+import { readBrokerRuntime } from '../../shared/protocol/src/runtime-discovery.js';
 
 export interface RunningStdioAdapter {
   close(): Promise<void>;
@@ -55,17 +56,34 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
       ? {}
       : { 'x-octopus-parent-runtime-session': config.identity.parentRuntimeSessionKey })
   };
-  const healthResponse = await fetch(new URL('/health', config.brokerUrl), { signal: AbortSignal.timeout(5_000) });
-  if (!healthResponse.ok || (await healthResponse.json() as { mcpContractVersion?: string }).mcpContractVersion !== MCP_CONTRACT_VERSION) {
-    throw new Error('MCP_CONTRACT_VERSION_MISMATCH: update the Broker and stdio adapter together.');
-  }
-  const remoteClient = new Client({
-    name: 'tabro-stdio-adapter',
-    version: config.serviceVersion
-  }, { versionNegotiation: { mode: 'auto' } });
-  await remoteClient.connect(new StreamableHTTPClientTransport(config.brokerUrl, {
-    requestInit: { headers: requestHeaders }
-  }));
+  let remoteClient: Client | undefined;
+  let connectedInstance: string | undefined;
+  let connecting: Promise<void> | undefined;
+  const ensureConnection = async (): Promise<void> => {
+    if (connecting) return connecting;
+    const runtime = config.runtimeFile ? readBrokerRuntime(config.runtimeFile) : undefined;
+    if (remoteClient && (!runtime || connectedInstance === runtime.instanceRef)) return;
+    const url = runtime ? new URL(runtime.mcpUrl) : config.brokerUrl;
+    connecting = (async () => {
+      const response = await fetch(new URL('/health', url), { signal: AbortSignal.timeout(5_000) });
+      const health = await response.json() as { mcpContractVersion?: string; instanceRef?: string };
+      if (!response.ok || health.mcpContractVersion !== MCP_CONTRACT_VERSION) {
+        throw new Error('MCP_CONTRACT_VERSION_MISMATCH: update the Broker and stdio adapter together.');
+      }
+      if (runtime && health.instanceRef !== runtime.instanceRef) {
+        throw new Error('The discovered Tabro runtime does not match the responding Broker.');
+      }
+      const next = new Client({ name: 'tabro-stdio-adapter', version: config.serviceVersion }, { versionNegotiation: { mode: 'auto' } });
+      try { await next.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: requestHeaders } })); }
+      catch (error) { await next.close(); throw error; }
+      const previous = remoteClient;
+      remoteClient = next;
+      connectedInstance = runtime?.instanceRef;
+      if (previous) await previous.close();
+    })();
+    try { await connecting; } finally { connecting = undefined; }
+  };
+  await ensureConnection();
 
   const server = new McpServer({
     name: 'tabro',
@@ -81,7 +99,9 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
       const input = parseMcpToolInput(definition.name, rawInput);
       const callId = randomUUID();
       trace?.({ kind: 'call', callId, tool: definition.name, input });
-      const result = await remoteClient.callTool({
+      // Reconnect before dispatch when discovery changes. Never retry a dispatched mutation.
+      await ensureConnection();
+      const result = await remoteClient!.callTool({
         name: definition.name,
         arguments: input as Record<string, unknown>
       });
@@ -105,14 +125,14 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
   try {
     await server.connect(stdioTransport);
   } catch (error) {
-    await remoteClient.close();
+    await remoteClient!.close();
     throw error;
   }
 
   let closing: Promise<void> | null = null;
   return {
     close: () => {
-      closing ??= Promise.allSettled([server.close(), remoteClient.close()]).then((results) => {
+      closing ??= Promise.allSettled([server.close(), remoteClient!.close()]).then((results) => {
         const rejection = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
         if (rejection) throw rejection.reason;
       });

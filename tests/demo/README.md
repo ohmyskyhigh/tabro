@@ -12,6 +12,10 @@
 
 ## 验证
 
+### 独立探针必须先核对 Native Host 的发现目标
+
+当前 Native Host 优先读取其可执行文件旁的 `relay-runtime.json`。上述旧探针自行启动隔离 Broker 并设置扩展 relay URL，尚未为该隔离实例发布独立的 native 发现记录。若已注册的 Host 指向共享 Broker，探针可能连接错误的实例；仅覆写扩展 URL 不能隔离它。该路径需独立 Native Host 路由准备与重新资格验证，不能在共享实例使用中覆盖其运行记录。下面的历史通过记录不构成当前发现机制下的新一次通过。
+
 ### 真实实验覆盖自动加载扩展与关闭重开后的状态保持
 
 实验通过 browser-level CDP 安装扩展、读取扩展公钥和关闭自己的浏览器；业务页面经真实 HTTP MCP、Native Messaging、扩展 debugger 执行。检查原生 Tab Group、安装连接断开/重连、Broker 重启、Profile 重开后的公钥与持久 Cookie/localStorage，并检查独立启动进程退出后浏览器仍可被管理。

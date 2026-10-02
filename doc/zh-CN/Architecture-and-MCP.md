@@ -21,18 +21,24 @@ agent session
 
 ## 组件
 
-### 八个运行责任通过明确端口和持久状态协作
+### 八个规范组件分配运行时、协议、浏览器和验证责任
 
-| 组件 | 责任 |
+| 规范组件 | 责任 |
 | --- | --- |
-| MCP stdio 适配器 | 为一个 Codex/Hermes 会话提供身份事实并转发 14 个工具 |
-| MCP Gateway | 验证调用、公开 JSON Schema、返回同步拒绝或异步票据 |
-| Tabro Broker Core | 所有权、工作区、请求、FIFO、暂停、恢复、接管和终止规则 |
-| SQLite Storage | 端点、会话、工作区、票据、检查点、事件和审计事实 |
-| Extension Gateway | relay-v2 认证、连接代次、清单、命令和事件关联 |
-| Native Messaging Host | 在浏览器扩展和本机 loopback relay 之间转发 JSON |
-| Browser Extension | 自动配对、浏览器清单、标签组、`chrome.debugger` 和结果协调 |
-| Shared Protocol | MCP Schema、relay Schema、能力清单和版本事实 |
+| Broker Runtime | 组合运行组件、启动锁、健康和运行记录发布 |
+| MCP Gateway | 会话 stdio 适配、18 工具 Schema、身份注入、票据交付与发现重连 |
+| Broker Core | 工作区所有权、票据、FIFO、控制和恢复；Broker 内的 Profile 管理器处理主体所有权与生命周期 |
+| Durable Store | SQLite 端点、会话、工作区、Profile、票据、检查点、事件和审计 |
+| Extension Gateway | relay-v2 认证、代次与消息关联；Native Host 提供浏览器到 loopback 的传输 |
+| Browser Extension | 自动配对、清单、原生标签组和 `chrome.debugger` 执行 |
+| Protocol Contract | MCP v2、relay v2、运行记录 v1、能力清单与共享版本 |
+| Setup and Qualification | 安装、更新、共享启动、显式迁移与验证证据 |
+
+### Demo 与普通 MCP 通过运行记录发现同一个本地 Broker
+
+MCP 和 relay 是同一进程的两个 loopback 接口，默认端口均为 `0`，实际地址写入运行记录。普通 MCP 注册使用 `TABRO_RUNTIME_FILE` 与独立令牌文件；适配器校验记录及 health 实例标识，在新调用前处理 Broker 实例变化，保留会话身份，不重试已经派发的调用。
+
+Native Host 每次连接读取可执行文件旁的 `relay-runtime.json`，校验版本、进程存活和本地 relay URL；仅记录不存在时沿用旧配置 URL，记录存在但无效时失败。其校验不等于适配器的 HTTP 实例握手。启动助手复用健康实例，Broker 数据目录锁拒绝第二个存活所有者。Demo 退出仅关闭自己的站点。
 
 ## 请求周期
 
@@ -45,7 +51,7 @@ agent session
 5. 扩展断线时，Broker 暂停请求并记录检查点。
 6. 扩展重连后先上报清单，Broker 协调实际标签页状态，再从检查点恢复或请求人工确认。
 
-模型不创建请求 ID、幂等 ID、窗口 ID、标签页 ID 或游标。
+模型不创建请求、Profile、窗口或标签页引用及游标。`create_browser_profile` 的 `idempotency_key` 则由调用者提供，用来避免重复创建；它不是 Broker 签发的资源引用。
 
 ## 同标签页并发
 
@@ -98,6 +104,14 @@ agent session
 ### 扩展只执行能力清单允许且限制在托管标签页的 CDP 方法
 
 能力清单位于 [`extension-baseline.json`](../../apps/shared/protocol/capabilities/extension-baseline.json)。它包含选定的 Accessibility、DOM、Emulation、Input、Network、Page 和 Runtime 方法。Broker 在派发前检查能力；扩展再次验证目标和代次。浏览器级 Target 控制和公开调试端口不属于普通 Agent 接口。
+
+## 受管身份
+
+### Profile 属于认证主体，工作区仍属于 Agent 会话与 lineage
+
+受管环境启用后，Agent 可列出打开和关闭的 Profile，通过 create/open 的票据得到 ready 端点，再沿既有工作区流程执行网站操作。stop 会拒绝活跃工作并保留 Cookie、存储和扩展身份。普通外部端点不会自动获得进程管理权限。
+
+已记录的实机资格是 Windows / Chrome 153.0.8010.53。私有 loopback 管理连接用于启动引导、实例核对和正常关闭；网站 CDP 仍经扩展执行。跨平台安装、Hermes Plugin 和默认 Provider 菜单见[待办计划](../80-Plans/tabro-hermes-provider-2026-10-01/README.md)。
 
 ## 更新边界
 

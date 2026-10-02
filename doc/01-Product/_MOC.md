@@ -4,7 +4,7 @@ Authority level: Product.
 
 This level owns the product identity, target user, user problem, promised outcome, value proposition, capabilities, exclusions, business constraints, and trust constraints.
 
-Status: confirmed on 2026-08-31. The contract defines automatic extension-initiated pairing with a readable profile-local code and one uniquely named endpoint per browser profile; distinct-endpoint workspace capacity in eligible existing windows; broker-managed workspace, tab, event-cursor, request-ticket, pause, recovery, and control identity; full-cycle acceptance-ordered execution for commands targeting one managed tab; explicit workspace resume; complete-owner admission and a nonterminal-ticket ownership freeze for endpoint-wide control; failed race-loser and queued-old-tab outcomes; conclusive replacement-exhaustion recovery; reconciled termination; no per-request cancellation or broker terminal timeout; immediate ownership and active-ticket transfer at an eligible winning takeover commit; prioritized endpoint, workspace, lifecycle, and ownership controls; and an extension-backed `chrome.debugger` surface confined to managed tabs.
+Status: confirmed baseline, including the September 27 managed-Profile extension and September 30 Tabro identity. The Product definition owns persistent Profile management under installation-principal authority, session/lineage-owned workspaces, extension-backed managed-tab CDP, durable tickets, and explicit recovery and controls.
 
 ## Canonical Product contract
 

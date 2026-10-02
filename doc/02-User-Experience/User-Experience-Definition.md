@@ -29,6 +29,10 @@ For Hermes, the registration script targets the default profile and every named 
 
 Exact script names, commands, implementation language, packaging, and extension-to-broker transport details belong to later System, Component, and File definitions. The browser execution path is already fixed at the Product level: the installed extension relays managed-tab-confined CDP through Chrome's `chrome.debugger` API without a Chrome remote-debugging port or pipe.
 
+### Demo and ordinary sessions share the local deployment while retaining their own workspaces
+
+The October 1 deployment decision places Demo and ordinary MCP sessions on the same local Broker. Changing listener addresses does not require the automation agent to remember ports or change browser references. Agent sessions keep their own identity and workspace authority. Broker restart follows the existing reconciliation journey and does not authorize replay of a possibly dispatched browser effect. System owns the runtime discovery and instance checks that realize this behavior.
+
 ### Each participating browser profile saves one editable readable code and pairs automatically
 
 After installation in a browser profile, that profile's distinct extension instance selects two short English words as its default pairing code. The operator may replace the default in the extension options with two three-to-eight-letter words. The saved uppercase code remains authoritative in that profile's extension storage and combines into the compact lowercase nickname that identifies its browser endpoint to agents. `MINT-WAVE` and `mintwave` illustrate the relationship; no numeric suffix is added. With the local broker running, the extension starts the pairing exchange automatically through its selected local transport. The human does not request or copy a code from the broker.
@@ -82,15 +86,15 @@ Runtime-specific MCP registration or session-metadata adapters may differ, but t
 
 The default use case takes an agent from browser requirements through asynchronous workspace and CDP requests to extension-relayed command and event traffic against managed tabs in the intended browser workspace. Supporting use cases let an agent inspect its Tabro browser context, poll and close accepted request tickets, continue work across sessions, control more than one workspace, resolve an ambiguous command with human input, pause and resume work at workspace scope, pause work at endpoint scope, and recover when existing work should be transferred or abandoned.
 
-### Six confirmed execution submissions share a ticket-first lifecycle
+### Profile, workspace and browser submissions share a ticket-first lifecycle
 
-`request_browser_workspace`, `create_browser_tab`, `send_cdp_command`, `take_over_workspace`, `terminate_workspace`, and `resume_workspace_automation` use the same asynchronous request lifecycle. The broker first validates the caller and the submitted ownership and target relationships. For `send_cdp_command`, it also validates that the requested CDP method is available through the extension and can remain inside the selected managed-tab tree.
+Profile create/open/stop, workspace acquisition, tab creation, CDP commands, human resolution, takeover, termination, and pause/resume controls use the asynchronous request lifecycle defined by the [MCP contract](../03-User-Interface/MCP-Contract.md). Profile authority is principal-scoped; workspace operations retain their session and lineage rules. The broker first validates the caller and the submitted ownership and target relationships. For `send_cdp_command`, it also validates that the requested CDP method is available through the extension and can remain inside the selected managed-tab tree.
 
 An invalid caller, ownership relationship, target, unsupported CDP method, or out-of-scope CDP method is rejected synchronously without a request ticket. For any other accepted submission, the broker durably accepts the work and returns the submission disposition `accepted` together with a broker-issued `request_ref` and the exact normalized request body the broker accepted, without waiting for browser or extension execution to finish. The acknowledgement must be delivered to the caller before any browser or extension dispatch. If that delivery fails, the caller receives an immediate transport failure and Tabro does not dispatch the work; there is no lost-acknowledgement rediscovery journey. The agent echoes the reference; it does not create or modify it.
 
 `accepted` is the disposition of the submission response, not a request state. The accepted request begins in `queued`, advances to `running`, and finishes in exactly one terminal state: `succeeded`, `failed`, or `uncertain`. A disconnected extension can pause a queued or running request at its durable phase or checkpoint without changing that lifecycle state; the pause reason is a separate nullable condition, not a sixth state. The agent calls the direct `get_browser_request` read with the returned `request_ref` to see the exact normalized request body, current state, pause condition, and, after the request becomes terminal, its domain result. The domain result retains the existing workspace, tab, raw CDP, takeover, or termination meaning instead of becoming a typed website-operation outcome.
 
-`get_browser_context`, `read_cdp_events`, and `get_browser_request` are direct reads and do not issue request tickets. `read_cdp_events` requires a broker-issued cursor and returns the currently retained bounded event page immediately; it does not wait for a future browser event. A terminal `uncertain` request is never replayed automatically. The confirmed resolution, ticket-closure, workspace-stop, endpoint-kill, and endpoint-resume controls extend this journey. `resolve_browser_request` is the confirmed resolution action name, and `resume_workspace_automation` is a confirmed asynchronous submission. The other exact MCP tool names and whether each remaining control is a direct action or asynchronously ticketed submission belong to the User Interface contract.
+`list_browser_profiles`, `get_browser_context`, `read_cdp_events`, and `get_browser_request` are direct reads and do not issue request tickets. `read_cdp_events` requires a broker-issued cursor and returns the currently retained bounded event page immediately; it does not wait for a future browser event. A terminal `uncertain` request is never replayed automatically. The User Interface contract owns the complete tool catalog and execution classes: thirteen asynchronous submissions, four immediate reads, and one immediate terminal-ticket close.
 
 ### The default use case requests browser workspaces and sends raw CDP commands
 
@@ -201,7 +205,7 @@ After recovery, Tabro preserves the existing `workspace_ref` and `tab_ref`, reco
 
 ### Agents monitor one accepted execution request through its broker-issued ticket
 
-After any of the ten confirmed asynchronous submissions returns `accepted`, the applicable requester or owner authority polls the direct `get_browser_request` read with its broker-issued `request_ref`. Ordinary workspace requests use current owner authority, workspace acquisition uses the requesting session's prospective-owner authority, and takeover and endpoint-control requests retain the requester authority defined by the canonical contract. Each poll returns the exact normalized request body, the request's current `queued`, `running`, `succeeded`, `failed`, or `uncertain` state, and any nullable pause condition without starting another asynchronous request.
+After an asynchronous submission returns `accepted`, the applicable authority polls the direct `get_browser_request` read with its broker-issued `request_ref`. Managed Profile requests use authenticated-principal authority. Ordinary workspace operations use current owner authority, workspace acquisition uses the requesting session's prospective-owner authority, and takeover and endpoint-control requests retain the requester authority defined by the canonical contract. Each poll returns the exact normalized request body, the request's current `queued`, `running`, `succeeded`, `failed`, or `uncertain` state, and any nullable pause condition without starting another asynchronous request.
 
 A nonterminal poll reports request state and any pause condition rather than pretending the browser action has completed. A terminal poll exposes the request's domain result and its currently available Tabro actions. For `send_cdp_command`, that result preserves the raw CDP result or extension-debugger error; a reconnect ambiguity remains nonterminal until the explicit resolution journey finishes it. The request ticket does not turn protocol data into a semantic click, navigation, or website-task result.
 
@@ -349,7 +353,7 @@ The available-action list does not enumerate or recommend the CDP methods the ag
 
 An invalid caller, ownership relationship, or target is rejected synchronously without a `request_ref`. A command that requests a method unavailable through `chrome.debugger`, or whose method or target-bearing parameters cannot be confined to the selected managed-tab tree, is also rejected synchronously without a ticket or browser delivery. A workspace request that cannot be satisfied by the connected eligible distinct endpoint set is rejected synchronously without a ticket or workspace creation, and an unavailable designated endpoint is not silently replaced. Endpoint kill or resume is rejected synchronously without a ticket when the caller does not own every active workspace on that endpoint, and workspace task-stop remains available. A reconnect-ambiguous raw CDP effect remains paused for explicit human resolution and is not automatically retried.
 
-The ten named asynchronous submissions, three named direct reads, and immediate terminal-ticket close use the modes defined by the canonical User Interface contract. Exact agent-visible wire schemas and problem codes belong there. Internal endpoint selection, CDP attachment, durable request storage, broker event retention, checkpointing, and cross-lane concurrency policy belong to the System layer.
+The thirteen asynchronous submissions, four direct reads, and immediate terminal-ticket close use the modes defined by the canonical User Interface contract. Exact agent-visible wire schemas and problem codes belong there. Internal endpoint selection, CDP attachment, durable request storage, broker event retention, checkpointing, and cross-lane concurrency policy belong to the System layer.
 
 ### Tabro owns browser routing while the agent owns CDP intent and interpretation
 
@@ -456,7 +460,7 @@ Evaluation records whether each asynchronous submission delivered its broker-iss
 | Identify the agent user before describing setup or use cases. | The UX begins with Codex and Hermes, then explains installation, the default journey, and supporting journeys in that order. |
 | Let the installer dictate the installation journey. | A human or setup agent invokes the same scripted workflow instead of defining a separate installation sequence. |
 | Let each profile-local extension identify and register its endpoint automatically. | Each participating browser profile has a distinct extension instance that generates or accepts two readable English words, persists them as the source of a short lowercase nickname without digits, and initiates local registration without a copied broker code. A collision preserves the requested label for explicit correction. |
-| Make potentially long execution visible through broker-owned tickets. | Each of the ten asynchronous submissions durably accepts valid work and delivers `accepted` with a broker-issued `request_ref` before any effect becomes eligible; direct `get_browser_request` polling exposes progress and the terminal domain result. |
+| Make potentially long execution visible through broker-owned tickets. | Each asynchronous submission durably accepts valid work and delivers `accepted` with a broker-issued `request_ref` before any effect becomes eligible; direct `get_browser_request` polling exposes progress and the terminal domain result. |
 | Keep acceptance, lifecycle state, and pause condition distinct. | `accepted` describes the submission response; the request moves through `queued`, `running`, and one of `succeeded`, `failed`, or `uncertain`, while a nullable pause condition can explain why queued or running work cannot advance. |
 | Count workspace capacity by distinct browser profiles and endpoints. | One profile or endpoint can satisfy the requested count only once; an admission-time capacity shortfall is rejected without a ticket or workspace, while a later creation failure keeps and reports already-created workspaces under `failed`. |
 | Put new workspaces in an eligible existing window. | The agent may select a broker-issued `window_ref`; omission uses the most recently focused eligible existing window, where Tabro creates a new tab group without opening another browser window. |
@@ -464,7 +468,7 @@ Evaluation records whether each asynchronous submission delivered its broker-iss
 | Let Tabro establish workspace tab identity before the agent sends CDP. | A succeeded workspace request returns at least one tab reference and initial event cursor, while succeeded agent-requested tab creation returns its workspace-scoped reference and cursor through the terminal request result. |
 | Reconcile tab creation before bounded retry. | Tabro preserves the workspace, proves the intended tab absent before retrying, makes no more than three total attempts, and ends an unsuccessful request as `failed` rather than `uncertain`. |
 | Keep opener-linked child tabs in logical browser ownership. | A same-window child joins the opener workspace and group, while a new-window child receives a related workspace; both receive broker-issued tab facts. |
-| Relay CDP through the extension without Chrome remote-debugging configuration. | The agent targets logical workspaces and managed tabs while the extension uses `chrome.debugger`; Tabro does not open or resolve a Chrome remote-debugging port or pipe. |
+| Relay CDP through the extension without Chrome remote-debugging configuration. | The agent targets logical workspaces and managed tabs while the extension uses `chrome.debugger`; the agent does not manage Chrome debugging ports or pipes. The approved managed-Profile lifecycle may use a private loopback management connection; website execution continues through the extension. |
 | Preserve CDP protocol meaning instead of inventing operation semantics. | Tabro returns raw CDP results, errors, and events, while the agent decides what proves website-task success. |
 | Keep public execution within managed tabs. | Every public CDP call names a workspace and `tab_ref`; browser-wide and exclusive-browser targets are not available. |
 | Make browser context and CDP capability inspectable rather than memory-dependent. | Agents can refresh broker, endpoint, extension, browser, eligible-window, capability, workspace, ownership, managed-tab, and event-cursor facts whenever context may be stale. |
@@ -485,6 +489,7 @@ Evaluation records whether each asynchronous submission delivered its broker-iss
 
 | Product requirement | User Experience realization |
 | --- | --- |
+| Agents can create and reopen persistent owned browser identities. | Principal-scoped Profile discovery and ticketed lifecycle operations yield ready endpoint nicknames for the existing workspace journey; stop preserves data and rejects active work. |
 | MCP access serves AI-agent sessions. | Codex and Hermes agent sessions receive the same MCP experience against Chrome. |
 | Installation remains a supporting operation outside the target automation journey. | A human runs the scripted installer directly or asks a setup agent to run it, after which every distinct extension instance generates or accepts a customized readable code, persists its endpoint nickname, and pairs automatically with the running local broker before automation begins. |
 | Agents discover paired browser endpoints by nickname and condition, including known endpoints that cannot currently accept a workspace. | Targeted paginated context shows known endpoints, eligible existing windows, and current managed-tab capability summaries, while workspace acquisition separately reports designated and assigned bindings. |
@@ -507,7 +512,6 @@ Evaluation records whether each asynchronous submission delivered its broker-iss
 | Terminal browser-request tickets remain visible to their applicable authority until deliberately closed. | Acquisition and takeover-control tickets remain requester-scoped, ordinary workspace-operation tickets follow current ownership, winning takeover transfers every still-public owner-governed ticket, and terminal close removes agent visibility without timeout, undo, or internal-audit deletion. |
 | Tabro does not interpret semantic browser success. | The agent evaluates raw CDP results and events against its own website-task intent. |
 
-Parent: [`02-User-Experience`](./_MOC.md).
 
 ## Managed Profiles
 
@@ -518,3 +522,9 @@ After installation enables the verified managed runtime, the agent lists its per
 ### Stopping a Profile preserves its identity and requires active work to finish first
 
 The agent ends its workspaces before stopping. A blocked stop reports active work and leaves the browser available. A normal stop preserves cookies, storage and the extension identity. A later session with the same authenticated principal can reopen it. Failed creation retains a discoverable Profile and failure facts; retrying the same creation key never allocates another Profile.
+
+### Bounded Profile lifecycle waits do not time out ambiguous website effects
+
+The no-terminal-timeout rules for workspace and raw-CDP work above do not remove the managed lifecycle's explicit queue, launch, extension-ready and normal-close bounds in [Operational defaults](./Operational-Defaults.md). Lifecycle timeout or unverified process identity produces the corresponding failure or uncertain fact; it never authorizes replay of a website action or blind process termination.
+
+Parent: [`02-User-Experience`](./_MOC.md).

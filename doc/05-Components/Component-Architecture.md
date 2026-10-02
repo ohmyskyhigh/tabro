@@ -12,7 +12,7 @@ Components are operational owners of confirmed System responsibilities. They may
 | --- | --- | --- |
 | Broker Runtime | `apps/broker/src/runtime` | Process composition, validated configuration, lifecycle, health, and dependency wiring |
 | MCP Gateway | `apps/broker/src/mcp` and `apps/mcp-stdio-adapter` | Codex/Hermes transport adapters, caller evidence, eighteen tools, schema publication, and acknowledgement-delivery confirmation |
-| Broker Core | `apps/broker/src/core` | Logical identity, authority, admission, routing, request lifecycle, scheduling, reconciliation, controls, status, and audit decisions |
+| Broker Core | `apps/broker/src/core` and `apps/broker/src/profiles` | Logical identity, authority, admission, routing, workspace and Profile lifecycle, scheduling, reconciliation, controls, status, and audit decisions |
 | Durable Store | `apps/broker/src/storage` | Atomic persistence, migrations, repositories, request/event/audit retention, and restart recovery queries |
 | Extension Gateway | `apps/broker/src/extension-relay` and `apps/native-host` | Automatic relay-v2 endpoint registration, authenticated live connections, bounded framing, generation fencing, and extension message correlation |
 | Browser Extension | `apps/browser-extension` | Profile identity, readable pairing code and automatic registration, browser observation, tab-group operations, `chrome.debugger` attachment, raw CDP execution, and event forwarding |
@@ -58,6 +58,12 @@ Broker Runtime loads local configuration, constructs storage, Broker Core, MCP G
 
 It owns process signals, health endpoints, startup recovery sequencing, and configuration publication. It does not implement tools, routing policy, SQL queries, extension authentication, or CDP methods.
 
+### Broker Runtime publishes discovery and owns the data-directory startup lock
+
+The process entry point owns the PID lock and publication/removal of runtime records after listener binding. Runtime composition supplies the instance UUID in health and passes the bound relay URL to managed Profile bootstrap. Discovery does not replace the store's logical identity or request authority.
+
+The shared Protocol Contract module owns the closed discovery schema, loopback validation, liveness check and atomic file operations. The session-owned stdio adapter owns MCP health/version/instance validation and reconnection before a new call; it preserves caller evidence and never retries a dispatched operation.
+
 ### Startup recovery finishes before external work becomes eligible
 
 Startup opens and migrates the store, rebuilds logical indexes and lane barriers, restores control fences, initializes capability profiles, starts extension acceptance, reconciles live endpoints, and only then marks MCP mutation tools ready.
@@ -66,7 +72,7 @@ Readiness can distinguish `starting`, `reconciling`, `ready`, and `degraded`. A 
 
 ## MCP Gateway
 
-### MCP Gateway presents the exact version-one tool and schema catalog
+### MCP Gateway presents the exact version-two tool and schema catalog
 
 MCP Gateway materializes every tool root from the canonical schema, validates all model-authored inputs, injects non-model caller evidence, invokes Broker Core application ports, and returns structured content plus a concise text fallback.
 
@@ -154,6 +160,8 @@ Connection presence is a fact sent to Broker Core. Gateway never derives `usable
 
 The native host frames stdin/stdout Native Messaging records and forwards them to the local gateway. Chrome and AdsPower installed profiles use this path so the extension never requires browser permission to open a loopback socket.
 
+Native Host owns adjacent `relay-runtime.json` lookup and its relay URL/process checks. A missing file permits the legacy URL; an invalid present record fails. Relay authentication and browser identity remain Extension Gateway and Broker Core responsibilities.
+
 An in-process or loopback transport can exercise the same envelope, authentication, size limits, and connection-generation behavior in automated tests or developer diagnostics, but it is not an installed-profile fallback. No transport buffers replayable browser event history. Reconnect triggers broker reconciliation and a fresh stream baseline.
 
 ### Gateway correlation never becomes public request identity
@@ -186,9 +194,10 @@ Recent private attempt outcomes may be cached only to answer broker reconciliati
 
 The package contains:
 
-- the exact canonical MCP version-one JSON Schema and generated or hand-checked Zod validators;
+- the exact canonical MCP version-two JSON Schema and generated or hand-checked Zod validators;
 - internal domain value types and reference brands;
 - the versioned extension relay envelope and message schemas;
+- the runtime discovery schema and atomic record operations;
 - capability-manifest schemas and conservative profiles;
 - public problem codes and private transport failure codes; and
 - schema-version compatibility assertions.
@@ -208,6 +217,14 @@ The manifest describes scope and support; Browser Extension executes. Broker Cor
 Setup scripts build artifacts, register the native host, generate MCP configuration for Codex, register MCP configuration separately in the default and every installed named Hermes profile, print extension load paths, verify broker health, and explain automatic extension pairing. The Hermes helper discovers the installed profile directories when it runs and must run again after another profile is created. The scripts do not issue or require a pairing code; optional profile-local customization happens in the extension options. Re-running them repairs matching configuration without deleting pairing or workspace state unless reset is explicitly requested.
 
 Runtime-specific templates remain separate from agent-visible MCP schemas.
+
+This section assigns intended responsibilities; it is not a blanket claim that every helper already conforms. The File runbook records the current URL-based preflight limitation, saved-URL Demo caller and isolated native-probe gap. System records unimplemented general scheduler bounds and log/audit/event retention. Their owners remain responsible for closing and verifying those gaps.
+
+### Setup tooling reuses one shared runtime and keeps migrations explicit
+
+The local startup helper owns launch serialization and matching-instance reuse. Source/installed launchers and registration helpers select runtime-file and token-file paths. Release staging advertises discovery support, and the updater validates it before stopping an installation. Demo preparation owns its fixture and trace manifest while reusing the shared Broker.
+
+The Hermes migration CLI owns plans, backups, verified application and rollback of active-reference changes. The database merge CLI writes a separate output database and owns schema, identity and integrity conflict checks; the operator owns source-store backups and deployment switching. They do not redefine Profile or workspace authority or run automatically during ordinary startup. Operator qualification must supply discovered URLs to older diagnostic helpers that still default to fixed ports.
 
 ### Release tooling owns package integrity while the gateway and extension own reload fencing
 
@@ -229,10 +246,11 @@ Extension Gateway compares the connected extension version with the broker's req
 
 A failing test can fix an implementation defect directly when the canonical behavior is clear. A test that demonstrates an incompatible runtime or unusable threshold produces a proposal at the owning UX, UI, System, Component, or File level before changing canonical behavior.
 
-Parent: [`Components MOC`](./_MOC.md).
 
 ## Profile management
 
 ### The Broker Profile Manager coordinates lifecycle operations before workspace allocation
 
 The Profile Manager under `apps/broker/src/profiles` owns the persistent directory, launcher coordination, instance observations, ready predicate and stopping barrier. ProfileRequestService integrates principal-scoped lifecycle requests with durable admission, acknowledgement, worker claims and terminal facts. ChromeLauncher owns the Windows process check and private lifecycle connection. BootstrapGrants owns credential validation and atomic binding after signed AUTH. The existing extension relay remains the website execution owner.
+
+Parent: [`Components MOC`](./_MOC.md).

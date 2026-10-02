@@ -7,8 +7,8 @@ param(
   [string]$PackagePath = '',
   [string]$ChecksumPath = '',
   [string]$NodePath = '',
-  [int]$McpPort = 7331,
-  [int]$RelayPort = 7332,
+  [int]$McpPort = 0,
+  [int]$RelayPort = 0,
   [string[]]$NativeRegistryRoots = @(
     'HKCU:\Software\Google\Chrome\NativeMessagingHosts',
     'HKCU:\Software\Chromium\NativeMessagingHosts',
@@ -94,16 +94,21 @@ function Start-InstalledBroker([pscustomobject]$State) {
     RELAY_MCP_PORT = [string]$McpPort
     RELAY_WS_PORT = [string]$RelayPort
     RELAY_LOG_LEVEL = 'info'
+    TABRO_RUNTIME_FILE = (Join-Path $data 'runtime.json')
+    TABRO_NATIVE_RUNTIME_FILE = (Join-Path (Split-Path -Parent $State.nativeHostEntry) 'relay-runtime.json')
   }
   $process = Start-Process -FilePath $node -ArgumentList @('"' + $launcher + '"') -WorkingDirectory $install -WindowStyle Hidden -PassThru -Environment $environment
   Set-Content -LiteralPath (Join-Path $data 'broker.pid') -Value $process.Id -Encoding ascii
-  $healthUrl = "http://127.0.0.1:$McpPort/health"
+  $healthUrl = $null
   for ($attempt = 0; $attempt -lt 80; $attempt += 1) {
     Start-Sleep -Milliseconds 125
     if ($process.HasExited) { throw "Updated broker exited with code $($process.ExitCode)." }
     try {
+      $record = Get-Content -LiteralPath (Join-Path $data 'runtime.json') -Raw | ConvertFrom-Json
+      if ($record.processId -ne $process.Id) { continue }
+      $healthUrl = $record.mcpUrl -replace '/mcp$', '/health'
       $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 1
-      if ($health.status -eq 'ok' -and $health.serviceVersion -eq $State.version -and $health.mcpContractVersion -eq '2') {
+      if ($health.status -eq 'ok' -and $health.instanceRef -eq $record.instanceRef -and $health.serviceVersion -eq $State.version -and $health.mcpContractVersion -eq '2') {
         return [ordered]@{ processId = $process.Id; healthUrl = $healthUrl; health = $health }
       }
     } catch { }
@@ -168,6 +173,9 @@ try {
   if ($manifest.schemaVersion -ne 1 -or $manifest.platform -ne 'windows-x64' -or [string]::IsNullOrWhiteSpace($manifest.version)) {
     throw 'The release manifest identity is invalid.'
   }
+  if ($manifest.runtimeDiscoveryVersion -ne 1) {
+    throw 'This release does not support shared dynamic runtime discovery. Use a current source build or a qualified release; the existing installation has not been stopped.'
+  }
   foreach ($file in $manifest.files) {
     $path = Join-Path $expanded ([string]$file.path)
     Assert-ChildPath $expanded $path
@@ -219,6 +227,7 @@ try {
     brokerEntry = (Join-Path $releaseRoot ([string]$manifest.brokerEntry))
     mcpAdapterEntry = (Join-Path $releaseRoot ([string]$manifest.mcpAdapterEntry))
     nativeHostEntry = (Join-Path $releaseRoot ([string]$manifest.nativeHostEntry))
+    runtimeFile = (Join-Path $data 'runtime.json')
     extensionDirectory = $stableExtension
     installedAt = [DateTime]::UtcNow.ToString('o')
   }
@@ -236,7 +245,7 @@ try {
 [mcp_servers.tabro]
 command = "$($nodeExecutable.Replace('\','\\'))"
 args = ["$($adapter.Replace('\','\\'))"]
-env = { TABRO_BROKER_URL = "http://127.0.0.1:$McpPort/mcp", TABRO_TOKEN_FILE = "$($tokenFile.Replace('\','\\'))", TABRO_RUNTIME = "codex" }
+env = { TABRO_RUNTIME_FILE = "$((Join-Path $data 'runtime.json').Replace('\','\\'))", TABRO_TOKEN_FILE = "$($tokenFile.Replace('\','\\'))", TABRO_RUNTIME = "codex" }
 "@ | Set-Content -LiteralPath (Join-Path $bootstrap 'codex-mcp.toml') -Encoding utf8
   $hermesCommand = @(
     'pwsh -NoProfile -File',
@@ -245,8 +254,8 @@ env = { TABRO_BROKER_URL = "http://127.0.0.1:$McpPort/mcp", TABRO_TOKEN_FILE = "
     (ConvertTo-PowerShellLiteral $nodeExecutable),
     '-AdapterPath',
     (ConvertTo-PowerShellLiteral $adapter),
-    '-BrokerUrl',
-    (ConvertTo-PowerShellLiteral "http://127.0.0.1:$McpPort/mcp"),
+    '-RuntimeFile',
+    (ConvertTo-PowerShellLiteral (Join-Path $data 'runtime.json')),
     '-TokenFile',
     (ConvertTo-PowerShellLiteral $tokenFile)
   ) -join ' '

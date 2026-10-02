@@ -22,6 +22,12 @@ Broker-specific source is nested under `apps/broker`; independently launched or 
 
 The runbook keeps Native Messaging qualification separate from direct-WebSocket diagnostics and records unresolved adapter or setup behavior as a failed or blocked checkpoint.
 
+## Managed Profile qualification
+
+### The Demo runbook separates shared Broker state from per-run evidence
+
+[`../../tests/demo/README.md`](../../tests/demo/README.md) introduces the probe and Demo evidence. [`../../tests/demo/RUNBOOK.md`](../../tests/demo/RUNBOOK.md) owns current Demo commands, fixture lifetime, saved-URL recovery and Profile cleanup. [`../80-Plans/single-agent-multi-chrome-demo-2026-09-27/implementation-report.md`](../80-Plans/single-agent-multi-chrome-demo-2026-09-27/implementation-report.md) preserves the dated physical results.
+
 ## Translated operator guidance
 
 ### Simplified Chinese entry documents remain traceable to the canonical English Files and contracts

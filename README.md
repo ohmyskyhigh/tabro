@@ -13,17 +13,17 @@ Tabro connects a local MCP gateway to one extension instance in each browser pro
 
 ## Quick start
 
-### The GitHub Release updater is the shortest supported installation path
+The current source updater requires a release declaring shared runtime discovery support; it rejects older packages before stopping an existing installation. The published `v0.3.0` installer retains its older contract. Use the source installer below for the shared dynamic runtime until a qualified package is published.
 
-1. Install Node.js `22.12.0` or newer on Windows.
-2. Download and run the standalone updater shown under [GitHub Releases](#github-releases-provide-verified-installation-and-updates).
-3. Keep the updater's final JSON output. Require `status: UPDATED`, `broker.health.status: ok`, and `broker.health.serviceVersion: 0.3.0`.
-4. Open `chrome://extensions` in each intended Chrome or AdsPower profile, enable **Developer mode**, choose **Load unpacked**, and select the returned `extensionPath`.
-5. Open **Tabro Settings** in each profile, keep the generated pairing code or choose your own two-word code, and wait for `Status: connected`. Each extension registers automatically with the saved code and compact nickname.
-6. Open `%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\INSTALLATION.md`. Merge `codex-mcp.toml` into Codex or run the command in `hermes-mcp.txt`; the Hermes command registers Tabro in the default profile and every installed named profile. Then start a new agent session.
-7. Check `http://127.0.0.1:7331/health`. `connectedEndpoints` must equal the number of browser profiles intended for the test.
+### The source installer prepares the current eighteen-tool shared runtime
 
-Use the source-checkout installer only when developing or rebuilding the project. The complete English procedure is below; the focused Simplified Chinese procedure is in [安装与设置](./doc/zh-CN/Installation-and-Setup.md).
+1. Prepare the Windows source-build prerequisites under [Requirements](#requirements), then clone this repository and open its root directory.
+2. Run `pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker`. Add `-EnableManagedProfiles` when using the verified managed Chrome lifecycle.
+3. For external profiles, load the reported extension directory through `chrome://extensions` and wait for Native companion connection. Managed Profiles load their extension during create/open.
+4. Apply `.relay-data/bootstrap/codex-mcp.toml` or the generated `hermes-mcp.txt` command, then start a new agent session and verify eighteen tools.
+5. Read actual MCP and relay addresses from `.relay-data/runtime.json`. Broker health and a real managed-tab operation establish different parts of readiness.
+
+The [Release installation section](#github-releases-provide-verified-installation-and-updates) retains the published-package procedure; its historical package contract differs from this source baseline.
 
 ## What agents can do
 
@@ -95,21 +95,28 @@ It does not overwrite Codex configuration. The generated Hermes registration com
 
 ### Preflight reports each missing setup action as JSON
 
-With the broker running, execute either readiness entry point:
+With the Broker running, use the installer’s read-only readiness entry point; it derives health addresses from the data-directory runtime record:
 
 ```powershell
 pwsh -NoProfile -File .\tools\install-local.ps1
 ```
 
+The standalone preflight retains fixed-port defaults. Supply discovered URLs when using it directly:
+
 ```powershell
-pwsh -NoProfile -File .\tools\real-world-preflight.ps1
+$runtime = Get-Content -Raw .relay-data/runtime.json | ConvertFrom-Json
+$mcpHealth = $runtime.mcpUrl -replace '/mcp$', '/health'
+$relayHealth = ($runtime.relayUrl -replace '^ws:', 'http:') -replace '/relay$', '/health'
+pwsh -NoProfile -File .\tools\real-world-preflight.ps1 -McpUrl $runtime.mcpUrl -McpHealthUrl $mcpHealth -RelayHealthUrl $relayHealth
 ```
 
 The check verifies the workspace, built extension files, required manifest declarations, native executable, compiled stdio adapter, Native Messaging manifest, every configured Native Messaging registry value, generated pairing and MCP handoff files, and both health endpoints. It exits with code `10` when operator action is still required. Pass the same `-NativeRegistryRoots` values to installation and preflight when a browser build uses different roots.
 
+The handoff validator still expects a literal broker URL in generated registration files and can report `mcp_registration_handoffs: ACTION_REQUIRED` for valid runtime-file registrations. Inspect the generated discovery/token paths and verify actual tool discovery; do not treat that warning as a passed full preflight or repeatedly reinstall. The [runbook](./doc/06-Files/Real-World-Runbook.md) records this implementation gap.
+
 ### GitHub Releases provide verified installation and updates
 
-The release workflow publishes a portable Windows ZIP, its SHA-256 checksum, and a standalone updater. For the first release installation, download and run the updater:
+The release workflow produces a portable Windows ZIP, checksum and standalone updater. Repository publication records describe the older `v0.3.0` package with fourteen tools; this download procedure does not provide the current source features. The current updater rejects packages lacking `runtimeDiscoveryVersion: 1` before shutdown. For the historical published-package path, download and run its updater:
 
 ```powershell
 Invoke-WebRequest `
@@ -184,7 +191,7 @@ The extension generates the default readable code and registers itself with the 
 
 ### Direct WebSocket stays available for explicit diagnostics
 
-The extension options page can connect directly to `ws://127.0.0.1:7332/relay`, but that mode is not the normal Chrome or AdsPower setup. Browser kernels can block extension-initiated loopback WebSockets even when ordinary page requests to `127.0.0.1` work. Use **Native companion** for installed profiles and switch to direct WebSocket only while diagnosing transport behavior.
+The extension options page can connect directly to the `relayUrl` published in the runtime record, but that mode is not the normal Chrome or AdsPower setup. Browser kernels can block extension-initiated loopback WebSockets even when ordinary page requests to `127.0.0.1` work. Use **Native companion** for installed profiles and switch to direct WebSocket only while diagnosing transport behavior.
 
 ## Agent registration
 
@@ -265,16 +272,19 @@ Poll the returned `request_ref` with `get_browser_request` until completion. Sup
 
 | Purpose | Default |
 | --- | --- |
-| MCP and MCP health | `http://127.0.0.1:7331/mcp` and `http://127.0.0.1:7331/health` |
-| Extension relay and relay health | `ws://127.0.0.1:7332/relay` and `http://127.0.0.1:7332/health` |
+| MCP and MCP health | Dynamic loopback HTTP port; read `mcpUrl` in `.relay-data/runtime.json` and replace `/mcp` with `/health` |
+| Extension relay and relay health | Dynamic loopback WebSocket port; read `relayUrl` in the same runtime record |
+| Shared discovery | `.relay-data/runtime.json`; Native Host reads `relay-runtime.json` beside its executable |
 | SQLite state | `.relay-data/relay.sqlite` |
 | Generated bearer token | `.relay-data/admin-token.txt` |
 | Installer-managed broker PID | `.relay-data/broker.pid` |
 | Generated setup handoff | `.relay-data/bootstrap/` |
 
+Demo and ordinary MCP sessions share one Broker. Both listeners default to port `0`, so the operating system chooses available ports. Registrations use `TABRO_RUNTIME_FILE` and a token file rather than fixed port numbers. The adapter checks the instance identity and reconnects before a new tool call after a Broker restart; it never retries a dispatched browser mutation. Native Host reads the current relay record on each connection.
+
 The broker creates the token on first start when `RELAY_ADMIN_TOKEN` is unset. `.relay-data/` is ignored by Git.
 
-Supported environment variables are `RELAY_HOST`, `RELAY_MCP_PORT`, `RELAY_WS_PORT`, `RELAY_DB_PATH`, `RELAY_LOG_LEVEL`, `RELAY_HEARTBEAT_TIMEOUT_MS`, `RELAY_ERROR_THRESHOLD`, `RELAY_LEASE_TTL_MS`, and `RELAY_ADMIN_TOKEN`. Their validated defaults are defined in `apps/broker/src/runtime/config.ts`.
+Supported environment variables are `RELAY_HOST`, `RELAY_MCP_PORT`, `RELAY_WS_PORT`, `RELAY_DB_PATH`, `RELAY_LOG_LEVEL`, `RELAY_HEARTBEAT_TIMEOUT_MS`, `RELAY_ERROR_THRESHOLD`, `RELAY_LEASE_TTL_MS`, `RELAY_ADMIN_TOKEN`, and `RELAY_PROFILES_CONFIG`. Configuration validation lives in `apps/broker/src/runtime/config.ts`. `TABRO_RUNTIME_FILE` and `TABRO_NATIVE_RUNTIME_FILE` select the discovery outputs in `apps/broker/src/runtime/main.ts`.
 
 ## Verification
 
@@ -294,7 +304,7 @@ pnpm build
 
 ### A disconnected extension is diagnosed from the native host toward the broker
 
-1. Confirm `http://127.0.0.1:7332/health` responds.
+1. Read `relayUrl` from the runtime record, change `ws:` to `http:` and `/relay` to `/health`, and confirm it responds.
 2. Confirm the extension ID is `caekiojlchhifdomfghejkbfpmaklafe` and **Native companion** is selected.
 3. Confirm the extension directory still exists at the path reported by the updater.
 4. Open `%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\INSTALLATION.md` and verify the installed paths.
@@ -312,9 +322,9 @@ hermes -p <profile> mcp test tabro
 
 Exactly eighteen tools must be discovered. Do not point an agent at the relay WebSocket port; agents use the stdio adapter and HTTP MCP gateway.
 
-### A broker port conflict must be resolved without killing an unrelated process
+### Dynamic port allocation avoids conflicts without stopping unrelated applications
 
-The default ports are `7331` and `7332`. Use the installed `stop-installed-broker.ps1` or the source checkout's `tools/stop-local-broker.ps1`; both verify the recorded process command before stopping it. If another application owns a port, stop that application deliberately or select different MCP and relay ports during installation.
+Both ports default to `0`; clients use the actual addresses in the discovery record. `tools/start-local-broker.ps1` serializes launches and reuses a healthy instance; the Broker also locks its data directory against duplicate startup. Use the installed `stop-installed-broker.ps1` or source checkout's `tools/stop-local-broker.ps1` for verified shutdown. Explicit nonzero port overrides remain available for compatibility.
 
 ## Current limits
 

@@ -16,7 +16,7 @@ Status: confirmed as the implementation baseline and ready for Component decompo
 - automatic extension-initiated local pairing with a readable correlation code, persisted-key reconnect authentication, and one endpoint per browser profile;
 - verified GitHub Release installation behind versioned runtimes, stable local launchers, and a one-reload extension version gate;
 - public logical windows, workspaces, tabs, requests, and cursors over private browser generations;
-- ten acknowledgement-gated submissions, three immediate reads, and terminal close;
+- thirteen acknowledgement-gated submissions, four immediate reads, and terminal close;
 - exact distinct-endpoint workspace allocation and existing-window selection;
 - versioned managed-tab CDP capability enforcement through `chrome.debugger`;
 - full-cycle per-tab FIFO lanes, scoped controls, ownership epochs, and orderly termination;
@@ -28,5 +28,7 @@ Status: confirmed as the implementation baseline and ready for Component decompo
 Worker counts, queue bounds, retention amounts, status thresholds, polling guidance, capability fixtures, and runtime adapters are initial System defaults. Codex, Hermes, Chrome, and AdsPower evidence may revise them through a proposal when public behavior remains compatible.
 
 The accepted historical proposal remains at [`../90-Proposals/System-Architecture.md`](../90-Proposals/System-Architecture.md).
+
+The shared-runtime topology in `System-Architecture.md` owns dynamic listener discovery, instance validation, client reconnection, startup exclusion and Demo reuse. Its Profile lifecycle section owns principal-scoped identities, bootstrap binding and lifecycle serialization. These realize the existing agent journey without changing the eighteen-tool contract.
 
 Parent: [`03-User-Interface`](../03-User-Interface/_MOC.md).

@@ -17,7 +17,13 @@ pnpm build
 pnpm exec tsx tools/prepare-single-agent-demo.ts --run-id=demo-new-run --port=7341
 ```
 
-每轮使用新 run ID；已有目录或端口占用会报错，不清除旧记录或结束其他进程。输出的 manifest 记录实际 URL、服务 PID、token 文件路径和 trace 目录，不输出 token。所有本轮数据位于 `artifacts/real-world/<run-id>/single-agent-demo/`。
+每轮使用新 run ID；已有目录或端口占用会报错，不清除旧记录或结束其他进程。输出的 manifest 记录实际 URL、服务 PID、token 文件路径和 trace 目录，不输出 token。本轮演示站、trace 和输出位于 `artifacts/real-world/<run-id>/single-agent-demo/`；Broker 数据库、令牌和 Chrome 身份目录继续使用共享安装的位置。
+
+### 准备入口复用共享 Broker，退出只关闭本轮演示站
+
+默认准备入口调用 `tools/start-local-broker.ps1`，然后读取 `.relay-data/runtime.json` 与 `.relay-data/admin-token.txt`。MCP 和 relay 由系统分配端口；`--port` 仅指定演示站端口。可用 `--runtime-file=<path>` 与 `--token-file=<path>` 指向已有安装，此时准备器要求该 Broker 已运行。受管功能必须事先启用。
+
+manifest 同时保存 runtime 文件路径和当时的 `mcpUrl`。当前 `single-agent-demo-call.ts` 仍将该 URL 传给适配器，不能把普通 MCP 注册的自动重连能力当作这个辅助入口的保证。若 Broker 在本轮重启，先从同一 runtime 文件核对新实例，再刷新 manifest 的 `mcpUrl`；保留 `runtimeSession`、既有票据和 trace，先检查原票据状态，不重放可能已派发的调用。
 
 ## 操作
 
@@ -56,7 +62,7 @@ pnpm exec tsx tools/verify-single-agent-demo.ts --run-id=demo-new-run
 
 ### 先终止工作区再停止 Profile 可以保留可复用数据
 
-经 MCP `terminate_workspace` 后逐个 `stop_browser_profile`；活跃工作区会阻止停止。保存最终 list 后停止本轮服务。Broker 退出不会隐式杀死 Chrome。异常退出先核对本轮 manifest、Profile 引用和完整进程身份，禁止按进程名批量结束浏览器。
+经 MCP `terminate_workspace` 后逐个 `stop_browser_profile`；活跃工作区会阻止停止。保存最终 list 后停止本轮演示站；准备器的退出仅关闭 fixture，不关闭共享 Broker。Broker 退出也不会隐式杀死 Chrome。异常退出先核对本轮 manifest、Profile 引用和完整进程身份，禁止按进程名批量结束浏览器。
 
 无法验证归属时返回 uncertain，不盲目重启。运行中扩展未就绪且无活跃工作区时，open 最多重新加载一次；有活跃工作区时等待恢复或返回超时。身份损坏不会自动清空 Profile。
 

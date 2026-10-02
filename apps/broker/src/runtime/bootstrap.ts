@@ -1,4 +1,5 @@
 import pino, { type Logger } from 'pino';
+import { randomUUID } from 'node:crypto';
 import { BrokerCore, OctopusBroker } from '../core/index.js';
 import { ExtensionGateway } from '../extension-relay/index.js';
 import { McpGateway } from '../mcp/index.js';
@@ -13,6 +14,7 @@ const MCP_CONTRACT_VERSION = '2';
 const RELAY_PROTOCOL_VERSION = '2';
 
 export interface RelayApplication {
+  instanceRef: string;
   profileManager: ProfileManager | null;
   store: SqliteRelayStore;
   /** Canonical source-of-truth broker used by the public MCP contract. */
@@ -28,6 +30,7 @@ export interface RelayApplication {
 }
 
 export function createRelayApplication(config: RelayConfig): RelayApplication {
+  const instanceRef = randomUUID();
   const logger = pino({
     level: config.logLevel,
     redact: [
@@ -79,6 +82,7 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
         .map((connection) => connection.endpointRef)
     );
     return {
+      instanceRef,
       serviceVersion: SERVICE_VERSION,
       brokerCondition: 'ready',
       connectedEndpoints: connectedEndpointRefs.size,
@@ -105,6 +109,7 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
   let storeClosed = false;
 
   return {
+    instanceRef,
     profileManager,
     store,
     broker,
@@ -122,6 +127,9 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
         broker.recover();
         await extensionGateway.start();
         extensionStarted = true;
+        if (config.profiles) {
+          config.profiles.relayUrl = `ws://127.0.0.1:${extensionGateway.address().port}/relay`;
+        }
         await mcpGateway.start();
         mcpStarted = true;
         profileManager?.startObserving();

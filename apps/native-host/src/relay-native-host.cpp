@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
+#include <regex>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -136,6 +138,39 @@ std::wstring utf8ToWide(const std::string& value) {
   if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
       static_cast<int>(value.size()), &result[0], length) <= 0) return std::wstring();
   return result;
+}
+
+bool discoverRelayUrl(std::string& relayUrl, std::string& error) {
+  wchar_t executable[32768]{};
+  const DWORD length = GetModuleFileNameW(nullptr, executable, 32768);
+  if (length == 0 || length >= 32768) { error = "Cannot locate native companion."; return false; }
+  std::wstring path(executable, length);
+  path = path.substr(0, path.find_last_of(L"\\/")) + L"\\relay-runtime.json";
+  if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return true; // Legacy fixed-port installation.
+  std::ifstream file(path.c_str(), std::ios::binary);
+  std::string json;
+  char buffer[4096];
+  file.read(buffer, sizeof(buffer));
+  json.assign(buffer, static_cast<std::size_t>(file.gcount()));
+  if (!file.eof() || !extractJsonString(json, "relayUrl", relayUrl)) {
+    error = "Invalid Tabro runtime discovery record."; return false;
+  }
+  std::smatch match;
+  if (!std::regex_search(json, match, std::regex("\\\"schemaVersion\\\"\\s*:\\s*1\\s*[,}]")) ||
+      !std::regex_search(json, match, std::regex("\\\"processId\\\"\\s*:\\s*([1-9][0-9]*)\\s*[,}]"))) {
+    error = "Unsupported Tabro runtime discovery record."; return false;
+  }
+  unsigned long processId = 0;
+  try { processId = std::stoul(match[1].str()); } catch (...) { error = "Invalid Broker process ID."; return false; }
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+  DWORD exitCode = 0;
+  const bool alive = process && GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+  if (process) CloseHandle(process);
+  if (!alive) { error = "The discovered Tabro Broker is not running."; return false; }
+  if (!std::regex_match(relayUrl, std::regex("ws://127\\.0\\.0\\.1:[1-9][0-9]{0,4}/relay"))) {
+    error = "Discovered relay must use the local Tabro endpoint."; return false;
+  }
+  return true;
 }
 
 struct WebSocketConnection {
@@ -288,6 +323,10 @@ int main() {
   WebSocketConnection websocket;
   std::string error;
   DWORD errorCode = 0;
+  if (!discoverRelayUrl(relayUrl, error)) {
+    sendControl("ERROR", error);
+    return 1;
+  }
   if (!openWebSocket(relayUrl, websocket, error, errorCode)) {
     sendControl("ERROR", error, errorCode);
     return 1;

@@ -50,6 +50,26 @@ flowchart LR
 
 The broker runs as one local service. MCP adapters, extension connections, workers, and browser attachments can restart independently around its durable logical state.
 
+### Shared discovery binds Demo and ordinary clients to one running Broker
+
+The shared deployment uses one Broker database for Demo and ordinary MCP sessions. MCP and extension relay are separate loopback listeners in that process; both default to port `0` so the operating system allocates their ports. Explicit nonzero overrides remain available for compatibility.
+
+After both listeners start, Broker Runtime atomically replaces each configured discovery file with schema version `1`, an instance UUID, process ID, start time, actual `mcpUrl` and `relayUrl`, and absolute database path. Discovery locates a process; it is not the authority for browser identity, ownership or credentials. Those remain in the durable store. Shutdown removes a discovery record only while its instance UUID still matches.
+
+Source installations publish `runtime.json` in the data directory and `relay-runtime.json` beside the native executable. Packaged launchers select the installed data and native paths. Discovery contains no bearer token; clients retain their token-file configuration. The managed Profile launcher receives the relay address actually bound by the Broker.
+
+### Clients validate discovered instances before forwarding a new call
+
+When `TABRO_RUNTIME_FILE` is configured, the stdio adapter validates the closed discovery schema, loopback URLs and process liveness, then checks MCP contract version and the health endpoint's instance UUID before connecting. Before each new tool call it rereads discovery and reconnects if the instance changed, keeping the adapter's caller identity. A malformed or unavailable configured record fails instead of falling back to an unrelated Broker. A dispatched call is never retried by this reconnection mechanism.
+
+Native Host reads its adjacent relay record on each connection, checks the discovery version, process liveness and local relay URL, and forwards to that relay. Only absence of a discovery file permits its legacy configured-URL behavior; a present invalid record fails. Native Host's checks are not the adapter's HTTP health/instance handshake. These process checks do not establish a general PID-reuse guarantee.
+
+### Startup coordination prevents a second process from opening the same live data directory
+
+The local startup helper serializes launches with a Windows startup mutex and reuses a matching healthy process. A Broker entry process also exclusively creates a PID lock in its data directory and refuses a live recorded owner; stale-owner removal and a fresh exclusive create permit recovery. Unknown or invalid ownership requires inspection. This lock belongs to process startup, independently of per-Profile operation leases and managed-tab FIFO lanes.
+
+Demo preparation reuses this shared runtime and owns only its fixture server and per-run evidence. Stopping the fixture leaves the Broker running. Merging historical stores is an explicit offline migration, not a Broker startup action.
+
 ### Installation prepares both agent runtimes and each browser profile
 
 Scripted installation builds the broker and extension, registers the MCP server for Codex and for the default plus every installed named Hermes profile, installs the Native Messaging host, and verifies local readiness. Hermes profiles remain isolated: each profile stores its own MCP entry and launches its own session-owned adapter, while every adapter reaches the same local broker. Running the registration script again after profile creation brings the new profile into the registered set. Each intended Chrome or AdsPower profile loads its own extension, which generates a default readable code, accepts optional customization in its options page, and registers automatically when the running broker is reachable. Installation provides no broker-code issuance or required user-entry step.
@@ -61,6 +81,8 @@ Installation reports one explicit unmet prerequisite at a time. It does not beco
 Release construction bundles the broker and MCP adapter with their production dependencies, copies migrations and the unpacked extension, gives the native executable a versioned filename, and records the hash and byte length of every packaged file. GitHub publishes the Windows archive, its SHA-256 checksum, and the updater.
 
 The updater verifies the archive checksum and internal manifest before stopping a process. It installs the runtime under a versioned directory, preserves the durable data directory, points stable broker and MCP launchers at the selected release, updates the Native Messaging manifest to the versioned native executable, mirrors extension files into one stable unpacked-extension directory, and commits current-release state before startup. Health must report the selected version. A failed startup restores the prior current-release state, extension files, Native Messaging target, and previously running broker.
+
+The current updater also requires release-manifest `runtimeDiscoveryVersion: 1` before stopping the existing installation. A historical package without that capability does not qualify for the shared-runtime upgrade path. Profile-aware upgrade checks reject active work or running managed instances and preserve database/configuration snapshots for recovery.
 
 Relay `READY` facts carry the broker version, required extension version, and whether reload is required. A version mismatch does not enter broker-ready dispatch. The extension reloads once for that required version through `chrome.runtime.reload()`, reconnects through the refreshed Native Messaging target, and only then publishes inventory. Persisted extension storage retains endpoint identity and pairing. A second mismatch for the same required version fails closed for operator repair.
 
@@ -90,6 +112,8 @@ The agent-facing ticket can be closed; the audit record remains available to loc
 
 | Entity | Durable responsibility |
 | --- | --- |
+| Managed Profile | Principal-owned persistent identity directory, immutable storage key and optional endpoint binding |
+| Profile instance | Launch generation, process identity, extension observations and lifecycle lease |
 | Endpoint | Paired profile identity, nickname, credential, condition, and connection generation |
 | Window | Broker-issued identity for one observed eligible browser window on an endpoint |
 | Workspace | Endpoint, window, tab group, lineage, owner, lifecycle, pause causes, and epochs |
@@ -125,7 +149,7 @@ A rejected precondition creates no public ticket. Failed acknowledgement handoff
 
 ### Reads and terminal close do not enter the browser scheduler
 
-`get_browser_context`, `get_browser_request`, and `read_cdp_events` are immediate bounded reads over authorized broker truth. `close_browser_request` is one immediate compare-and-write over terminal state, applicable authority, and current owner epoch.
+`list_browser_profiles`, `get_browser_context`, `get_browser_request`, and `read_cdp_events` are immediate bounded reads over authorized broker truth. `close_browser_request` is one immediate compare-and-write over terminal state, applicable authority, and current owner epoch.
 
 These calls do not occupy or release a tab lane, execute browser work, or change request priority.
 
@@ -133,7 +157,7 @@ These calls do not occupy or release a tab lane, execute browser work, or change
 
 Lifecycle is `queued`, `running`, then `succeeded`, `failed`, or `uncertain`. A nullable pause condition can accompany queued or running. Phase and checkpoint record progress but do not create extra lifecycle states.
 
-Elapsed time and agent disconnect never terminalize a request. The broker can report a stall and reclaim an expired worker claim without canceling the underlying ticket.
+Elapsed time and agent disconnect do not terminalize workspace or raw-CDP requests. The broker can report a stall and reclaim an expired worker claim without canceling the underlying ticket. Managed Profile lifecycle operations separately apply the explicit bounded waits in the canonical Operational defaults and preserve uncertainty about unverified process effects.
 
 ## Workspace management
 
@@ -199,9 +223,11 @@ If reconciliation or archive confirmation fails, termination fails and leaves th
 
 ### Scheduler bounds provide backpressure without changing ticket semantics
 
-The initial implementation permits up to sixteen active workers globally and four per endpoint. Durable queues default to 1,024 accepted requests globally and 256 per endpoint. Admission beyond those limits rejects synchronously as broker busy before ticket creation.
+The approved scheduling target is up to sixteen active workers globally and four per endpoint, with durable queues bounded at 1,024 accepted requests globally and 256 per endpoint. Admission beyond those limits must reject synchronously as broker busy before ticket creation.
 
 These numeric defaults are configuration and qualification targets, not permanent wire promises. A smaller bound must be advertised and must preserve the same rejection and FIFO behavior.
+
+The current `OctopusBroker` exposes page-size and worker-lease options and enforces per-tab lanes, but does not implement these global/per-endpoint worker and queue limits. They remain a conformance gap, separate from the implemented managed-Profile queue and three-operation limit.
 
 ## Events and recovery
 
@@ -233,9 +259,11 @@ Default freshness thresholds and health windows are configuration reported by br
 
 ### Operational logs and durable audit serve different purposes
 
-Structured operational logs rotate by size and age and omit raw CDP payloads by default. The initial default retains seven days or 100 MiB, whichever rotates first.
+The approved operational-log policy requires rotation by size and age and omission of raw CDP payloads by default. Its target retention is seven days or 100 MiB, whichever rotates first.
 
-Durable audit retains request metadata, hashes, transitions, routing decisions, attempt and reconciliation facts, control commits, and public closure for thirty days after closure by default. Raw command, result, and event bodies remain in the request/event stores only as required for open-ticket visibility and configured event retention. Explicit local diagnostic mode may log raw bodies and must label that fact.
+The approved durable-audit policy retains request metadata, hashes, transitions, routing decisions, attempt and reconciliation facts, control commits, and public closure for thirty days after closure by default. Raw command, result, and event bodies remain in the request/event stores only as required for open-ticket visibility and configured event retention. Explicit local diagnostic mode may log raw bodies and must label that fact.
+
+Current runtime evidence is narrower: Broker Runtime constructs a redacting Pino logger, startup scripts redirect its streams to local files, and the audit repository appends and lists records. The checked-in runtime has no size/age log rotation or thirty-day audit purge. Event storage supports stream replacement and paginated reads but has no age/count pruning worker. Those retention requirements remain open implementation work; they are not evidence of delivered cleanup or bounded disk usage.
 
 ## System invariants
 
@@ -266,7 +294,6 @@ Unit and contract tests prove schemas, policy, state machines, references, and i
 
 Real-world qualification uses Codex and Hermes sessions against separately installed and automatically paired Chrome and AdsPower profiles. Test-driven changes return through the owning vault level; executable behavior never silently establishes higher-level intent.
 
-Parent: [`System MOC`](./_MOC.md).
 
 ## Profile lifecycle
 
@@ -281,3 +308,5 @@ The stable private extension directory receives instance-specific bootstrap conf
 ### Profile operations serialize independently from tab execution lanes
 
 Profile operations retain the existing acknowledgement-before-dispatch rule. Per-Profile queues and renewable fenced leases serialize lifecycle work, with three concurrent operations and a bounded pending queue. Stop establishes an admission barrier and checks workspaces and in-flight work before normal closure. Unverified process ownership cannot trigger a blind restart or process termination.
+
+Parent: [`System MOC`](./_MOC.md).

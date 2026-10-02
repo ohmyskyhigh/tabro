@@ -22,6 +22,7 @@ export interface ReleaseFileFact {
 
 export interface ReleaseManifest {
   schemaVersion: 1;
+  runtimeDiscoveryVersion: 1;
   version: string;
   platform: 'windows-x64';
   extensionDirectory: 'browser-extension';
@@ -129,6 +130,7 @@ export async function stageRelease(output = defaultOutput): Promise<{ output: st
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifest: ReleaseManifest = {
     schemaVersion: 1,
+    runtimeDiscoveryVersion: 1,
     version,
     platform: 'windows-x64',
     extensionDirectory: 'browser-extension',

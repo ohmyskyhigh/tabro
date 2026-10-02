@@ -1,6 +1,6 @@
 # Octopus Browser Relay implementation plan
 
-Status: active.
+Status: historical implementation and qualification plan. The original fourteen-tool scope below is preserved; the current eighteen-tool contract and later runtime changes are routed from [the vault entry](../../TOP-DOWN-MOC.md). Unchecked tasks remain unverified rather than being retroactively marked complete.
 
 This plan migrates the existing profile-aware relay into the canonical fourteen-tool, ticket-first, extension-backed CDP architecture. It preserves the working pairing and relay mechanics while replacing the old target-binding/session/custom-operation model.
 

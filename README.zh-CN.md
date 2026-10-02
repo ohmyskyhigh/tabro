@@ -13,17 +13,15 @@ Tabro 通过 MCP，让 Codex、Hermes 等 AI Agent 会话以可审计、按浏�
 
 ## 快速开始
 
-### GitHub Release 更新器是普通用户最短的安装路径
+### 当前十八工具与共享运行时通过源码安装使用
 
-1. 在 Windows 安装 Node.js `22.12.0` 或更高版本。
-2. 运行下方的 GitHub Release 更新器。
-3. 确认最终 JSON 中 `status` 为 `UPDATED`，`broker.health.status` 为 `ok`，版本为 `0.3.0`。
-4. 在每个 Chrome 或 AdsPower 配置文件中打开 `chrome://extensions`，开启**开发者模式**，点击**加载已解压的扩展程序**，选择更新器返回的 `extensionPath`。
-5. 打开扩展的 **Tabro Settings**，保留自动生成的配对码或设置自己的两词代码，然后等待 `Status: connected`。扩展会使用保存的代码和简短昵称自动注册。
-6. 打开 `%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\INSTALLATION.md`，按其中内容配置 Codex，或运行 `hermes-mcp.txt` 中的命令为默认及所有已安装 Hermes 配置文件注册 Tabro，然后新建 Agent 会话。
-7. 打开 `http://127.0.0.1:7331/health`。`connectedEndpoints` 应等于准备使用的浏览器配置文件数量。
+1. 准备下方“环境要求”中的 Windows 构建工具，克隆仓库并进入根目录。
+2. 运行 `pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker`；启用受管 Chrome 时另加 `-EnableManagedProfiles`。
+3. 外部已有浏览器 Profile 在 `chrome://extensions` 加载安装器返回的扩展目录，使用 Native companion 等待连接；受管 Profile 在 create/open 时自动加载。
+4. 使用 `.relay-data/bootstrap/codex-mcp.toml` 或 `hermes-mcp.txt` 生成的配置，新建 Agent 会话并核对 18 个工具。
+5. 从 `.relay-data/runtime.json` 读取实际健康地址，再验证端点连接和真实托管标签页操作。
 
-完整中文步骤见[安装与设置](./doc/zh-CN/Installation-and-Setup.md)。
+仓库发布记录中的 `v0.3.0` 安装包仍是旧名称与 14 工具协议。当前源码更新器要求包声明 `runtimeDiscoveryVersion: 1`，不合格包会在停止现有安装前被拒绝。完整步骤见[安装与设置](./doc/zh-CN/Installation-and-Setup.md)。
 
 ## 功能
 
@@ -75,6 +73,8 @@ flowchart LR
 ## Release 安装
 
 ### 独立更新器会校验、安装、注册并启动选定版本
+
+以下下载命令对应历史发布包路径；它不等于当前源码的十八工具、受管 Profile 和动态发现安装。使用当前功能请按“源码安装”构建。
 
 在 PowerShell 中执行：
 
@@ -161,7 +161,7 @@ pnpm install --frozen-lockfile
 pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker
 ```
 
-源码安装把生成状态写到 `.relay-data`，扩展构建输出为 `dist\browser-extension`。开发时可以运行：
+源码安装把生成状态写到 `.relay-data`，扩展构建输出为 `dist\browser-extension`。开发时先用 `tools/stop-local-broker.ps1` 停止同一数据目录的已运行 Broker，再运行：
 
 ```powershell
 pnpm build:extension
@@ -230,14 +230,22 @@ pnpm test:e2e
 pnpm build
 ```
 
-健康接口：
+健康接口从共享运行记录读取：
 
 ```text
-http://127.0.0.1:7331/health
-http://127.0.0.1:7332/health
+.relay-data/runtime.json → mcpUrl，将 /mcp 替换为 /health
+.relay-data/runtime.json → relayUrl，将 ws: 替换为 http:，/relay 替换为 /health
 ```
 
 ## 故障排查
+
+### Demo 与日常 MCP 共享一个动态端口 Broker
+
+当前源码默认将 MCP 和 relay 监听端口设为 `0`，由系统分配空闲端口。两种任务共用同一个 Broker 和同一份运行记录；MCP 与 relay 是同一进程的两个接口，各有一个监听端口。
+
+运行 `powershell -NoProfile -File tools/start-local-broker.ps1` 会复用健康实例并返回实际地址。Hermes 和 Codex 使用 `TABRO_RUNTIME_FILE` 指向 `.relay-data/runtime.json`，认证仍通过令牌文件。Native Host 从可执行文件旁的 `relay-runtime.json` 读取当前 relay 地址。重启后适配器在下一次调用前重新发现地址，不自动重放已提交操作。
+
+Demo 只单独保留演示站、trace 与输出；Chrome 数据目录和登录状态仍在原位置。Hermes Plugin 接管是后续独立工作。
 
 ### 扩展未连接时应从 Broker 健康、Native Messaging 和扩展路径依次检查
 
@@ -247,9 +255,11 @@ http://127.0.0.1:7332/health
 4. 重新运行更新器以修复已安装文件和 Native Messaging 注册。
 5. 更新扩展文件后重载扩展。如果仍提示版本号不匹配，更新并重启 Broker 以移除旧版本门禁，再重新连接扩展。
 
+当前 `setup-readiness-checks.ts` 的交接文件检查仍要求配置中含固定 Broker URL，可能对有效的 `TABRO_RUNTIME_FILE` 注册报告 `mcp_registration_handoffs: ACTION_REQUIRED`。应核对发现文件、令牌路径并实测十八工具；这项旧检查未通过仍须如实记录，不能靠反复重装消除。
+
 ### Agent 看不到 18 个工具时应重新创建适配器和 Agent 会话
 
-确认 Codex 或 Hermes 配置指向生成的稳定适配器入口和令牌文件。修改 MCP 配置后必须新建会话。Agent 连接的是 stdio 适配器和 HTTP MCP 网关，不是 `7332` 的 WebSocket relay。
+确认 Codex 或 Hermes 配置指向生成的稳定适配器入口和令牌文件。修改 MCP 配置后必须新建会话。Agent 连接的是 stdio 适配器和 HTTP MCP 网关，浏览器 relay 的动态 WebSocket 地址不用于 Agent MCP 注册。
 
 ### 停止 Broker 时必须使用带 PID 和命令行校验的脚本
 
