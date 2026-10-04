@@ -21,6 +21,7 @@ Each selected Hermes profile enables its own plugin and adapter. Its `PLUGIN_ROO
 - A separate isolated installation downloaded and verified the pinned Node archive without preinstalled Node being supplied to setup.
 - Tests skipped Native Host registry replacement to preserve ongoing browser work. They do not establish clean-machine extension pairing or support for other Chrome builds. Existing proxy browser evidence remains in the [closed-Profile amendment](../profile-proxy-2026-10-03/closed-profile-amendment.md).
 - Hermes portable validation passed with `caution`: the native executable, bundled validator `env ||` expressions and SQLite `.exec()` calls triggered findings. The latter two are not environment dumping or shell execution; warnings remain visible for upstream review.
+- The SDK schema validators are separate bundled modules. Their embedded GitHub schema identifiers are preserved without combining them with Tabro filesystem services; the catalog's per-file self-updater check can distinguish these modules, and the Broker and adapter share the server validator.
 
 ## Publication
 

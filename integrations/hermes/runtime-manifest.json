@@ -14,13 +14,13 @@
   "files": [
     {
       "path": "adapter/main.js",
-      "bytes": 1999810,
-      "sha256": "167e6950432b78ba9d3f0d0882ea37edf43bf8191171ffa840fca74a644a948b"
+      "bytes": 1454054,
+      "sha256": "ce7380718a14e47969842020b4af1f1cff9f0c6f9f3e23d3a4dd1ef8dd601ddf"
     },
     {
       "path": "broker/main.js",
-      "bytes": 2349281,
-      "sha256": "ea4abacd9958dd01434580ce7e967a3bda64f323c0e219e93abeb93a155fd6a4"
+      "bytes": 2076476,
+      "sha256": "31a11abc71175ccb310d1966d4ed4d50956f9d05b9ca59b4b06f8ae418eb481d"
     },
     {
       "path": "broker/migrations/001-initial.sql",
@@ -261,6 +261,16 @@
       "path": "package.json",
       "bytes": 118,
       "sha256": "5762464962783f419e0ba3f47736778e6657614f14f7c74086c0a88b44f10d67"
+    },
+    {
+      "path": "validators/mcp-client.js",
+      "bytes": 274207,
+      "sha256": "1a39f6540f0236831c8f7501550438eb719698f45c1141c1fc9a8959babf23d4"
+    },
+    {
+      "path": "validators/mcp-server.js",
+      "bytes": 274204,
+      "sha256": "fdcb848be34a0df42abf015bd85e7b209a08dc9d77e9ad08ff66476e590fd245"
     }
   ]
 }

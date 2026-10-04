@@ -93,7 +93,7 @@ Disabling or uninstalling the Hermes plugin disconnects that integration. It lea
 
 ### The payload is built from the version-matched source tree
 
-From the Tabro repository root, run `pnpm install --frozen-lockfile`, `pnpm verify`, then `pnpm stage:hermes`. Commit the generated runtime and manifest together with the source. Validate the resulting directory with `hermes plugins validate integrations/hermes --install-deps` before catalog submission. The official catalog entry uses this directory as its `subdir` and pins the complete Git SHA.
+From the Tabro repository root, run `pnpm install --frozen-lockfile`, `pnpm verify`, then `pnpm stage:hermes`. Commit the generated runtime and manifest together with the source. Validate the resulting directory with `hermes plugins validate integrations/hermes --install-deps` before catalog submission. The official catalog entry uses this directory as its `subdir` and pins the complete Git SHA. The SDK's schema validators are bundled separately from filesystem services; their GitHub URLs identify embedded JSON schemas and do not fetch updates.
 
 ### Installation qualification exercises two independent Hermes profile homes
 

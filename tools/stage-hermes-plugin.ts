@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { assertReleaseVersions } from './stage-release.js';
 
@@ -16,6 +17,15 @@ mkdirSync(runtime, { recursive: true });
 const sha = (file: string): string => createHash('sha256').update(readFileSync(file)).digest('hex');
 const sourceSha = (file: string): string => createHash('sha256').update(readFileSync(file, 'utf8').replace(/\r\n/gu, '\n')).digest('hex');
 const inputNames = new Set<string>();
+// Keep the SDK's JSON Schema validators separate from filesystem services.
+// AJV uses GitHub URLs as schema identifiers, not as update/download endpoints.
+// Preserving this boundary also avoids embedding the server validator twice.
+for (const sdk of ['server', 'client']) {
+  const result = await build({ entryPoints: [fileURLToPath(import.meta.resolve(`@modelcontextprotocol/${sdk}/_shims`))],
+    outfile: resolve(runtime, `validators/mcp-${sdk}.js`), bundle: true, platform: 'node', format: 'esm',
+    target: 'node22', external: ['node:*'], metafile: true, logLevel: 'warning' });
+  for (const input of Object.keys(result.metafile.inputs)) inputNames.add(input);
+}
 for (const [source, output] of [
   ['apps/broker/src/runtime/main.ts', 'broker/main.js'],
   ['apps/mcp-stdio-adapter/src/main.ts', 'adapter/main.js'],
@@ -23,6 +33,11 @@ for (const [source, output] of [
 ] as const) {
   const result = await build({ entryPoints: [resolve(root, source)], outfile: resolve(runtime, output), bundle: true,
     platform: 'node', format: 'esm', target: 'node22', external: ['node:*'], metafile: true,
+    plugins: [{ name: 'shared-mcp-validators', setup(builder) {
+      builder.onResolve({ filter: /^@modelcontextprotocol\/(server|client)\/_shims$/ }, args => ({
+        path: `../validators/mcp-${args.path.split('/')[1]}.js`, external: true
+      }));
+    } }],
     banner: { js: "import { createRequire as __tabroCreateRequire } from 'node:module'; const require = __tabroCreateRequire(import.meta.url);" }, logLevel: 'warning' });
   for (const input of Object.keys(result.metafile.inputs)) inputNames.add(input);
 }
