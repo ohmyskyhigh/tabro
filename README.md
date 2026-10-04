@@ -2,14 +2,14 @@
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [中文文档](./doc/zh-CN/README.md)
 
-Give AI-agent sessions brokered, profile-aware access to multiple local Chrome or AdsPower browsers through MCP.
+Open-source Chrome automation for AI agents: one shared Broker, separate task workspaces, and per-profile proxies through MCP.
 
 Tabro was previously named Octopus Browser Relay. New MCP registrations use `tabro`; existing profile data, extension identity, Native Messaging registration, and legacy environment variables remain compatible. The repository is now [ohmyskyhigh/tabro](https://github.com/ohmyskyhigh/tabro); the previous repository address redirects to it, and historical release asset filenames remain valid.
 
 Tabro connects a local MCP gateway to one extension instance in each browser profile. An agent asks for browser capacity, receives broker-issued workspace and tab references, submits extension-supported Chrome DevTools Protocol (CDP) commands, and polls durable request tickets. The extension relays those commands through `chrome.debugger`; Chrome does not need a public remote-debugging port.
 
 > [!IMPORTANT]
-> The `0.4.0` tree implements the canonical twenty-two-tool runtime, authenticated HTTP(S)/SOCKS5 profile proxies, relay-v2, Native Messaging and extension-backed CDP. The [Hermes plugin package](./integrations/hermes/README.md) includes the Windows runtime and first-time setup; catalog admission requires a separate upstream review. The existing `v0.3.0` release uses the previous Octopus name and fourteen-tool contract; use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime) for current Tabro features and automatic managed Profile lifecycle. Automated verification and physical Chrome, AdsPower, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
+> The `0.4.0` tree implements the canonical twenty-two-tool runtime, authenticated HTTP(S)/SOCKS5 profile proxies, relay-v2, Native Messaging and extension-backed CDP. The [Hermes plugin package](./integrations/hermes/README.md) includes the Windows runtime and first-time setup; catalog admission requires a separate upstream review. The existing `v0.3.0` release uses the previous Octopus name and fourteen-tool contract; use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime) for current Tabro features and automatic managed Profile lifecycle. Automated verification and physical Chrome, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
 
 ## Features
 
@@ -78,8 +78,8 @@ flowchart LR
   G <--> N["Windows Native Messaging companion"]
   N <--> E1["Profile A extension"]
   N <--> E2["Profile B extension"]
-  E1 <--> P1["Chrome or AdsPower profile A\nchrome.debugger"]
-  E2 <--> P2["Chrome or AdsPower profile B\nchrome.debugger"]
+  E1 <--> P1["Chrome profile A\nchrome.debugger"]
+  E2 <--> P2["Chrome profile B\nchrome.debugger"]
 ```
 
 Normal installed profiles use the Native Messaging companion. The companion forwards extension messages to the broker's loopback relay. Direct extension-to-WebSocket transport remains available only for diagnostics.
@@ -91,7 +91,7 @@ Read the canonical [Product definition](./doc/01-Product/Product-Definition.md),
 - Windows with PowerShell, current-user Native Messaging registry access, and WinHTTP WebSocket support for the checked-in native host and installer;
 - Node.js `22.12.0` or newer;
 - pnpm `11.19.0` or another compatible pnpm 11 release;
-- Chrome, Chromium, or an AdsPower browser kernel compatible with Manifest V3 and Chrome `116` or newer; and
+- Google Chrome or Chromium with Manifest V3 support and version `116` or newer; and
 - Visual Studio C++ Build Tools with an x64 compiler and Windows SDK when rebuilding the native companion.
 
 The TypeScript broker is not intrinsically tied to Windows, but the current native companion uses WinHTTP and the current registration script writes Windows registry keys.
@@ -107,7 +107,7 @@ corepack enable
 pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker
 ```
 
-The installer runs the frozen pnpm install and build unless skip switches are supplied, verifies the compiled stdio MCP adapter, registers `io.github.ohmyskyhigh.octopus_browser_relay` for the current Windows user under Google Chrome, Chromium, and the installed AdsPower/SunBrowser registry roots, migrates an attributable prototype registration, optionally starts the compiled broker, and creates these local handoff files:
+The installer runs the frozen pnpm install and build unless skip switches are supplied, verifies the compiled stdio MCP adapter, registers the `io.github.ohmyskyhigh.octopus_browser_relay` Native Messaging companion for the current Windows user, migrates an attributable prototype registration, optionally starts the compiled broker, and creates these local handoff files:
 
 ```text
 .relay-data/bootstrap/PAIRING.md
@@ -202,7 +202,7 @@ pnpm dev
 
 ### Every browser profile loads and pairs its own extension instance automatically
 
-Repeat these steps inside each Chrome or AdsPower profile that the broker should control:
+Repeat these steps inside each Chrome profile that the broker should control:
 
 1. Open `chrome://extensions`.
 2. Enable **Developer mode**.
@@ -216,7 +216,7 @@ The extension generates the default readable code and registers itself with the 
 
 ### Direct WebSocket stays available for explicit diagnostics
 
-The extension options page can connect directly to the `relayUrl` published in the runtime record, but that mode is not the normal Chrome or AdsPower setup. Browser kernels can block extension-initiated loopback WebSockets even when ordinary page requests to `127.0.0.1` work. Use **Native companion** for installed profiles and switch to direct WebSocket only while diagnosing transport behavior.
+The extension options page can connect directly to the `relayUrl` published in the runtime record, but that mode is not the normal Chrome setup. Browser kernels can block extension-initiated loopback WebSockets even when ordinary page requests to `127.0.0.1` work. Use **Native companion** for installed profiles and switch to direct WebSocket only while diagnosing transport behavior.
 
 ## Agent registration
 
@@ -354,14 +354,14 @@ Both ports default to `0`; clients use the actual addresses in the discovery rec
 ## Current limits
 
 - The Native Messaging host and registration installer are Windows-specific.
-- The installer registers current-user host manifests for Google Chrome, Chromium, and the installed AdsPower/SunBrowser root. Another browser build or AdsPower variant that reads a different registry location needs its actual root passed through `-NativeRegistryRoots`.
+- The installer registers current-user Native Messaging host manifests. A browser build that reads a different registry location needs its actual root passed through `-NativeRegistryRoots`.
 - The installer generates a Codex stdio handoff without modifying Codex configuration and a Hermes command that registers every profile installed when it runs. It does not install either runtime, and a later Hermes profile requires rerunning that command.
 - Independent sessions remain distinct when the host launches one adapter process per session or supplies a supported runtime session environment value. A host that deliberately reuses one adapter process across unidentified sessions also reuses that adapter identity.
 - The HTTP broker confirms an accepted ticket after handing it to the stdio adapter. MCP has no transaction spanning that HTTP handoff and the adapter's later stdout write, so an adapter crash in that narrow interval can dispatch work whose ticket the agent runtime did not receive.
 - The extension executes only methods published by `octopus-extension-baseline-v1`; flattened child CDP sessions are disabled.
 - Relay-v2 extension envelopes are limited to 1 MiB. Capability and inventory limits are published in the same manifest.
 - The relay-v1 compatibility bridge remains enabled for migration, while the public MCP gateway exposes only the canonical twenty-two tools.
-- The repository does not install Codex, Hermes, Chrome, or AdsPower. The current release has recorded a three-profile, independent-Codex-session, and Hermes physical qualification; another machine or browser build still requires its own preflight and physical evidence.
+- The repository does not install Codex, Hermes, or Chrome. The current release has recorded a three-profile, independent-Codex-session, and Hermes physical qualification; another machine or browser build still requires its own preflight and physical evidence.
 - There is a PID-verified broker stop command but no full uninstall command yet.
 
 ## Repository layout

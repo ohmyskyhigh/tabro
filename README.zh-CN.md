@@ -4,7 +4,7 @@
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [中文文档](./doc/zh-CN/README.md)
 
-Tabro 通过 MCP，让 Codex、Hermes 等 AI Agent 会话以可审计、按浏览器配置文件隔离的方式控制本机多个 Chrome 或 AdsPower 浏览器。
+Tabro 是面向 AI Agent 的开源 Chrome 自动化工具：通过 MCP，共用一个 Broker、为不同任务创建独立工作区，并为每个浏览器 Profile 配置代理。
 
 每个浏览器配置文件安装一个扩展实例。Agent 向本地 Broker 申请工作区，获得 Broker 签发的 `workspace_ref`、`tab_ref` 和请求票据，再通过扩展支持的 Chrome DevTools Protocol（CDP）子集执行浏览器操作。扩展使用 `chrome.debugger`，无需公开暴露 Chrome 远程调试端口；受管启动内部使用 loopback 管理连接。
 
@@ -78,8 +78,8 @@ flowchart LR
   G <--> N["Windows Native Messaging 伴生程序"]
   N <--> E1["配置文件 A 的扩展"]
   N <--> E2["配置文件 B 的扩展"]
-  E1 <--> P1["Chrome 或 AdsPower A\nchrome.debugger"]
-  E2 <--> P2["Chrome 或 AdsPower B\nchrome.debugger"]
+  E1 <--> P1["Chrome 配置文件 A\nchrome.debugger"]
+  E2 <--> P2["Chrome 配置文件 B\nchrome.debugger"]
 ```
 
 已安装配置文件的正常连接方式是 Native Messaging。扩展直连 WebSocket 只用于诊断。中文架构与工具说明见[架构与 MCP](./doc/zh-CN/Architecture-and-MCP.md)。
@@ -91,7 +91,7 @@ flowchart LR
 - Windows、PowerShell 和当前用户注册表写入权限；
 - Node.js `22.12.0` 或更高版本；
 - GitHub Release 安装不要求 pnpm；从源码构建需要 pnpm `11.19.0` 或兼容的 pnpm 11；
-- Chrome、Chromium 或支持 Manifest V3、Chrome `116+` 的 AdsPower 内核；
+- 支持 Manifest V3、版本为 `116+` 的 Google Chrome 或 Chromium；
 - 只有从源码重编译 Native Messaging 伴生程序时，才需要 Visual Studio C++ Build Tools、x64 编译器和 Windows SDK。
 
 ## Release 安装
@@ -136,7 +136,7 @@ ZIP 本身不能直接作为 Chrome 扩展加载。必须先运行更新器，�
 
 ### 每个浏览器配置文件只需从稳定目录加载一次扩展
 
-在每个需要控制的 Chrome 或 AdsPower 配置文件中：
+在每个需要控制的 Chrome 配置文件中：
 
 1. 打开 `chrome://extensions`。
 2. 开启**开发者模式**。
@@ -306,7 +306,7 @@ pwsh -NoProfile -File .\tools\stop-local-broker.ps1
 ### 公开版本仍保留明确的开发边界
 
 - Native Messaging 伴生程序和注册脚本目前仅支持 Windows。
-- Release 安装不会安装 Codex、Hermes、Chrome 或 AdsPower。
+- Release 安装不会安装 Codex、Hermes 或 Chrome。
 - 扩展只执行 `octopus-extension-baseline-v1` 允许的方法。
 - relay-v2 扩展消息上限为 1 MiB。
 - relay-v1 兼容桥仍保留用于迁移，但公开 MCP 只暴露 18 个正式工具。
