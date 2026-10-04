@@ -78,6 +78,8 @@ Installation reports one explicit unmet prerequisite at a time. It does not beco
 
 ### GitHub Releases install immutable runtimes behind stable local launch and extension paths
 
+The approved [first-time Hermes setup journey](../02-User-Experience/User-Experience-Definition.md#first-time-hermes-setup-downloads-and-installs-the-local-browser-runtime) must compose package download, dependency preparation, local installation, Native Messaging registration, Broker startup and MCP readiness for a machine without Tabro. It uses the shared runtime and preserves the existing Profile proxy contract. This integration is pending delivery in the [Hermes plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md); the release mechanics below do not establish that the plugin installer already exists.
+
 Release construction bundles the broker and MCP adapter with their production dependencies, copies migrations and the unpacked extension, gives the native executable a versioned filename, and records the hash and byte length of every packaged file. GitHub publishes the Windows archive, its SHA-256 checksum, and the updater.
 
 The updater verifies the archive checksum and internal manifest before stopping a process. It installs the runtime under a versioned directory, preserves the durable data directory, points stable broker and MCP launchers at the selected release, updates the Native Messaging manifest to the versioned native executable, mirrors extension files into one stable unpacked-extension directory, and commits current-release state before startup. Health must report the selected version. A failed startup restores the prior current-release state, extension files, Native Messaging target, and previously running broker.

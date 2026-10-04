@@ -2,7 +2,15 @@
 
 Tabro is a local, MCP-accessible browser-control product that lets AI-agent sessions automate websites across multiple Chrome profiles without managing Chrome remote-debugging ports, pipes, or broker-private browser routing.
 
-The project is open source under the MIT License. The broker and its browser connections operate locally.
+All Tabro-owned project components are open source under the MIT License: the Broker, MCP Adapter, browser extension, Native Host, Hermes integration, installation tooling, and proxy implementation. This scope also applies to components still awaiting implementation. Third-party dependencies retain their own licenses. The broker and its browser connections operate locally.
+
+## Distribution
+
+### First-time Hermes setup must install the Broker and its required runtime
+
+Tabro's Hermes plugin distribution must serve users who have no Tabro installation. First-time Tabro setup must download and install the local Broker and the supporting runtime needed for browser automation; a separately preinstalled Broker is not a prerequisite. The distribution includes the [Profile networking](#profile-networking) capability under the same open-source scope.
+
+This is an approved delivery requirement. Plugin packaging, first-time setup qualification and catalog admission remain pending; the [Hermes delivery plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md) tracks that work.
 
 ## Target client
 
@@ -191,6 +199,7 @@ Tabro does not expose per-request cancellation and does not impose a broker term
 
 | Capability | Product outcome |
 | --- | --- |
+| Profile proxy configuration | An agent can configure and verify the authenticated upstream proxy of a broker-owned Profile through MCP, under the [Profile networking](#profile-networking) rules. |
 | Endpoint discovery and workspace acquisition | An agent can discover paired browser profiles by nickname and condition, then request one or more session-time workspaces without a permanent agent-to-profile binding. |
 | Managed-tab lifecycle | A workspace request counts each endpoint once, creates or resumes each admitted tab-group workspace in an eligible existing window, and supplies a broker-issued managed-tab target; Tabro can create additional tabs and adopt opener-linked child tabs without exposing Chrome target identity. |
 | Extension-relayed CDP | An agent can send permitted raw CDP commands and receive raw results, extension-debugger errors, and events without handling a debugging port, pipe, attachment, or private browser target. |
@@ -278,5 +287,15 @@ The approved managed-Profile journey adds an owned persistent Profile directory 
 On the verified Windows runtime, Tabro uses a private loopback browser connection only to load its extension, inspect the owned instance, prepare an empty window and close normally. Website actions and native tab-group workspaces continue through the extension. Active work prevents a Profile stop.
 
 The workspace/raw-CDP no-terminal-timeout rule does not eliminate the approved managed lifecycle's bounded startup and normal-close waits. A lifecycle failure reports its known state while preserving data and refusing unverified process termination; it does not decide whether an ambiguous website effect succeeded.
+
+## Profile networking
+
+### Broker-owned Profiles can use one authenticated upstream proxy
+
+Profiles with `ownership=broker` support HTTP and HTTPS proxies with Basic username/password authentication and SOCKS5 proxies with username/password authentication. One setting covers all regular windows and workspaces in that Profile. User-owned Profiles do not support Tabro proxy configuration. Launch ownership remains broker/user, and network management also requires its dedicated authority. The pairing alias remains the sole Profile name.
+
+### Network changes require a closed broker-owned Profile and apply on its next launch
+
+Agents can inspect, set, clear and check proxy configuration through MCP. Setting and clearing require dedicated network-management authority, broker ownership, verified browser closure and no conflicting unfinished work. The change is saved while closed and applied on the next explicit launch; configuration never automatically closes or opens Chrome. Enabled proxy failures do not silently select direct routing. Credentials remain protected on the local machine and are represented by opaque references in MCP. The promise covers regular-profile URL proxying, not system-wide VPN or incognito.
 
 Parent: [`01-Product`](./_MOC.md).

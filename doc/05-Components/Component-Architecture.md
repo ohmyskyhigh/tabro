@@ -214,6 +214,8 @@ The manifest describes scope and support; Browser Extension executes. Broker Cor
 
 ### Installation scripts are idempotent and report explicit readiness
 
+Under the [System installation contract](../04-System/System-Architecture.md#github-releases-install-immutable-runtimes-behind-stable-local-launch-and-extension-paths), Setup and Qualification owns delivery of the pending Hermes first-time setup flow, including Broker download and installation. It must qualify a machine without an existing Tabro runtime and include the current proxy capability in the distributed package. This assigns work to the existing component; it does not claim the Hermes installer is implemented.
+
 Setup scripts build artifacts, register the native host, generate MCP configuration for Codex, register MCP configuration separately in the default and every installed named Hermes profile, print extension load paths, verify broker health, and explain automatic extension pairing. The Hermes helper discovers the installed profile directories when it runs and must run again after another profile is created. The scripts do not issue or require a pairing code; optional profile-local customization happens in the extension options. Re-running them repairs matching configuration without deleting pairing or workspace state unless reset is explicitly requested.
 
 Runtime-specific templates remain separate from agent-visible MCP schemas.

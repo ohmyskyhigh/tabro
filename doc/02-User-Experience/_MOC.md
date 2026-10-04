@@ -10,6 +10,8 @@ The managed-Profile journey adds persistent list/create/open/stop under authenti
 
 ## Canonical User Experience contract
 
+The [first-time Hermes setup journey](./User-Experience-Definition.md#first-time-hermes-setup-downloads-and-installs-the-local-browser-runtime) is approved on October 4 and pending delivery. It requires setup to download and install the Broker and supporting runtime for new users; existing-installation reuse alone does not qualify that journey.
+
 - [`User-Experience-Definition.md`](./User-Experience-Definition.md) owns the agent journey, installation journey, asynchronous execution and direct-read interaction contract, workspace and tab acquisition journey, extension-backed CDP default and supporting use cases, visible results, control boundaries, success evidence, experience principles, and Product traceability.
 - [`Operational-Defaults.md`](./Operational-Defaults.md) owns the testable recovery, continuity, status, request-access, payload, polling, and compatibility defaults needed by the downstream contract.
 

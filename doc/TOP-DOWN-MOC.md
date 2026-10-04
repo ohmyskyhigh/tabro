@@ -29,6 +29,8 @@ The source package version is recorded in `package.json`. Repository publication
 
 ### Completed migrations and pending integration work have separate evidence
 
+- [Open-source Hermes distribution](./99-Changelog/2026-10-04-open-source-hermes-distribution.md) records approved full-component open-source scope, Broker installation during first-time setup and proxy-inclusive distribution; plugin delivery and catalog admission remain pending.
+
 - [Managed Profile implementation report](./80-Plans/single-agent-multi-chrome-demo-2026-09-27/implementation-report.md) records the September 27 Windows qualification and its limits.
 - [Hermes reference migration](./99-Changelog/2026-10-01-hermes-tabro-migration.md) and [shared dynamic runtime](./99-Changelog/2026-10-01-shared-dynamic-runtime.md) record the October 1 changes in execution order.
 - [Hermes Provider plan](./80-Plans/tabro-hermes-provider-2026-10-01/README.md) owns the remaining Plugin, cross-platform installation and upstream menu work. Shared-runtime consolidation is complete in that plan; those later milestones remain pending.

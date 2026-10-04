@@ -14,6 +14,14 @@ The desired outcome is for the agent to use the portion of Chrome's `chrome.debu
 
 Installation is a supporting journey that occurs before a Codex or Hermes automation session starts using Tabro.
 
+### First-time Hermes setup downloads and installs the local browser runtime
+
+For the Hermes plugin distribution, the human starts Tabro setup after installing and enabling the plugin. Setup downloads and installs the Broker, MCP Adapter, Native Host and browser-extension files, and prepares the required runtime dependencies. The human is not asked to obtain or start a separate Broker beforehand. Setup registers the local integration, starts the Broker and guides any browser-required extension installation or permission steps before reporting readiness.
+
+An existing compatible local installation may be reused through the shared-deployment journey below. Reuse is an optimization, not a prerequisite for new users. Proxy configuration follows [the Profile networking journey](#profile-networking) after installation; it retains the closed broker-owned Profile restriction.
+
+This approved journey is pending implementation and clean-machine qualification in the [Hermes delivery plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md). The scripted installation and direct MCP registration described below remain the existing supporting path.
+
 ### The same installer sequence applies whether a human or setup agent starts it
 
 A human can run the scripted installer directly or ask a standalone setup agent to run it on the human's behalf. Both entry paths use the same scripted installation journey because the Tabro MCP tool is not available until installation and registration are complete.
@@ -489,6 +497,8 @@ Evaluation records whether each asynchronous submission delivered its broker-iss
 
 | Product requirement | User Experience realization |
 | --- | --- |
+| Hermes distribution serves a user without a preinstalled Broker. | First-time Tabro setup downloads and installs the local runtime, guides extension setup and reports whether automation can begin; qualification remains pending. |
+| Open-source distribution includes Profile proxy support. | The existing proxy journey closes a broker-owned Profile, saves configuration through MCP, then explicitly reopens it and checks its exit IP. |
 | Agents can create and reopen persistent owned browser identities. | Principal-scoped Profile discovery and ticketed lifecycle operations yield ready endpoint nicknames for the existing workspace journey; stop preserves data and rejects active work. |
 | MCP access serves AI-agent sessions. | Codex and Hermes agent sessions receive the same MCP experience against Chrome. |
 | Installation remains a supporting operation outside the target automation journey. | A human runs the scripted installer directly or asks a setup agent to run it, after which every distinct extension instance generates or accepts a customized readable code, persists its endpoint nickname, and pairs automatically with the running local broker before automation begins. |
@@ -526,5 +536,15 @@ The agent ends its workspaces before stopping. A blocked stop reports active wor
 ### Bounded Profile lifecycle waits do not time out ambiguous website effects
 
 The no-terminal-timeout rules for workspace and raw-CDP work above do not remove the managed lifecycle's explicit queue, launch, extension-ready and normal-close bounds in [Operational defaults](./Operational-Defaults.md). Lifecycle timeout or unverified process identity produces the corresponding failure or uncertain fact; it never authorizes replay of a website action or blind process termination.
+
+## Profile networking
+
+### Agents close a broker-owned Profile before changing its proxy
+
+The agent ends its work, closes the broker-owned Profile, reads the current proxy revision and selects HTTP/HTTPS/SOCKS5 host and port plus an operator-provisioned credential reference. Set and clear save a ticketed change while Chrome is closed. The agent explicitly reopens the Profile and checks its exit IP after application. User-owned Profiles reject proxy configuration, even when disconnected; no human-closure confirmation flow is needed. Network changes never transfer workspace ownership.
+
+### Saved configuration and verified browser routing are separate facts
+
+Responses distinguish saved revision, effective extension application, and a dated browser-originated exit IP and latency observation. Saving while closed reports pending connection. Policy or competing-extension control reports a conflict. Clear saves removal of Tabro's setting; the next explicit launch omits the startup proxy flag and the extension releases its setting to the browser's underlying configuration, which may itself use a system proxy. Reconnection reconciles settings before automation becomes eligible.
 
 Parent: [`02-User-Experience`](./_MOC.md).
