@@ -9,6 +9,7 @@ export interface ProfileRuntimeConfig {
   root: string;
   executablePath: string;
   extensionSource: string;
+  /** Observed at setup, retained for legacy configurations; not an exact build lock. */
   expectedBrowserVersion: string;
   expectedExtensionDigest: string;
   relayUrl: string;

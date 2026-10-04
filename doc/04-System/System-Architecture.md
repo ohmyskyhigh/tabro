@@ -269,6 +269,12 @@ Current runtime evidence is narrower: Broker Runtime constructs a redacting Pino
 
 ## System invariants
 
+### Browser compatibility combines version admission with runtime capability checks
+
+The Windows Hermes package declares its selected browser through `TABRO_BROWSER_PATH` with a PE version floor of `153.0.0.0`. Setup accepts Chrome, Chromium or compatible derivatives such as Edge, preserves a saved browser selection, and rejects an incompatible explicit selection rather than silently substituting another browser. The managed launcher verifies the Chromium engine floor and extension loading; readiness additionally requires extension authentication and inventory. Newer builds are not rejected solely because their version differs from the setup observation.
+
+Process discovery must include Chromium derivatives, while control still requires the exact recorded PID, creation time, executable path and user-data directory. Discovery by the executable name `chrome.exe` alone is insufficient. Private lifecycle connections and extension-mediated website execution keep their existing boundaries.
+
 ### Cross-boundary invariants define conformance
 
 - The broker is the sole issuer of Tabro references and cursors.

@@ -1,10 +1,14 @@
 # Product definition
 
-Tabro is a local, MCP-accessible browser-control product that lets AI-agent sessions automate websites across multiple Chrome profiles without managing Chrome remote-debugging ports, pipes, or broker-private browser routing.
+Tabro is a local, MCP-accessible browser-control product that lets AI-agent sessions automate websites across compatible Chromium browser profiles without managing browser remote-debugging ports, pipes, or broker-private browser routing.
 
 All Tabro-owned project components are open source under the MIT License: the Broker, MCP Adapter, browser extension, Native Host, Hermes integration, installation tooling, and proxy implementation. This scope also applies to components still awaiting implementation. Third-party dependencies retain their own licenses. The broker and its browser connections operate locally.
 
 ## Distribution
+
+### Compatible Chromium browsers include Chrome, Chromium and Microsoft Edge
+
+Tabro's browser scope includes Chrome and compatible Chromium-based browsers such as Microsoft Edge. Compatibility depends on the required extension and browser capabilities, rather than one exact Chrome build. A browser-family claim does not establish that every derivative or release has been qualified. The [approved compatibility decision](../90-Proposals/chromium-browser-compatibility-2026-10-04.md) records this scope.
 
 ### First-time Hermes setup must install the Broker and its required runtime
 

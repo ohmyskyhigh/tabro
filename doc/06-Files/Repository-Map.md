@@ -399,6 +399,10 @@ Tests may import public Component ports and dedicated fixtures. Production code 
 | `tools/lib/chrome-probe-control.ts` | Scoped probe-root and process controls | Managed Chrome probe tests |
 | `tests/e2e/single-agent-multi-extension.test.ts` | Simulated single-session multi-endpoint execution and recovery | Automated E2E, not a physical Chrome run |
 
+### Browser admission and Chromium lifecycle compatibility have dedicated checks
+
+`tools/browser-runtime.ps1` owns browser discovery and setup version checks and ships with both setup distributions. `integrations/hermes/plugin.json` declares the selected executable and PE version floor; `tests/real-world/hermes-browser-gate-probe.py` exercises the real Hermes install gate. `apps/broker/src/profiles/browser-compatibility.ts` owns engine eligibility, with `tests/unit/browser-compatibility.test.ts` covering upgrades and unsupported engines. `tests/real-world/browser-selection.test.ts` executes the PowerShell selection logic. Launcher identity tests cover Edge, and `tools/probe-profile-proxy.ts` accepts `TABRO_BROWSER_PATH` for isolated browser qualification without reading a personal runtime configuration.
+
 ## Profile networking
 
 ### Proxy implementation paths preserve the Profile and extension boundaries

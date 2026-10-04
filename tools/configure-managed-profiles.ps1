@@ -2,19 +2,19 @@
 param(
   [Parameter(Mandatory)][string]$DataRoot,
   [Parameter(Mandatory)][string]$ExtensionPath,
-  [string]$ChromePath = 'C:\Program Files\Google\Chrome\Application\chrome.exe',
+  [Alias('ChromePath')][string]$BrowserPath = '',
   [string]$RelayUrl = 'ws://127.0.0.1:7332/relay'
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'browser-runtime.ps1')
 $data = [IO.Path]::GetFullPath($DataRoot)
 $configPath = Join-Path $data 'managed-profiles.json'
 $existingConfig = if (Test-Path -LiteralPath $configPath) { Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json } else { $null }
-if ($existingConfig -and -not $PSBoundParameters.ContainsKey('ChromePath')) { $ChromePath = [string]$existingConfig.executablePath }
+$configuredPath = if ($existingConfig) { [string]$existingConfig.executablePath } else { '' }
+$browser = Resolve-TabroBrowser -BrowserPath $BrowserPath -ConfiguredPath $configuredPath
 $extension = [IO.Path]::GetFullPath($ExtensionPath)
-$chrome = [IO.Path]::GetFullPath($ChromePath)
-if (-not (Test-Path -LiteralPath $chrome -PathType Leaf)) { throw 'Managed Chrome executable is missing.' }
-$version = (Get-Item -LiteralPath $chrome).VersionInfo.ProductVersion
-if ($version -ne '153.0.8010.53') { throw "Managed Profiles currently require verified Chrome 153.0.8010.53; found $version." }
+$chrome = $browser.path
+$version = $browser.version
 $uri = [Uri]$RelayUrl
 if ($uri.Scheme -ne 'ws' -or $uri.Host -ne '127.0.0.1' -or $uri.AbsolutePath -ne '/relay') { throw 'Managed relay must use loopback.' }
 $hash = [Security.Cryptography.SHA256]::Create()

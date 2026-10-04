@@ -41,7 +41,7 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
       mkdirSync(data, { recursive: true });
       writeFileSync(resolve(home, 'config.yaml'), `# ${label}: existing profile configuration\nplugins:\n  enabled: [tabro]\n`);
       hermesProfiles.push({ home, plugin: directory, configHash: digest(resolve(home, 'config.yaml')),
-        env: { LOCALAPPDATA: localAppData, TABRO_INSTALL_ROOT: '', HERMES_HOME: home, HERMES_PROFILE: label,
+        env: { LOCALAPPDATA: localAppData, TABRO_INSTALL_ROOT: '', TABRO_BROWSER_PATH: process.env.TABRO_BROWSER_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', HERMES_HOME: home, HERMES_PROFILE: label,
           HERMES_SESSION_ID: `plugin-test-${label}`, PLUGIN_ROOT: directory, PLUGIN_DATA: data } });
     }
     // No default Hermes home and no explicit InstallRoot: both setups must

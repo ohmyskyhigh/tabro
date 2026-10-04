@@ -4,13 +4,16 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ChromeManagementConnection } from './management-connection.js';
+import { assertCompatibleBrowser } from './browser-compatibility.js';
 import { MANAGED_EXTENSION_ID, profileLayout, validateRuntime, type ProfileRuntimeConfig } from './runtime-config.js';
 import { ProfileError, type ManagedBrowserInstance, type ManagedProfile } from './types.js';
 
 const runFile = promisify(execFile);
 export interface ChromeProcessIdentity { pid: number; createdAt: string; executablePath: string; commandLine: string }
 export async function chromeProcesses(): Promise<ChromeProcessIdentity[]> {
-  const script = "@(Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | ForEach-Object { @{pid=$_.ProcessId;createdAt=$_.CreationDate.ToUniversalTime().ToString('o');executablePath=$_.ExecutablePath;commandLine=$_.CommandLine} }) | ConvertTo-Json -Compress";
+  // Include Chromium derivatives and renamed executables. Ownership still
+  // requires the PID, creation time, full executable path and exact data dir.
+  const script = "@(Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%--user-data-dir=%'\" | ForEach-Object { @{pid=$_.ProcessId;createdAt=$_.CreationDate.ToUniversalTime().ToString('o');executablePath=$_.ExecutablePath;commandLine=$_.CommandLine} }) | ConvertTo-Json -Compress";
   const { stdout } = await runFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
   const value: unknown = JSON.parse(stdout.trim() || '[]');
   const rows = Array.isArray(value) ? value : [value];
@@ -107,7 +110,7 @@ export class ChromeLauncher {
             checkpoint(value);
             await this.withControl(value, async control => {
               const version = await control.send('Browser.getVersion');
-              if (version.product !== `Chrome/${this.config.expectedBrowserVersion}`) throw new ProfileError('PROFILE_RUNTIME_UNSUPPORTED');
+              assertCompatibleBrowser(version);
               checkpoint(value);
               const extension = await control.send('Extensions.loadUnpacked', { path: paths.extensionDir });
               if (extension.id !== MANAGED_EXTENSION_ID) throw new ProfileError('PROFILE_EXTENSION_MISMATCH');

@@ -4,12 +4,12 @@
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [中文文档](./doc/zh-CN/README.md)
 
-Tabro 是面向 AI Agent 的开源 Chrome 自动化工具：通过 MCP，共用一个 Broker、为不同任务创建独立工作区，并为每个浏览器 Profile 配置代理。
+Tabro 是面向 AI Agent 的开源 Chromium 浏览器自动化工具：通过 MCP，共用一个 Broker、为不同任务创建独立工作区，并为每个浏览器 Profile 配置代理。
 
 每个浏览器配置文件安装一个扩展实例。Agent 向本地 Broker 申请工作区，获得 Broker 签发的 `workspace_ref`、`tab_ref` 和请求票据，再通过扩展支持的 Chrome DevTools Protocol（CDP）子集执行浏览器操作。扩展使用 `chrome.debugger`，无需公开暴露 Chrome 远程调试端口；受管启动内部使用 loopback 管理连接。
 
 > [!IMPORTANT]
-> `0.4.0` 版本实现 22 个 MCP 工具、HTTP(S)/SOCKS5 账号密码代理、relay-v2、Native Messaging、扩展 CDP 适配器及受管 Profile 生命周期。[Hermes 插件](./integrations/hermes/README.md)包含 Windows 运行组件和首次 setup；商城收录仍需上游审核。已有 `v0.3.0` Release 使用旧 Octopus 名称和 14 工具协议；使用当前 Tabro 功能和自动管理 Profile 时，请按下方“源码安装”构建。自动化检查与本机演示分别验证；不同机器仍需完成自己的预检和真实浏览器测试。
+> `0.4.1` 版本实现 22 个 MCP 工具、HTTP(S)/SOCKS5 账号密码代理、relay-v2、Native Messaging、扩展 CDP 适配器及受管 Profile 生命周期。[Hermes 插件](./integrations/hermes/README.md)包含 Windows 运行组件和首次 setup；商城收录仍需上游审核。已有 `v0.3.0` Release 使用旧 Octopus 名称和 14 工具协议；使用当前 Tabro 功能和自动管理 Profile 时，请按下方“源码安装”构建。自动化检查与本机演示分别验证；不同机器仍需完成自己的预检和真实浏览器测试。
 
 ## 功能展示
 
@@ -91,7 +91,7 @@ flowchart LR
 - Windows、PowerShell 和当前用户注册表写入权限；
 - Node.js `22.12.0` 或更高版本；
 - GitHub Release 安装不要求 pnpm；从源码构建需要 pnpm `11.19.0` 或兼容的 pnpm 11；
-- 支持 Manifest V3、版本为 `116+` 的 Google Chrome 或 Chromium；
+- 兼容的 Chrome、Chromium 或 Microsoft Edge；受管 Profile 和 Hermes 插件要求版本 `153+`；
 - 只有从源码重编译 Native Messaging 伴生程序时，才需要 Visual Studio C++ Build Tools、x64 编译器和 Windows SDK。
 
 ## Release 安装
@@ -342,8 +342,8 @@ dist/                   生成的构建输出
 
 ## 受管 Profile
 
-### Agent 可以通过 MCP 创建并重开自动连接的 Chrome Profile
+### Agent 可以通过 MCP 创建并重开自动连接的 Chromium 浏览器 Profile
 
-本开发版本新增 list_browser_profiles、create_browser_profile、open_browser_profile、stop_browser_profile，使用 MCP contract v2。首版已验证 Windows 和 Chrome 153.0.8010.53；Native Messaging 只需一次性安装，新 Profile 自动加载扩展。停止保留 Cookie、网站存储和扩展身份。此变更尚未发布远程 Release。
+本开发版本新增 list_browser_profiles、create_browser_profile、open_browser_profile、stop_browser_profile，使用 MCP contract v5。Windows 受管启动支持兼容的 Chrome、Chromium 和 Edge 153+，通过版本及运行能力检查，不再锁定一个 Chrome 构建号；Native Messaging 只需一次性安装，新 Profile 自动加载扩展。停止保留 Cookie、网站存储和扩展身份。Hermes 插件已包含此实现；安装前须按插件指南设置浏览器路径。
 
 本地安装使用 `tools/install-local.ps1 -Install -EnableManagedProfiles`；从本分支构建的发布包也可通过 `-EnableManagedProfiles` 启用。Broker 与 adapter 必须一起升级。详细操作与两轮真实结果见 [单 Agent Demo 运行手册](./tests/demo/RUNBOOK.md)。

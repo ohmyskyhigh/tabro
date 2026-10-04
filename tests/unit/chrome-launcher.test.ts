@@ -39,6 +39,13 @@ describe('managed Chrome ownership', () => {
     expect(await new ChromeLauncher(config, async () => [{ ...processIdentity, pid: 124 }]).inspect(instance)).toBe('unknown');
     await expect(new ChromeLauncher(config, async () => { throw new Error('CIM unavailable'); }).inspect(instance)).rejects.toThrow('CIM unavailable');
   });
+  it('tracks Edge with the same exact ownership guards as Chrome', async () => {
+    const edge = { ...processIdentity, executablePath: 'C:\\Edge\\msedge.exe' };
+    const edgeInstance = { ...instance, executablePath: edge.executablePath };
+    expect(await new ChromeLauncher({} as ProfileRuntimeConfig, async () => [edge]).inspect(edgeInstance)).toBe('running');
+    expect(matchesInstance(edge, instance)).toBe(false);
+    expect(await new ChromeLauncher({} as ProfileRuntimeConfig, async () => [{ ...edge, createdAt: 'reused' }]).inspect(edgeInstance)).toBe('unknown');
+  });
   it('rejects traversal and junctions before assigning a profile path', () => {
     const root = mkdtempSync(join(tmpdir(), 'octopus-path-test-')); roots.push(root);
     expect(() => containedPath(root, '..', 'escape')).toThrow('PROFILE_PATH_INVALID');

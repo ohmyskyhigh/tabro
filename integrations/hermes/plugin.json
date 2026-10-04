@@ -1,11 +1,27 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "tabro",
-  "version": "0.4.0",
-  "description": "Local Chrome profile automation, session-owned tab-group workspaces and authenticated HTTP(S)/SOCKS5 proxies. Includes the Windows Broker, adapter and extension; first-time setup installs the runtime.",
+  "version": "0.4.1",
+  "description": "Local Chromium browser profiles (Chrome, Chromium or Edge), session-owned workspaces and authenticated HTTP(S)/SOCKS5 proxies. Windows x64; set TABRO_BROWSER_PATH to a compatible browser executable before installation.",
   "author": { "name": "Runkun Miao", "url": "https://github.com/ohmyskyhigh" },
   "homepage": "https://github.com/ohmyskyhigh/tabro",
   "repository": "https://github.com/ohmyskyhigh/tabro",
   "license": "MIT",
-  "keywords": ["browser", "chrome", "multi-profile", "proxy", "mcp", "windows"]
+  "keywords": ["browser", "chrome", "chromium", "edge", "multi-profile", "proxy", "mcp", "windows"],
+  "extensions": {
+    "com.nousresearch.hermes": {
+      "servers": {
+        "tabro": {
+          "app": {
+            "win32": {
+              "presence": "executable",
+              "location": "%TABRO_BROWSER_PATH%",
+              "version": { "kind": "pe_resource" }
+            }
+          },
+          "requires": { "app": true, "min_version": "153.0.0.0" }
+        }
+      }
+    }
+  }
 }

@@ -15,6 +15,7 @@ param(
   [string]$RelayUrl = 'ws://127.0.0.1:0/relay',
   [string[]]$NativeRegistryRoots = @(
     'HKCU:\Software\Google\Chrome\NativeMessagingHosts',
+    'HKCU:\Software\Microsoft\Edge\NativeMessagingHosts',
     'HKCU:\Software\Chromium\NativeMessagingHosts',
     'HKCU:\Software\AdsPower\SunBrowser\NativeMessagingHosts'
   )

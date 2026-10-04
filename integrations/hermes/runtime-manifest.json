@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "contractVersion": "5",
   "platform": "windows-x64",
-  "nativeHostEntry": "native-host/relay-native-host-0.4.0.exe",
-  "verifiedChromeVersion": "153.0.8010.53",
+  "nativeHostEntry": "native-host/relay-native-host-0.4.1.exe",
+  "minimumBrowserVersion": "153.0.0.0",
   "node": {
     "version": "22.22.3",
     "url": "https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip",
@@ -15,12 +15,12 @@
     {
       "path": "adapter/main.js",
       "bytes": 1454054,
-      "sha256": "ce7380718a14e47969842020b4af1f1cff9f0c6f9f3e23d3a4dd1ef8dd601ddf"
+      "sha256": "b70257ad90143100f97d714a9062f3fe8719d7907c73525762208a489696da05"
     },
     {
       "path": "broker/main.js",
-      "bytes": 2076476,
-      "sha256": "31a11abc71175ccb310d1966d4ed4d50956f9d05b9ca59b4b06f8ae418eb481d"
+      "bytes": 2076959,
+      "sha256": "0957925c813e991e375c8c43b8e408a76a98226611b5ee59122346e29fb0548c"
     },
     {
       "path": "broker/migrations/001-initial.sql",
@@ -70,7 +70,7 @@
     {
       "path": "browser-extension/manifest.json",
       "bytes": 1137,
-      "sha256": "06b5a4767dcc9456508ff0ba05db10db7102d35a15a413ad3bf0ec4285f2dbc8"
+      "sha256": "6ef8c0ff78303d35368aeef83f54bb9cef556d71bcdb6168be78e800c7fc168d"
     },
     {
       "path": "browser-extension/options.html",
@@ -89,13 +89,18 @@
     },
     {
       "path": "build-inputs.json",
-      "bytes": 10617,
-      "sha256": "88e0fb552669daa9b2a91bdd6ae39642f907133832548a401b20f3c49d602bb4"
+      "bytes": 10780,
+      "sha256": "96c5c8cdf2bd64ce9af761da77421854115b0d08beb24c570df0c0fbff31b18a"
+    },
+    {
+      "path": "helpers/browser-runtime.ps1",
+      "bytes": 1903,
+      "sha256": "c4e22b16497a7dad4e9a67a7e1f1d2fcfcf6597b3c3d1be3914a236c8121f5e7"
     },
     {
       "path": "helpers/configure-managed-profiles.ps1",
-      "bytes": 3078,
-      "sha256": "f5886a62eed6b285d2612e18ca834a913a227cf570e60196d53919dd8e601104"
+      "bytes": 2848,
+      "sha256": "4f9f14074d390aed24efde4faa2ff91489d9625328a8e58de8150fd34d6e82c8"
     },
     {
       "path": "licenses/_hono_node-server_1.19.17-LICENSE",
@@ -253,14 +258,14 @@
       "sha256": "3f1189b28e3866e0d979968d466b78f813f76827cfdca1fbb124cc0a5c8841f8"
     },
     {
-      "path": "native-host/relay-native-host-0.4.0.exe",
+      "path": "native-host/relay-native-host-0.4.1.exe",
       "bytes": 294400,
       "sha256": "4ec5cfb4aaefe8c5632125d5d3b2dbb23f28ab3112eaaabb5538ea26286430c1"
     },
     {
       "path": "package.json",
       "bytes": 118,
-      "sha256": "5762464962783f419e0ba3f47736778e6657614f14f7c74086c0a88b44f10d67"
+      "sha256": "9dc14b5f8f9379a35af1c11f60599bee2687fc99d74f1f2b4ffde3572279e427"
     },
     {
       "path": "validators/mcp-client.js",

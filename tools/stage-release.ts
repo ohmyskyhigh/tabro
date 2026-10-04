@@ -107,6 +107,7 @@ export async function stageRelease(output = defaultOutput): Promise<{ output: st
   for (const name of [
     'update-local.ps1',
     'configure-managed-profiles.ps1',
+    'browser-runtime.ps1',
     'managed-upgrade-snapshot.mjs',
     'stop-installed-broker.ps1',
     'register-hermes-profiles.ps1',

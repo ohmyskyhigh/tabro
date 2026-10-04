@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tabro",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1F1U5m3tBJwEV9DDsLcBf46yw/7iSAKesSKwKjZqLqVop3onMM3vezftv1v+i3SwzchbovAw7/OaH9fdRGsDGfK8CrYMs0Sy5qznimkXgcEtSHFecta/7BkCxARsD3FjoX1GJSyS/iyceNus3fpQ/OsC3ca97E4EMbQQpJ5aH5QEyx9FtbonT3u6KNn1m0MGrTh8+uyur7OCH+MjFR2Fxk29LpUMSMPsJyRuXoF9jLT/j9tGq5/42W/tOM8QGq0xh7fKD0aUqYZB2UOEwbjOo7SYrDp54YUzmzEEZm8yF+QGYrOerdRBLiOBS4ueMtpzE3mdPY6zEMimZ8jx0KWWWwIDAQAB",
   "description": "Connect this Chrome profile to the local Tabro broker.",
   "minimum_chrome_version": "116",

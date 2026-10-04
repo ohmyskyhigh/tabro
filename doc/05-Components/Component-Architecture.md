@@ -255,6 +255,10 @@ A failing test can fix an implementation defect directly when the canonical beha
 
 Broker Core lists authenticated extension identities directly, enriches them with broker/user launch ownership from the launch directory, and exposes the same ownership in endpoint and window facts. Discovery works without a configured launcher and uses the extension alias as the sole public Profile name. SQLite migration 007 removes the second Profile name from storage and Profile ticket history; the migration runner normalizes creation hashes in the same transaction. The Profile model and repository accept no extra name. The Profile Manager under `apps/broker/src/profiles` owns the persistent launch directory, launcher coordination, instance observations, ready predicate and stopping barrier. ProfileRequestService integrates principal-scoped lifecycle requests with durable admission, acknowledgement, worker claims and terminal facts. ChromeLauncher owns the Windows process check and private lifecycle connection. BootstrapGrants owns credential validation and atomic binding after signed AUTH. The existing extension relay remains the website execution owner.
 
+### Setup and the launcher share browser eligibility without an exact build lock
+
+The shared PowerShell browser helper owns selection, common installation discovery and executable version admission. Hermes's portable manifest owns the pre-install selected-path application declaration. ChromeLauncher also serves compatible Chromium derivatives, discovers processes by their user-data argument, and checks engine compatibility before extension loading. Existing PID, creation-time, executable-path and exact-directory ownership guards remain authoritative. The saved `expectedBrowserVersion` is a legacy setup observation, not a required exact runtime build.
+
 ## Profile networking
 
 ### Network services separate configuration, credential custody and extension application

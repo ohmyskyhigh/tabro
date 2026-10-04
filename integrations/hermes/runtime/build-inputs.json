@@ -1,5 +1,5 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "sourceHashEncoding": "utf8-lf",
   "packageLockSha256": "dbe5d6e79354294e518c39ee5cdc807a79490fc815cd0b44d398d8af94a0e7a9",
   "sources": [
@@ -92,8 +92,12 @@
       "sha256": "bb3ef4118f75915c71e63be782507b1a6d890a3950e94480d2f65ff0d2a04c1d"
     },
     {
+      "path": "apps/broker/src/profiles/browser-compatibility.ts",
+      "sha256": "be6d68a186d1f728d2b0f86e538be69baec9678d5a815f887c71b4ae512b6ee3"
+    },
+    {
       "path": "apps/broker/src/profiles/chrome-launcher.ts",
-      "sha256": "43d859be007c4eda0368b5d9c5407eb9ad0db3b7f939e2138a236e0e59d457a6"
+      "sha256": "43d5d08114bc1ffada6101d05931a47b39a891186cce4351aa8c2df3a9413e3e"
     },
     {
       "path": "apps/broker/src/profiles/management-connection.ts",
@@ -109,7 +113,7 @@
     },
     {
       "path": "apps/broker/src/profiles/runtime-config.ts",
-      "sha256": "e4c7cdd63f18ac58bd3325f413a24eac402a006efa5b887242261a212f03b75c"
+      "sha256": "dc92c4bdf5addb9082b5df71a7a15c1a0737c98e0e0fb3703d55e5eb006de93a"
     },
     {
       "path": "apps/broker/src/profiles/types.ts",
@@ -257,7 +261,7 @@
     },
     {
       "path": "apps/shared/protocol/src/version.ts",
-      "sha256": "f2bc1dd556fab8f213b1ddd58d55b332fb70f5ca05ced88e7a671017bc440bf4"
+      "sha256": "38c5f1fae253a34f0039628f8384cb74b16c7997459fc18890f74bbacecfddb8"
     },
     {
       "path": "doc/03-User-Interface/MCP-Contract.schema.json",

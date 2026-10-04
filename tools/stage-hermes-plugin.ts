@@ -47,7 +47,7 @@ mkdirSync(resolve(runtime, 'native-host'), { recursive: true });
 const nativeHostEntry = `native-host/relay-native-host-${version}.exe`;
 cpSync(resolve(root, 'dist/native-host/relay-native-host.exe'), resolve(runtime, nativeHostEntry));
 mkdirSync(resolve(runtime, 'helpers'), { recursive: true });
-for (const name of ['configure-managed-profiles.ps1']) cpSync(resolve(root, 'tools', name), resolve(runtime, 'helpers', name));
+for (const name of ['configure-managed-profiles.ps1', 'browser-runtime.ps1']) cpSync(resolve(root, 'tools', name), resolve(runtime, 'helpers', name));
 writeFileSync(resolve(runtime, 'package.json'), JSON.stringify({ name: 'tabro-hermes-runtime', version, private: true, type: 'module', license: 'MIT' }, null, 2) + '\n');
 cpSync(resolve(root, 'LICENSE'), resolve(plugin, 'LICENSE'));
 const licenseDir = resolve(runtime, 'licenses');
@@ -83,7 +83,7 @@ function files(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(resolve(directory, entry.name)) : [resolve(directory, entry.name)]);
 }
 const manifest = { schemaVersion: 1, version, contractVersion: '5', platform: 'windows-x64', nativeHostEntry,
-  verifiedChromeVersion: '153.0.8010.53',
+  minimumBrowserVersion: '153.0.0.0',
   node: { version: '22.22.3', url: 'https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip',
     archiveSha256: '6c8d54f635feff4df76c2ca80f45332eb2ff57d25226edce36592e51a177ee33',
     executableSha256: '780f44f2c53c108bae261ada21a525b4bfe733c020ac85e41bfe94479090ac9b' },

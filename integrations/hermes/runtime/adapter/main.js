@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync as readFileSync2 } from "node:fs";
 
 // apps/shared/protocol/src/version.ts
-var TABRO_VERSION = "0.4.0";
+var TABRO_VERSION = "0.4.1";
 var OCTOPUS_VERSION = TABRO_VERSION;
 
 // apps/shared/protocol/src/runtime-discovery.ts

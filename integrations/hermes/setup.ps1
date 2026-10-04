@@ -2,7 +2,7 @@
 param(
   [string]$InstallRoot = '',
   [string]$NodePath = '',
-  [string]$ChromePath = '',
+  [Alias('ChromePath')][string]$BrowserPath = '',
   [switch]$DownloadNode,
   [switch]$SkipNativeRegistration,
   [switch]$ReplaceNativeRegistration
@@ -19,7 +19,7 @@ $data = Get-TabroChild $install 'data'
 $stateFile = Get-TabroChild $install 'installation.json'
 $nativeName = 'io.github.ohmyskyhigh.octopus_browser_relay'
 $nativeManifest = Get-TabroChild $install ('bootstrap\' + $nativeName + '.json')
-$registryRoots = @('HKCU:\Software\Google\Chrome\NativeMessagingHosts', 'HKCU:\Software\Chromium\NativeMessagingHosts', 'HKCU:\Software\AdsPower\SunBrowser\NativeMessagingHosts')
+$registryRoots = @('HKCU:\Software\Google\Chrome\NativeMessagingHosts', 'HKCU:\Software\Microsoft\Edge\NativeMessagingHosts', 'HKCU:\Software\Chromium\NativeMessagingHosts', 'HKCU:\Software\AdsPower\SunBrowser\NativeMessagingHosts')
 $mutex = Get-TabroMutex $install
 $locked = $false
 $previousState = $null
@@ -51,14 +51,14 @@ try {
       $registryBackups += @{ key = $key; value = $prior }
     }
   }
-  if (-not $ChromePath) {
-    foreach ($candidate in @((Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'), (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'), (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe'))) {
-      if (Test-Path -LiteralPath $candidate -PathType Leaf) { $ChromePath = $candidate; break }
-    }
+  . (Join-Path $source 'helpers\browser-runtime.ps1')
+  $configFile = Join-Path $data 'managed-profiles.json'
+  $configuredPath = if (Test-Path -LiteralPath $configFile) { [string](Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json).executablePath } else { '' }
+  $browser = Resolve-TabroBrowser -BrowserPath $BrowserPath -ConfiguredPath $configuredPath
+  if ($configuredPath -and $browser.path -ne $configuredPath -and (Test-Path -LiteralPath (Join-Path $data 'runtime.json'))) {
+    $record = Get-Content -LiteralPath (Join-Path $data 'runtime.json') -Raw | ConvertFrom-Json
+    if (Get-Process -Id $record.processId -ErrorAction SilentlyContinue) { throw 'Stop the shared Broker before changing its browser executable.' }
   }
-  if (-not $ChromePath -or -not (Test-Path -LiteralPath $ChromePath -PathType Leaf)) { throw 'Install Google Chrome before setting up Tabro.' }
-  $ChromePath = [IO.Path]::GetFullPath($ChromePath)
-  if ((Get-Item -LiteralPath $ChromePath).VersionInfo.ProductVersion -ne $manifest.verifiedChromeVersion) { throw "This release qualifies managed Profiles on Chrome $($manifest.verifiedChromeVersion). Found a different Chrome build; no managed configuration was changed." }
   foreach ($dir in @($install, $data, (Split-Path -Parent $nativeManifest))) { [void](New-Item -ItemType Directory -Path $dir -Force) }
   $ownerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
   & icacls.exe $install /inheritance:r /grant:r "*${ownerSid}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' | Out-Null
@@ -100,7 +100,7 @@ try {
     $configurationBackups += @{ path = $file; bytes = $(if (Test-Path -LiteralPath $file -PathType Leaf) { [IO.File]::ReadAllBytes($file) } else { $null }) }
   }
   $configurationWritten = $true
-  & (Join-Path $release 'helpers\configure-managed-profiles.ps1') -DataRoot $data -ExtensionPath $extension -ChromePath $ChromePath -RelayUrl 'ws://127.0.0.1:0/relay' | Out-Null
+  & (Join-Path $release 'helpers\configure-managed-profiles.ps1') -DataRoot $data -ExtensionPath $extension -BrowserPath $browser.path -RelayUrl 'ws://127.0.0.1:0/relay' | Out-Null
   $state = [ordered]@{ schemaVersion = 1; version = $manifest.version; packageDigest = $package.digest; runtimeDirectory = $releaseRelative; nativeHostEntry = $manifest.nativeHostEntry; nodePath = $NodePath; nativeRegistered = -not $SkipNativeRegistration }
   [IO.File]::WriteAllText($stateFile, ($state | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
   $stateWritten = $true
@@ -109,7 +109,7 @@ try {
     foreach ($backup in $registryBackups) { [void](New-Item -Path $backup.key -Force); Set-Item -Path $backup.key -Value $nativeManifest }
   }
   $started = Start-TabroRuntime (Read-TabroState $install)
-  [ordered]@{ status = 'INSTALLED'; version = $manifest.version; installRoot = $install; installationScope = 'windows-user'; hermesHome = $env:HERMES_HOME; broker = $started; nativeRegistered = -not $SkipNativeRegistration; extensionPath = $extension; nextAction = 'Reload MCP in this Hermes profile. Enable the plugin separately in each other Hermes profile; all share this Broker installation. Broker-owned Chrome Profiles load the extension automatically. For an existing Chrome Profile, load the extension directory in chrome://extensions.' } | ConvertTo-Json -Depth 8
+  [ordered]@{ status = 'INSTALLED'; version = $manifest.version; installRoot = $install; installationScope = 'windows-user'; hermesHome = $env:HERMES_HOME; browser = $browser; broker = $started; nativeRegistered = -not $SkipNativeRegistration; extensionPath = $extension; nextAction = 'Reload MCP in this Hermes profile. Enable the plugin separately in each other Hermes profile; all share this Broker installation. Broker-owned Profiles load the extension automatically. For an existing browser Profile, load the extension directory in chrome://extensions or edge://extensions.' } | ConvertTo-Json -Depth 8
 } catch {
   if ($configurationWritten) {
     foreach ($backup in $configurationBackups) {

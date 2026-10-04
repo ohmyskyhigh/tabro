@@ -2,14 +2,14 @@
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [中文文档](./doc/zh-CN/README.md)
 
-Open-source Chrome automation for AI agents: one shared Broker, separate task workspaces, and per-profile proxies through MCP.
+Open-source Chromium browser automation for AI agents: one shared Broker, separate task workspaces, and per-profile proxies through MCP.
 
 Tabro was previously named Octopus Browser Relay. New MCP registrations use `tabro`; existing profile data, extension identity, Native Messaging registration, and legacy environment variables remain compatible. The repository is now [ohmyskyhigh/tabro](https://github.com/ohmyskyhigh/tabro); the previous repository address redirects to it, and historical release asset filenames remain valid.
 
 Tabro connects a local MCP gateway to one extension instance in each browser profile. An agent asks for browser capacity, receives broker-issued workspace and tab references, submits extension-supported Chrome DevTools Protocol (CDP) commands, and polls durable request tickets. The extension relays those commands through `chrome.debugger`; Chrome does not need a public remote-debugging port.
 
 > [!IMPORTANT]
-> The `0.4.0` tree implements the canonical twenty-two-tool runtime, authenticated HTTP(S)/SOCKS5 profile proxies, relay-v2, Native Messaging and extension-backed CDP. The [Hermes plugin package](./integrations/hermes/README.md) includes the Windows runtime and first-time setup; catalog admission requires a separate upstream review. The existing `v0.3.0` release uses the previous Octopus name and fourteen-tool contract; use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime) for current Tabro features and automatic managed Profile lifecycle. Automated verification and physical Chrome, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
+> The `0.4.1` tree implements the canonical twenty-two-tool runtime, authenticated HTTP(S)/SOCKS5 profile proxies, relay-v2, Native Messaging and extension-backed CDP. The [Hermes plugin package](./integrations/hermes/README.md) includes the Windows runtime and first-time setup; catalog admission requires a separate upstream review. The existing `v0.3.0` release uses the previous Octopus name and fourteen-tool contract; use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime) for current Tabro features and automatic managed Profile lifecycle. Automated verification and physical Chrome, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
 
 ## Features
 
@@ -91,7 +91,7 @@ Read the canonical [Product definition](./doc/01-Product/Product-Definition.md),
 - Windows with PowerShell, current-user Native Messaging registry access, and WinHTTP WebSocket support for the checked-in native host and installer;
 - Node.js `22.12.0` or newer;
 - pnpm `11.19.0` or another compatible pnpm 11 release;
-- Google Chrome or Chromium with Manifest V3 support and version `116` or newer; and
+- A compatible Chrome, Chromium or Microsoft Edge browser; managed profiles and the Hermes plugin require version `153` or newer; and
 - Visual Studio C++ Build Tools with an x64 compiler and Windows SDK when rebuilding the native companion.
 
 The TypeScript broker is not intrinsically tied to Windows, but the current native companion uses WinHTTP and the current registration script writes Windows registry keys.
@@ -390,8 +390,8 @@ Tabro is available under the [MIT License](./LICENSE).
 
 ## Managed Profiles
 
-### Agents can create and reopen persistent Chrome Profiles through MCP
+### Agents can create and reopen persistent Chromium browser Profiles through MCP
 
-The development implementation includes list_browser_profiles, create_browser_profile, open_browser_profile and stop_browser_profile under MCP contract v4. The pairing alias (`endpoint_nickname`) is each Profile's only public name; creation requires only an idempotency key. It is verified on Windows with Chrome 153.0.8010.53 and a one-time Native Messaging installation. New Profiles automatically load the extension; normal stop retains cookies, website storage and identity. This is a local development change, not a newly published release.
+The development implementation includes list_browser_profiles, create_browser_profile, open_browser_profile and stop_browser_profile under MCP contract v5. The pairing alias (`endpoint_nickname`) is each Profile's only public name; creation requires only an idempotency key. Managed launch supports compatible Chrome, Chromium and Edge 153+ on Windows with one-time Native Messaging installation. The exact Chrome build lock has been replaced by version and runtime capability checks. New Profiles automatically load the extension; normal stop retains cookies, website storage and identity. The Hermes package includes this implementation; see its installation guide for the selected-browser prerequisite.
 
 Use `tools/install-local.ps1 -Install -EnableManagedProfiles` for local setup, or `-EnableManagedProfiles` with a package built from this source. Broker and adapter must upgrade together. Read the [single-Agent Demo runbook](./tests/demo/RUNBOOK.md) for the two verified three-Profile runs and reproduction steps.

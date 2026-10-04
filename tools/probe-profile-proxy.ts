@@ -22,7 +22,8 @@ async function until<T>(check: () => T | null | Promise<T | null>, label: string
   throw new Error(`Timed out: ${label}`);
 }
 if (process.platform !== 'win32') throw new Error('This qualification requires Windows Chrome and the installed Native Messaging host.');
-const base = JSON.parse(readFileSync('.relay-data/managed-profiles.json', 'utf8')) as ProfileRuntimeConfig;
+const base = { executablePath: process.env.TABRO_BROWSER_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  expectedBrowserVersion: '153.0.0.0' } as ProfileRuntimeConfig;
 if (!existsSync(base.executablePath)) throw new Error('Configured Chrome is missing.');
 const root = resolve('artifacts/real-world', `profile-proxy-${Date.now()}`);
 const extensionDir = resolve(root, 'extension'); const userData = resolve(root, 'user-data');

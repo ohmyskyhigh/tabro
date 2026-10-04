@@ -38489,7 +38489,7 @@ function createRelayEnvelope(type, payload) {
 }
 
 // apps/shared/protocol/src/version.ts
-var TABRO_VERSION = "0.4.0";
+var TABRO_VERSION = "0.4.1";
 var OCTOPUS_VERSION = TABRO_VERSION;
 
 // apps/shared/protocol/src/schemas.ts
@@ -53861,6 +53861,15 @@ var ChromeManagementConnection = class _ChromeManagementConnection {
   }
 };
 
+// apps/broker/src/profiles/browser-compatibility.ts
+var MINIMUM_BROWSER_MAJOR = 153;
+function assertCompatibleBrowser(version2) {
+  const product = typeof version2.product === "string" ? version2.product : "";
+  const agent = typeof version2.userAgent === "string" ? version2.userAgent : "";
+  const match = /\b(?:Chrome|Chromium|HeadlessChrome)\/(\d+)\./u.exec(agent) ?? /^(?:Chrome|Chromium|HeadlessChrome|Edg)\/(\d+)\./u.exec(product);
+  if (!match || Number(match[1]) < MINIMUM_BROWSER_MAJOR) throw new ProfileError("PROFILE_RUNTIME_UNSUPPORTED");
+}
+
 // apps/broker/src/profiles/runtime-config.ts
 import { createHash as createHash6 } from "node:crypto";
 import { existsSync as existsSync2, lstatSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, realpathSync } from "node:fs";
@@ -53904,7 +53913,7 @@ function validateRuntime(config3) {
 // apps/broker/src/profiles/chrome-launcher.ts
 var runFile = promisify2(execFile);
 async function chromeProcesses() {
-  const script = `@(Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ForEach-Object { @{pid=$_.ProcessId;createdAt=$_.CreationDate.ToUniversalTime().ToString('o');executablePath=$_.ExecutablePath;commandLine=$_.CommandLine} }) | ConvertTo-Json -Compress`;
+  const script = `@(Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%--user-data-dir=%'" | ForEach-Object { @{pid=$_.ProcessId;createdAt=$_.CreationDate.ToUniversalTime().ToString('o');executablePath=$_.ExecutablePath;commandLine=$_.CommandLine} }) | ConvertTo-Json -Compress`;
   const { stdout } = await runFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, timeout: 15e3, maxBuffer: 4 * 1024 * 1024 });
   const value = JSON.parse(stdout.trim() || "[]");
   const rows = Array.isArray(value) ? value : [value];
@@ -54018,7 +54027,7 @@ var ChromeLauncher = class {
             checkpoint3(value);
             await this.withControl(value, async (control) => {
               const version2 = await control.send("Browser.getVersion");
-              if (version2.product !== `Chrome/${this.config.expectedBrowserVersion}`) throw new ProfileError("PROFILE_RUNTIME_UNSUPPORTED");
+              assertCompatibleBrowser(version2);
               checkpoint3(value);
               const extension2 = await control.send("Extensions.loadUnpacked", { path: paths.extensionDir });
               if (extension2.id !== MANAGED_EXTENSION_ID) throw new ProfileError("PROFILE_EXTENSION_MISMATCH");

@@ -1,6 +1,6 @@
 ---
 name: tabro-browser
-description: Use Tabro to automate Chrome profiles through MCP, coordinate session-owned tab-group workspaces, or configure authenticated profile proxies. Includes first-time Windows setup guidance.
+description: Use Tabro to automate compatible Chrome, Chromium or Edge profiles through MCP, coordinate session-owned tab-group workspaces, or configure authenticated profile proxies. Includes first-time Windows setup guidance.
 ---
 
 # Tabro browser automation
@@ -10,6 +10,8 @@ description: Use Tabro to automate Chrome profiles through MCP, coordinate sessi
 ### First-time setup installs the included Broker before MCP can connect
 
 This plugin is Windows x64. Locate the installed plugin directory two parents above this skill's directory, or through `hermes plugins list` in the active Hermes profile. Run its `setup.ps1` with PowerShell when the user asks to set up Tabro. It installs the bundled Broker, adapter, Native Host and extension, and can download the pinned Node dependency with `-DownloadNode`. See the plugin README for prerequisites and installation options. Then reload that profile's Hermes MCP or start a new session.
+
+Hermes requires `TABRO_BROWSER_PATH` in its launch environment, pointing to the selected Chrome, Chromium or Edge executable with file version 153 or newer. Its application gate rejects a missing/older browser before installation. Setup accepts `-BrowserPath` (`-ChromePath` is an alias) and preserves a shared installation's saved browser on repeat setup. A compatible version alone does not prove readiness: opening a Profile also checks the Chromium engine, extension loading, authentication and inventory. Do not silently substitute another browser after an explicit selection fails.
 
 Preserve the active `HERMES_HOME`; never assume setup is running for the default profile. For an explicitly selected profile, use `hermes -p <name> plugins list/install/enable` as appropriate. Every participating profile enables its own plugin, while the Windows user shares one Broker installation outside Hermes homes and `PLUGIN_DATA`. Repeated setup reuses that installation. If using a custom `TABRO_INSTALL_ROOT`, keep the same absolute path in all participating profile launch environments. Do not stop the shared daemon merely because one profile disconnects.
 
