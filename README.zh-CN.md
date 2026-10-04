@@ -11,6 +11,28 @@ Tabro 通过 MCP，让 Codex、Hermes 等 AI Agent 会话以可审计、按浏�
 > [!IMPORTANT]
 > `0.3.1` 开发版本已实现 18 个 MCP 工具、relay-v2、Native Messaging、扩展 CDP 适配器及受管 Profile 生命周期，尚未发布对应的安装包 Release。已有 `v0.3.0` Release 使用旧 Octopus 名称和 14 工具协议；使用当前 Tabro 功能和自动管理 Profile 时，请按下方“源码安装”构建。自动化检查与本机演示分别验证；不同机器仍需完成自己的预检和真实浏览器测试。
 
+## 功能展示
+
+以下 [Tabro 0.4.0 预览版](https://github.com/ohmyskyhigh/tabro/releases/tag/hermes-v0.4.0)截图展示三个核心功能。
+
+### 多个 Agent 共用一个 Broker
+
+多个 Agent 连接同一个本地 Broker，发现同一组浏览器 Profile。它们既可以共用已登录的浏览器和账号，也可以在不同 Profile 中工作。
+
+![Tabro Profile 列表展示同一 Broker 发现的托管和用户自管 Profile](./assets/hermes/multiple-agents-one-broker.png)
+
+### 每个 Agent 为不同任务创建独立工作区
+
+Agent 可以为不同任务创建独立的标签组工作区。Broker 记录工作区归属，并将浏览器命令限定在对应工作区内，让多个 Agent 共用账号时不会接管彼此的标签页。
+
+![Chrome 侧边栏中以标签组展示的独立 Tabro 工作区](./assets/hermes/workspaces-for-each-task.png)
+
+### 每个 Broker 托管 Profile 可以使用独立的账号密码代理
+
+通过 MCP 配置支持账号密码认证的 HTTP、HTTPS 或 SOCKS5 代理。保存凭据后，Agent 可以在 Profile 关闭时配置代理，再打开浏览器、验证出口 IP，并通过一句指令完成不同地区的搜索结果对比。
+
+![使用独立 Tabro Profile 和已验证美国、澳大利亚代理出口 IP 的 OLIPOP Google 可见度对比](./assets/hermes/proxy-seo-visibility.png)
+
 ## 快速开始
 
 ### 当前十八工具与共享运行时通过源码安装使用

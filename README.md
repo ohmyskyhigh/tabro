@@ -11,6 +11,28 @@ Tabro connects a local MCP gateway to one extension instance in each browser pro
 > [!IMPORTANT]
 > The `0.3.1` development tree implements the canonical eighteen-tool runtime, relay-v2 protocol, Native Messaging path, and extension-backed CDP adapter. A packaged `0.3.1` release has not been published. The existing `v0.3.0` release uses the previous Octopus name and fourteen-tool contract; use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime) for current Tabro features and automatic managed Profile lifecycle. Automated verification and physical Chrome, AdsPower, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
 
+## Features
+
+Screenshots from the [Tabro 0.4.0 preview](https://github.com/ohmyskyhigh/tabro/releases/tag/hermes-v0.4.0) show three core features.
+
+### Multiple agents share one Broker
+
+Multiple agents connect to the same local Broker and discover the same browser profiles. They can share a logged-in browser and account, or work across different profiles.
+
+![Tabro profile list showing shared Broker discovery of Tabro-managed and user-managed profiles](./assets/hermes/multiple-agents-one-broker.png)
+
+### Each agent creates separate workspaces for different tasks
+
+Each agent can create dedicated tab-group workspaces for different tasks. The Broker tracks ownership and keeps browser commands scoped to the correct workspace, so agents can share an account without taking over each other's tabs.
+
+![Chrome sidebar showing separate Tabro workspaces as browser tab groups](./assets/hermes/workspaces-for-each-task.png)
+
+### Each Broker-managed profile can use its own authenticated proxy
+
+Configure HTTP, HTTPS, or SOCKS5 proxies with username/password authentication through MCP. With saved credentials, an agent can configure each profile while closed, open the browsers, verify their exit IPs, and compare results across regions from a single request.
+
+![OLIPOP Google visibility comparison using separate Tabro profiles and verified US and Australia proxy exit IPs](./assets/hermes/proxy-seo-visibility.png)
+
 ## Quick start
 
 The current source updater requires a release declaring shared runtime discovery support; it rejects older packages before stopping an existing installation. The published `v0.3.0` installer retains its older contract. Use the source installer below for the shared dynamic runtime until a qualified package is published.
