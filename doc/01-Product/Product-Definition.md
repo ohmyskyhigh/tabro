@@ -2,7 +2,15 @@
 
 Tabro is a local, MCP-accessible browser-control product that lets AI-agent sessions automate websites across multiple Chrome profiles without managing Chrome remote-debugging ports, pipes, or broker-private browser routing.
 
-The project is open source under the MIT License. The broker and its browser connections operate locally.
+All Tabro-owned project components are open source under the MIT License: the Broker, MCP Adapter, browser extension, Native Host, Hermes integration, installation tooling, and proxy implementation. This scope also applies to components still awaiting implementation. Third-party dependencies retain their own licenses. The broker and its browser connections operate locally.
+
+## Distribution
+
+### First-time Hermes setup must install the Broker and its required runtime
+
+Tabro's Hermes plugin distribution must serve users who have no Tabro installation. First-time Tabro setup must download and install the local Broker and the supporting runtime needed for browser automation; a separately preinstalled Broker is not a prerequisite. The distribution includes the [Profile networking](#profile-networking) capability under the same open-source scope.
+
+This is an approved delivery requirement. Plugin packaging, first-time setup qualification and catalog admission remain pending; the [Hermes delivery plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md) tracks that work.
 
 ## Target client
 
@@ -53,6 +61,8 @@ The promise includes the confirmed workspace and managed-tab targeting rules. It
 ### Each participating browser profile becomes one uniquely named extension endpoint
 
 Every browser profile used with Tabro installs a distinct Tabro extension instance. The instance initially selects two short English words as a readable pairing code, and the operator may replace that default with two three-to-eight-letter words in the extension options. The extension normalizes and persists the code in profile-local storage, then combines the words into a compact lowercase endpoint nickname without a numeric suffix, such as pairing code `MINT-WAVE` and nickname `mintwave`. On its first connection to the local broker, the extension registers itself automatically as one browser-profile endpoint; the human does not obtain or enter a broker-generated code.
+
+The pairing alias is the sole human-facing Profile name, for both broker-owned and user-owned browsers. Tabro does not store or expose a second display name. Existing aliases remain unchanged when adopting this naming model.
 
 The readable pairing code helps the human correlate an installed extension with its broker endpoint. It is not the reconnect credential or an authorization secret. The extension persists a separate cryptographic profile identity, and the broker authenticates later connections against that identity.
 
@@ -191,6 +201,7 @@ Tabro does not expose per-request cancellation and does not impose a broker term
 
 | Capability | Product outcome |
 | --- | --- |
+| Profile proxy configuration | An agent can configure and verify the authenticated upstream proxy of a broker-owned Profile through MCP, under the [Profile networking](#profile-networking) rules. |
 | Endpoint discovery and workspace acquisition | An agent can discover paired browser profiles by nickname and condition, then request one or more session-time workspaces without a permanent agent-to-profile binding. |
 | Managed-tab lifecycle | A workspace request counts each endpoint once, creates or resumes each admitted tab-group workspace in an eligible existing window, and supplies a broker-issued managed-tab target; Tabro can create additional tabs and adopt opener-linked child tabs without exposing Chrome target identity. |
 | Extension-relayed CDP | An agent can send permitted raw CDP commands and receive raw results, extension-debugger errors, and events without handling a debugging port, pipe, attachment, or private browser target. |
@@ -248,7 +259,7 @@ When a reconnect leaves a raw CDP effect ambiguous after tab reconciliation, the
 
 | Agent problem | Product response |
 | --- | --- |
-| An agent needs browser identities that survive closing Chrome and changing agent sessions. | Principal-owned persistent Profiles support list/create/open/stop while preserving browser data; session/lineage authority continues to govern workspaces. |
+| An agent needs browser identities that survive closing Chrome and changing agent sessions. | Extension-registered Profiles remain discoverable while offline; broker-owned Profiles support MCP lifecycle management while user-owned Profiles wait for manual launch. Session/lineage authority continues to govern workspaces. |
 | A debugging connection can stop representing a usable browser. | The broker exposes current connection and endpoint truth independently from its routing decisions. |
 | The agent must remember ports, profiles, windows, targets, and tabs. | Named extension endpoints, logical workspaces, and broker-issued managed-tab references replace physical routing details. |
 | One browser profile could be counted repeatedly while requested capacity remains unavailable. | Workspace counts use distinct connected eligible endpoints, reject an admission-time shortfall without creation, and retain created workspace facts if an admitted multi-profile operation later fails. |
@@ -271,12 +282,24 @@ When a reconnect leaves a raw CDP effect ambiguous after tab reconciliation, the
 
 ### Agents can create and reopen persistent Profiles with an automatically connected extension
 
-The approved managed-Profile journey adds an owned persistent Profile directory to the endpoint model. Agents can list both open and closed Profiles, create an independent Profile, ensure an existing Profile is ready, and normally stop it while retaining its data and extension identity. Management authority belongs to the authenticated installation principal across sessions; workspace authority remains session and lineage based. Existing manually connected endpoints do not acquire process-management rights.
+Every extension that authenticates and establishes a connection registers one Profile in the shared Broker registry. All authenticated agents can discover its nickname and use its connected browser through their own workspaces. Registration is independent of how Chrome was launched. Offline Profiles retain their identity and are shown as disconnected.
+
+`ownership=broker` means the Broker can launch or reopen that browser through MCP; `ownership=user` means the human opens Chrome before its extension connects. Both are managed by the Broker for workspace and tab automation. This launch ownership also describes the Profile's windows and is independent of an agent's workspace ownership. Authorized lifecycle callers can create, open and normally stop broker-owned Profiles while retaining browser data. A Profile's creator does not exclusively own its launch capacity; lifecycle scopes, requester ticket access and active-work protections remain enforced.
 
 ### Lifecycle management keeps browser-wide debugging private to Tabro
 
 On the verified Windows runtime, Tabro uses a private loopback browser connection only to load its extension, inspect the owned instance, prepare an empty window and close normally. Website actions and native tab-group workspaces continue through the extension. Active work prevents a Profile stop.
 
 The workspace/raw-CDP no-terminal-timeout rule does not eliminate the approved managed lifecycle's bounded startup and normal-close waits. A lifecycle failure reports its known state while preserving data and refusing unverified process termination; it does not decide whether an ambiguous website effect succeeded.
+
+## Profile networking
+
+### Broker-owned Profiles can use one authenticated upstream proxy
+
+Profiles with `ownership=broker` support HTTP and HTTPS proxies with Basic username/password authentication and SOCKS5 proxies with username/password authentication. One setting covers all regular windows and workspaces in that Profile. User-owned Profiles do not support Tabro proxy configuration. Launch ownership remains broker/user, and network management also requires its dedicated authority. The pairing alias remains the sole Profile name.
+
+### Network changes require a closed broker-owned Profile and apply on its next launch
+
+Agents can inspect, set, clear and check proxy configuration through MCP. Setting and clearing require dedicated network-management authority, broker ownership, verified browser closure and no conflicting unfinished work. The change is saved while closed and applied on the next explicit launch; configuration never automatically closes or opens Chrome. Enabled proxy failures do not silently select direct routing. Credentials remain protected on the local machine and are represented by opaque references in MCP. The promise covers regular-profile URL proxying, not system-wide VPN or incognito.
 
 Parent: [`01-Product`](./_MOC.md).

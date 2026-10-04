@@ -12,7 +12,7 @@ const client = new Client({ name: 'smoke-test', version: '0.1.0' }, { versionNeg
 try {
   const { port } = application.mcpGateway.address();
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-    requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${token}` } }
+    requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${token}` } }
   }));
   const tools = await client.listTools();
   if (tools.tools.length !== MCP_TOOL_NAMES.length) throw new Error(`Expected ${MCP_TOOL_NAMES.length} MCP tools, received ${tools.tools.length}.`);

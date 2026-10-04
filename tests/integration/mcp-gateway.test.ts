@@ -17,7 +17,7 @@ const CALLER = {
 };
 
 const rejectedOutput = () => ({
-  contract_version: '2',
+  contract_version: '5',
   disposition: 'rejected',
   observed_at: NOW,
   caller: CALLER,
@@ -34,7 +34,7 @@ const rejectedOutput = () => ({
 const acceptedWorkspaceOutput = (input: unknown) => {
   const requestRef = 'req_gateway_test';
   return {
-    contract_version: '2',
+    contract_version: '5',
     disposition: 'accepted',
     observed_at: NOW,
     caller: CALLER,
@@ -131,7 +131,7 @@ describe('canonical MCP gateway', () => {
     await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
       requestInit: {
         headers: {
-          'x-octopus-contract-version': '2', Authorization: `Bearer ${TOKEN}`,
+          'x-octopus-contract-version': '5', Authorization: `Bearer ${TOKEN}`,
           ...headers
         }
       }
@@ -152,7 +152,7 @@ describe('canonical MCP gateway', () => {
   it('rejects missing or old contract versions after authentication and before admission', async () => {
     const broker = new FakeCanonicalBroker(); await connect(broker);
     const url = `http://127.0.0.1:${gateway!.address().port}/mcp`;
-    for (const version of [undefined, '1']) {
+    for (const version of [undefined, '1', '2', '3']) {
       const response = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}`, ...(version ? { 'x-octopus-contract-version': version } : {}) } });
       expect(response.status).toBe(409);
     }
@@ -193,10 +193,10 @@ describe('canonical MCP gateway', () => {
     await gateway.start();
     const { port } = gateway.address();
     const firstTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-      requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${TOKEN}` } }
+      requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${TOKEN}` } }
     });
     const secondTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-      requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${TOKEN}` } }
+      requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${TOKEN}` } }
     });
     const first = new Client({ name: 'same-token-first', version: '1.0.0' }, { versionNegotiation: { mode: 'auto' } });
     const second = new Client({ name: 'same-token-second', version: '1.0.0' }, { versionNegotiation: { mode: 'auto' } });

@@ -9,7 +9,7 @@ Tabro 通过 MCP，让 Codex、Hermes 等 AI Agent 会话以可审计、按浏�
 每个浏览器配置文件安装一个扩展实例。Agent 向本地 Broker 申请工作区，获得 Broker 签发的 `workspace_ref`、`tab_ref` 和请求票据，再通过扩展支持的 Chrome DevTools Protocol（CDP）子集执行浏览器操作。扩展使用 `chrome.debugger`，无需公开暴露 Chrome 远程调试端口；受管启动内部使用 loopback 管理连接。
 
 > [!IMPORTANT]
-> `0.3.1` 开发版本已实现 18 个 MCP 工具、relay-v2、Native Messaging、扩展 CDP 适配器及受管 Profile 生命周期，尚未发布对应的安装包 Release。已有 `v0.3.0` Release 使用旧 Octopus 名称和 14 工具协议；使用当前 Tabro 功能和自动管理 Profile 时，请按下方“源码安装”构建。自动化检查与本机演示分别验证；不同机器仍需完成自己的预检和真实浏览器测试。
+> `0.4.0` 版本实现 22 个 MCP 工具、HTTP(S)/SOCKS5 账号密码代理、relay-v2、Native Messaging、扩展 CDP 适配器及受管 Profile 生命周期。[Hermes 插件](./integrations/hermes/README.md)包含 Windows 运行组件和首次 setup；商城收录仍需上游审核。已有 `v0.3.0` Release 使用旧 Octopus 名称和 14 工具协议；使用当前 Tabro 功能和自动管理 Profile 时，请按下方“源码安装”构建。自动化检查与本机演示分别验证；不同机器仍需完成自己的预检和真实浏览器测试。
 
 ## 功能展示
 
@@ -35,12 +35,14 @@ Agent 可以为不同任务创建独立的标签组工作区。Broker 记录工�
 
 ## 快速开始
 
-### 当前十八工具与共享运行时通过源码安装使用
+Hermes 用户请先阅读[插件安装指南](./integrations/hermes/README.md)。多个 Hermes profile 分别启用插件，共用一个本地 Broker。下方源码安装适用于开发和其他 MCP 客户端。
+
+### 当前二十二工具与共享运行时通过源码安装使用
 
 1. 准备下方“环境要求”中的 Windows 构建工具，克隆仓库并进入根目录。
 2. 运行 `pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker`；启用受管 Chrome 时另加 `-EnableManagedProfiles`。
 3. 外部已有浏览器 Profile 在 `chrome://extensions` 加载安装器返回的扩展目录，使用 Native companion 等待连接；受管 Profile 在 create/open 时自动加载。
-4. 使用 `.relay-data/bootstrap/codex-mcp.toml` 或 `hermes-mcp.txt` 生成的配置，新建 Agent 会话并核对 18 个工具。
+4. 使用 `.relay-data/bootstrap/codex-mcp.toml` 或 `hermes-mcp.txt` 生成的配置，新建 Agent 会话并核对 22 个工具。
 5. 从 `.relay-data/runtime.json` 读取实际健康地址，再验证端点连接和真实托管标签页操作。
 
 仓库发布记录中的 `v0.3.0` 安装包仍是旧名称与 14 工具协议。当前源码更新器要求包声明 `runtimeDiscoveryVersion: 1`，不合格包会在停止现有安装前被拒绝。完整步骤见[安装与设置](./doc/zh-CN/Installation-and-Setup.md)。
@@ -68,7 +70,7 @@ Agent 不接触 Chrome 配置文件 ID、扩展 ID、窗口 ID、标签页 ID、
 flowchart LR
   C["Codex 会话"] --> A1["会话独立的 stdio 适配器"]
   H["Hermes 会话"] --> A2["会话独立的 stdio 适配器"]
-  A1 --> M["HTTP MCP 网关\n18 个工具"]
+  A1 --> M["HTTP MCP 网关\n22 个工具"]
   A2 --> M
   M --> B["本地 Broker\n路由、票据、控制和日志"]
   B <--> D["SQLite 持久状态"]
@@ -96,7 +98,7 @@ flowchart LR
 
 ### 独立更新器会校验、安装、注册并启动选定版本
 
-以下下载命令对应历史发布包路径；它不等于当前源码的十八工具、受管 Profile 和动态发现安装。使用当前功能请按“源码安装”构建。
+以下下载命令对应历史发布包路径；它不等于当前源码的二十二工具、受管 Profile 和动态发现安装。使用当前功能请按“源码安装”构建。
 
 在 PowerShell 中执行：
 
@@ -169,7 +171,7 @@ pwsh -NoProfile -File "$env:LOCALAPPDATA\Octopus Browser Relay\update-local.ps1"
 hermes -p <profile> mcp test tabro
 ```
 
-必须发现 18 个工具。以后新建 Hermes 配置文件时，需要再次运行该命令。Codex 和 Hermes 都应为每个独立 Agent 会话启动独立的 stdio 适配器进程，以保持会话身份隔离。
+必须发现 22 个工具。以后新建 Hermes 配置文件时，需要再次运行该命令。Codex 和 Hermes 都应为每个独立 Agent 会话启动独立的 stdio 适配器进程，以保持会话身份隔离。
 
 ## 源码安装
 
@@ -194,7 +196,7 @@ pnpm dev
 
 ## MCP 工具
 
-### 18 个工具覆盖发现、浏览器工作、监控、恢复和控制
+### 22 个工具覆盖发现、浏览器工作、监控、恢复和控制
 
 | 类型 | 工具 |
 | --- | --- |
@@ -277,9 +279,9 @@ Demo 只单独保留演示站、trace 与输出；Chrome 数据目录和登录�
 4. 重新运行更新器以修复已安装文件和 Native Messaging 注册。
 5. 更新扩展文件后重载扩展。如果仍提示版本号不匹配，更新并重启 Broker 以移除旧版本门禁，再重新连接扩展。
 
-当前 `setup-readiness-checks.ts` 的交接文件检查仍要求配置中含固定 Broker URL，可能对有效的 `TABRO_RUNTIME_FILE` 注册报告 `mcp_registration_handoffs: ACTION_REQUIRED`。应核对发现文件、令牌路径并实测十八工具；这项旧检查未通过仍须如实记录，不能靠反复重装消除。
+当前 `setup-readiness-checks.ts` 的交接文件检查仍要求配置中含固定 Broker URL，可能对有效的 `TABRO_RUNTIME_FILE` 注册报告 `mcp_registration_handoffs: ACTION_REQUIRED`。应核对发现文件、令牌路径并实测二十二工具；这项旧检查未通过仍须如实记录，不能靠反复重装消除。
 
-### Agent 看不到 18 个工具时应重新创建适配器和 Agent 会话
+### Agent 看不到 22 个工具时应重新创建适配器和 Agent 会话
 
 确认 Codex 或 Hermes 配置指向生成的稳定适配器入口和令牌文件。修改 MCP 配置后必须新建会话。Agent 连接的是 stdio 适配器和 HTTP MCP 网关，浏览器 relay 的动态 WebSocket 地址不用于 Agent MCP 注册。
 

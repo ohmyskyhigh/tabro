@@ -26,7 +26,7 @@ function Read-HealthyRuntime([int]$ExpectedProcessId) {
     $url = [Uri]$record.mcpUrl
     if ($url.Scheme -ne 'http' -or $url.Host -ne '127.0.0.1' -or $url.AbsolutePath -ne '/mcp' -or $url.Port -le 0) { return $null }
     $health = Invoke-RestMethod -Uri ([Uri]::new($url, '/health')) -TimeoutSec 2
-    if ($health.status -ne 'ok' -or $health.instanceRef -ne $record.instanceRef -or $health.mcpContractVersion -ne '2') { return $null }
+    if ($health.status -ne 'ok' -or $health.instanceRef -ne $record.instanceRef -or $health.mcpContractVersion -ne '5') { return $null }
     return [ordered]@{ runtimeFile = $runtimeFile; mcpUrl = $record.mcpUrl; relayUrl = $record.relayUrl; health = $health }
   } catch { return $null }
 }

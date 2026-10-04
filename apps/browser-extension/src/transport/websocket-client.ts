@@ -358,6 +358,7 @@ export class RelayClient {
       throw new Error('An unpaired profile must have an extension-generated pairing code.');
     }
     this.sendEnvelope(createRelayV2Envelope('HELLO', {
+      profileProxy: 1,
       ...(this.managedClaim ? { managedClaim: this.managedClaim } : {}),
       ...(identity.endpointId ? { endpointId: identity.endpointId } : {}),
       ...(identity.pairingCode ? { pairingCode: identity.pairingCode } : {}),

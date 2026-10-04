@@ -14,6 +14,14 @@ The desired outcome is for the agent to use the portion of Chrome's `chrome.debu
 
 Installation is a supporting journey that occurs before a Codex or Hermes automation session starts using Tabro.
 
+### First-time Hermes setup downloads and installs the local browser runtime
+
+For the Hermes plugin distribution, the human starts Tabro setup after installing and enabling the plugin. Setup downloads and installs the Broker, MCP Adapter, Native Host and browser-extension files, and prepares the required runtime dependencies. The human is not asked to obtain or start a separate Broker beforehand. Setup registers the local integration, starts the Broker and guides any browser-required extension installation or permission steps before reporting readiness.
+
+An existing compatible local installation may be reused through the shared-deployment journey below. Reuse is an optimization, not a prerequisite for new users. Proxy configuration follows [the Profile networking journey](#profile-networking) after installation; it retains the closed broker-owned Profile restriction.
+
+This approved journey is pending implementation and clean-machine qualification in the [Hermes delivery plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md). The scripted installation and direct MCP registration described below remain the existing supporting path.
+
 ### The same installer sequence applies whether a human or setup agent starts it
 
 A human can run the scripted installer directly or ask a standalone setup agent to run it on the human's behalf. Both entry paths use the same scripted installation journey because the Tabro MCP tool is not available until installation and registration are complete.
@@ -88,7 +96,7 @@ The default use case takes an agent from browser requirements through asynchrono
 
 ### Profile, workspace and browser submissions share a ticket-first lifecycle
 
-Profile create/open/stop, workspace acquisition, tab creation, CDP commands, human resolution, takeover, termination, and pause/resume controls use the asynchronous request lifecycle defined by the [MCP contract](../03-User-Interface/MCP-Contract.md). Profile authority is principal-scoped; workspace operations retain their session and lineage rules. The broker first validates the caller and the submitted ownership and target relationships. For `send_cdp_command`, it also validates that the requested CDP method is available through the extension and can remain inside the selected managed-tab tree.
+Profile create/open/stop, workspace acquisition, tab creation, CDP commands, human resolution, takeover, termination, and pause/resume controls use the asynchronous request lifecycle defined by the [MCP contract](../03-User-Interface/MCP-Contract.md). Profile launch ownership is broker/user; current lifecycle scopes govern Broker launches, tickets remain requester-principal scoped, and workspace operations retain their session and lineage rules. The broker first validates the caller and the submitted ownership and target relationships. For `send_cdp_command`, it also validates that the requested CDP method is available through the extension and can remain inside the selected managed-tab tree.
 
 An invalid caller, ownership relationship, target, unsupported CDP method, or out-of-scope CDP method is rejected synchronously without a request ticket. For any other accepted submission, the broker durably accepts the work and returns the submission disposition `accepted` together with a broker-issued `request_ref` and the exact normalized request body the broker accepted, without waiting for browser or extension execution to finish. The acknowledgement must be delivered to the caller before any browser or extension dispatch. If that delivery fails, the caller receives an immediate transport failure and Tabro does not dispatch the work; there is no lost-acknowledgement rediscovery journey. The agent echoes the reference; it does not create or modify it.
 
@@ -489,7 +497,9 @@ Evaluation records whether each asynchronous submission delivered its broker-iss
 
 | Product requirement | User Experience realization |
 | --- | --- |
-| Agents can create and reopen persistent owned browser identities. | Principal-scoped Profile discovery and ticketed lifecycle operations yield ready endpoint nicknames for the existing workspace journey; stop preserves data and rejects active work. |
+| Hermes distribution serves a user without a preinstalled Broker. | First-time Tabro setup downloads and installs the local runtime, guides extension setup and reports whether automation can begin; qualification remains pending. |
+| Open-source distribution includes Profile proxy support. | The existing proxy journey closes a broker-owned Profile, saves configuration through MCP, then explicitly reopens it and checks its exit IP. |
+| Agents can create and reopen persistent owned browser identities. | Shared extension-registry discovery exposes both launch ownerships and ready endpoint nicknames; scoped Broker lifecycle operations preserve data and reject stop during active work. |
 | MCP access serves AI-agent sessions. | Codex and Hermes agent sessions receive the same MCP experience against Chrome. |
 | Installation remains a supporting operation outside the target automation journey. | A human runs the scripted installer directly or asks a setup agent to run it, after which every distinct extension instance generates or accepts a customized readable code, persists its endpoint nickname, and pairs automatically with the running local broker before automation begins. |
 | Agents discover paired browser endpoints by nickname and condition, including known endpoints that cannot currently accept a workspace. | Targeted paginated context shows known endpoints, eligible existing windows, and current managed-tab capability summaries, while workspace acquisition separately reports designated and assigned bindings. |
@@ -517,14 +527,24 @@ Evaluation records whether each asynchronous submission delivered its broker-iss
 
 ### Creating a Profile provides a ready endpoint without per-Profile extension installation
 
-After installation enables the verified managed runtime, the agent lists its persistent Profiles, then creates one using a display name and an idempotency key or opens a returned Profile reference. It polls the durable request until process identity, extension authentication and current inventory establish readiness. The returned nickname enters the existing workspace journey. A connection-ready endpoint may still have paused automation.
+The agent lists all extension-registered Profiles and their nicknames, ownership and readiness. With `ownership=broker`, an authorized agent can reopen the returned Profile; with `ownership=user`, the human opens Chrome and the agent uses the extension after it connects. Both support the same workspace journey. Enabling the verified managed runtime additionally lets an authorized agent create a broker-owned Profile using only an idempotency key, without supplying a separate display name. It polls the durable request until process identity, extension authentication and current inventory establish readiness. The extension assigns the pairing alias; the returned nickname is the sole Profile name throughout discovery, lifecycle results and the workspace journey. No additional name is stored on the Profile. A connection-ready endpoint may still have paused automation.
 
 ### Stopping a Profile preserves its identity and requires active work to finish first
 
-The agent ends its workspaces before stopping. A blocked stop reports active work and leaves the browser available. A normal stop preserves cookies, storage and the extension identity. A later session with the same authenticated principal can reopen it. Failed creation retains a discoverable Profile and failure facts; retrying the same creation key never allocates another Profile.
+The agent ends its workspaces before stopping. A blocked stop reports active work and leaves the browser available. A normal stop preserves cookies, storage and the extension identity. A later authorized lifecycle caller can reopen a broker-owned Profile. Failed creation retains its reservation and failure facts through its ticket and same-key retry; it enters the registered-Profile list after its extension first authenticates and connects. Retrying the same creation key never allocates another Profile. User-owned Chrome is opened and closed by the human.
 
 ### Bounded Profile lifecycle waits do not time out ambiguous website effects
 
 The no-terminal-timeout rules for workspace and raw-CDP work above do not remove the managed lifecycle's explicit queue, launch, extension-ready and normal-close bounds in [Operational defaults](./Operational-Defaults.md). Lifecycle timeout or unverified process identity produces the corresponding failure or uncertain fact; it never authorizes replay of a website action or blind process termination.
+
+## Profile networking
+
+### Agents close a broker-owned Profile before changing its proxy
+
+The agent ends its work, closes the broker-owned Profile, reads the current proxy revision and selects HTTP/HTTPS/SOCKS5 host and port plus an operator-provisioned credential reference. Set and clear save a ticketed change while Chrome is closed. The agent explicitly reopens the Profile and checks its exit IP after application. User-owned Profiles reject proxy configuration, even when disconnected; no human-closure confirmation flow is needed. Network changes never transfer workspace ownership.
+
+### Saved configuration and verified browser routing are separate facts
+
+Responses distinguish saved revision, effective extension application, and a dated browser-originated exit IP and latency observation. Saving while closed reports pending connection. Policy or competing-extension control reports a conflict. Clear saves removal of Tabro's setting; the next explicit launch omits the startup proxy flag and the extension releases its setting to the browser's underlying configuration, which may itself use a system proxy. Reconnection reconciles settings before automation becomes eligible.
 
 Parent: [`02-User-Experience`](./_MOC.md).

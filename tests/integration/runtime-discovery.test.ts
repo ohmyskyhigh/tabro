@@ -66,7 +66,7 @@ describe('shared Broker runtime discovery', () => {
       client = new Client({ name: 'discovery-test', version: '1' }, { versionNegotiation: { mode: 'auto' } });
       await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', 'apps/mcp-stdio-adapter/src/main.ts'],
         cwd: process.cwd(), env: { ...getDefaultEnvironment(), TABRO_RUNTIME_FILE: path, TABRO_TOKEN: TOKEN, TABRO_RUNTIME_SESSION: 'stable-runtime-test' }, stderr: 'pipe' }));
-      expect((await client.listTools()).tools).toHaveLength(18);
+      expect((await client.listTools()).tools).toHaveLength(22);
       const before = await client.callTool({ name: 'get_browser_context', arguments: { view: { kind: 'broker' } } });
       await app!.stop(); app = undefined;
       await start();

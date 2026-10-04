@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "tabro",
+  "version": "0.4.0",
+  "description": "Local Chrome profile automation, session-owned tab-group workspaces and authenticated HTTP(S)/SOCKS5 proxies. Includes the Windows Broker, adapter and extension; first-time setup installs the runtime.",
+  "author": { "name": "Runkun Miao", "url": "https://github.com/ohmyskyhigh" },
+  "homepage": "https://github.com/ohmyskyhigh/tabro",
+  "repository": "https://github.com/ohmyskyhigh/tabro",
+  "license": "MIT",
+  "keywords": ["browser", "chrome", "multi-profile", "proxy", "mcp", "windows"]
+}

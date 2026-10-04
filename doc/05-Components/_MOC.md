@@ -25,3 +25,9 @@ Profile Manager and ProfileRequestService are Broker-owned responsibilities with
 Real runtime evidence may split or combine internal modules, replace a transport adapter, tune worker topology, or alter storage indexes through a Component proposal. Moving routing, status, ownership, lifecycle, or recovery truth out of Broker Core requires System review.
 
 Parent: [`04-System`](../04-System/_MOC.md).
+
+## Profile networking
+
+### Profile proxy support follows the accepted network decision
+
+The [Profile proxy decision](../90-Proposals/Profile-Proxy.md) permits authenticated HTTP, HTTPS and SOCKS5 configuration only for closed broker-owned Profiles. The canonical owner in this directory defines its layer; [the implementation plan](../80-Plans/profile-proxy-2026-10-03/README.md) and implementation report track delivery evidence.

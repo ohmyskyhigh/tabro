@@ -4,6 +4,14 @@ This directory records applied changes to vault structure and canonical document
 
 ## Entries
 
+- [Hermes plugin package](./2026-10-04-hermes-plugin-package.md) records Windows delivery and multiple-Hermes-profile installation evidence; catalog admission remains pending.
+
+- [`2026-10-04-open-source-hermes-distribution.md`](./2026-10-04-open-source-hermes-distribution.md)
+
+- [`2026-10-03-closed-managed-profile-proxy.md`](./2026-10-03-closed-managed-profile-proxy.md)
+
+- [`2026-10-03-profile-proxy.md`](./2026-10-03-profile-proxy.md)
+
 - [`2026-10-02-source-of-truth-audit.md`](./2026-10-02-source-of-truth-audit.md)
 - [`2026-10-01-shared-dynamic-runtime.md`](./2026-10-01-shared-dynamic-runtime.md)
 - [`2026-10-01-hermes-tabro-migration.md`](./2026-10-01-hermes-tabro-migration.md)

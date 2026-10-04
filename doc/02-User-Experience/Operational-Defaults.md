@@ -74,15 +74,15 @@ Agents may poll less often. Polling never advances, releases, or reorders a brow
 
 ### Oversized raw CDP values fail explicitly instead of being truncated
 
-Raw CDP parameters, results, errors, and event pages remain inline in contract version `2`. When a value exceeds the active inline or message limit, Tabro returns `PAYLOAD_TOO_LARGE` with the applicable limit and never silently truncates JSON.
+Raw CDP parameters, results, errors, and event pages remain inline in contract version `5`. When a value exceeds the active inline or message limit, Tabro returns `PAYLOAD_TOO_LARGE` with the applicable limit and never silently truncates JSON.
 
 Numeric inline, page, and retention limits are broker configuration published through capability facts. Broker-issued resource retrieval can be added in a later contract version after Codex and Hermes prove equivalent support.
 
 ## Compatibility
 
-### Contract version two uses exact schemas and evidence-gated changes
+### Contract version three uses exact schemas and explicit launch ownership
 
-The current public wire contract is version `2`. Inputs and structured outputs are closed against unknown fields. A compatible implementation may tune documented numeric limits and polling hints; adding, removing, or changing a required public field, discriminator, tool name, state, or ownership rule requires a new contract version and a vault proposal.
+The current public wire contract is version `5`, incorporating the [approved alias-only naming decision](../90-Proposals/Profile-Alias-Only.md) and the [extension registration and launch ownership decision](../90-Proposals/Extension-Profile-Ownership.md). Inputs and structured outputs are closed against unknown fields. A compatible implementation may tune documented numeric limits and polling hints; adding, removing, or changing a required public field, discriminator, tool name, state, or ownership rule requires a new contract version and a vault proposal.
 
 Codex and Hermes must load the same tool definitions and produce equivalent structured results. Runtime quirks are handled in adapters and conformance profiles rather than by changing browser semantics for one agent.
 

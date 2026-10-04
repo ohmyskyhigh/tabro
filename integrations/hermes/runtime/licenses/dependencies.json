@@ -1,0 +1,152 @@
+[
+  {
+    "name": "@hono/node-server",
+    "version": "1.19.17",
+    "license": "MIT"
+  },
+  {
+    "name": "@modelcontextprotocol/client",
+    "version": "2.0.0",
+    "license": "MIT"
+  },
+  {
+    "name": "@modelcontextprotocol/core",
+    "version": "2.0.0",
+    "license": "MIT"
+  },
+  {
+    "name": "@modelcontextprotocol/node",
+    "version": "2.0.0",
+    "license": "MIT"
+  },
+  {
+    "name": "@modelcontextprotocol/server",
+    "version": "2.0.0",
+    "license": "MIT"
+  },
+  {
+    "name": "@pinojs/redact",
+    "version": "0.4.0",
+    "license": "MIT"
+  },
+  {
+    "name": "agent-base",
+    "version": "9.0.0",
+    "license": "MIT"
+  },
+  {
+    "name": "atomic-sleep",
+    "version": "1.0.0",
+    "license": "MIT"
+  },
+  {
+    "name": "debug",
+    "version": "4.4.3",
+    "license": "MIT"
+  },
+  {
+    "name": "eventsource",
+    "version": "3.0.7",
+    "license": "MIT"
+  },
+  {
+    "name": "eventsource-parser",
+    "version": "3.1.1",
+    "license": "MIT"
+  },
+  {
+    "name": "has-flag",
+    "version": "4.0.0",
+    "license": "MIT"
+  },
+  {
+    "name": "ip-address",
+    "version": "10.7.3",
+    "license": "MIT"
+  },
+  {
+    "name": "jose",
+    "version": "6.2.10",
+    "license": "MIT"
+  },
+  {
+    "name": "ms",
+    "version": "2.1.3",
+    "license": "MIT"
+  },
+  {
+    "name": "on-exit-leak-free",
+    "version": "2.1.2",
+    "license": "MIT"
+  },
+  {
+    "name": "pino",
+    "version": "10.3.1",
+    "license": "MIT"
+  },
+  {
+    "name": "pino-std-serializers",
+    "version": "7.1.0",
+    "license": "MIT"
+  },
+  {
+    "name": "pkce-challenge",
+    "version": "5.0.1",
+    "license": "MIT"
+  },
+  {
+    "name": "proxy-chain",
+    "version": "3.0.1",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "quick-format-unescaped",
+    "version": "4.0.4",
+    "license": "MIT"
+  },
+  {
+    "name": "safe-stable-stringify",
+    "version": "2.5.0",
+    "license": "MIT"
+  },
+  {
+    "name": "smart-buffer",
+    "version": "4.2.0",
+    "license": "MIT"
+  },
+  {
+    "name": "socks",
+    "version": "2.8.10",
+    "license": "MIT"
+  },
+  {
+    "name": "socks-proxy-agent",
+    "version": "10.1.0",
+    "license": "MIT"
+  },
+  {
+    "name": "sonic-boom",
+    "version": "4.2.1",
+    "license": "MIT"
+  },
+  {
+    "name": "supports-color",
+    "version": "7.2.0",
+    "license": "MIT"
+  },
+  {
+    "name": "thread-stream",
+    "version": "4.2.0",
+    "license": "MIT"
+  },
+  {
+    "name": "ws",
+    "version": "8.21.3",
+    "license": "MIT"
+  },
+  {
+    "name": "zod",
+    "version": "4.4.3",
+    "license": "MIT"
+  }
+]

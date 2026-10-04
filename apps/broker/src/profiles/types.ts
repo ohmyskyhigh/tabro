@@ -4,7 +4,6 @@ export type ExtensionState = 'unknown' | 'missing' | 'connecting' | 'connected' 
 
 export interface ManagedProfile {
   profileRef: string;
-  displayName: string;
   principalId: string;
   dataDirKey: string;
   runtimeRef: string;
@@ -28,6 +27,12 @@ export interface ManagedBrowserInstance {
   managementUrl: string | null;
   observedAt: string;
   endedAt: string | null;
+}
+
+/** Launch records enrich extension discovery; they do not define its membership. */
+export interface ProfileCatalogRepository {
+  forEndpoint(endpointRef: string): ManagedProfile | null;
+  currentInstance(profileRef: string): ManagedBrowserInstance | null;
 }
 
 export interface ProfileAuthority {

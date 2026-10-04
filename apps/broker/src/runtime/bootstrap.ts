@@ -1,3 +1,6 @@
+import { dirname, resolve } from 'node:path';
+import { ProfileNetworkService } from '../proxy/profile-network-service.js';
+import { ProxyCredentialStore } from '../proxy/proxy-credential-store.js';
 import pino, { type Logger } from 'pino';
 import { randomUUID } from 'node:crypto';
 import { BrokerCore, OctopusBroker } from '../core/index.js';
@@ -8,14 +11,15 @@ import { OCTOPUS_VERSION } from '../../../shared/protocol/src/version.js';
 import type { RelayConfig } from './config.js';
 import { ChromeLauncher } from '../profiles/chrome-launcher.js';
 import { ProfileManager } from '../profiles/profile-manager.js';
+import { MCP_CONTRACT_VERSION } from '../../../shared/protocol/src/mcp/tool-catalog.js';
 
 const SERVICE_VERSION = OCTOPUS_VERSION;
-const MCP_CONTRACT_VERSION = '2';
 const RELAY_PROTOCOL_VERSION = '2';
 
 export interface RelayApplication {
   instanceRef: string;
   profileManager: ProfileManager | null;
+  network: ProfileNetworkService;
   store: SqliteRelayStore;
   /** Canonical source-of-truth broker used by the public MCP contract. */
   broker: OctopusBroker;
@@ -52,13 +56,14 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
       'browser:write'
     ], config.adminToken);
   }
-  if (config.profiles) {
+  {
     const admin = store.authenticateAgent(config.adminToken)!;
-    store.updateAgentScopes(admin.principalId, [...admin.scopes, 'profiles:read', 'profiles:manage']);
+    store.updateAgentScopes(admin.principalId, [...admin.scopes, 'profiles:read', 'profiles:network:manage', ...(config.profiles ? ['profiles:manage'] : [])]);
   }
 
   const broker = new OctopusBroker(store.canonical);
-  const profileManager: ProfileManager | null = config.profiles ? new ProfileManager(store, new ChromeLauncher(config.profiles), endpointRef => extensionGateway.connection(endpointRef), 120_000, config.profiles.launchesEnabled !== false) : null;
+  const launcher = config.profiles ? new ChromeLauncher(config.profiles) : null;
+  const profileManager: ProfileManager | null = config.profiles ? new ProfileManager(store, launcher!, endpointRef => extensionGateway.connection(endpointRef), 120_000, config.profiles.launchesEnabled !== false) : null;
   if (profileManager) broker.setProfileManager(profileManager);
   const legacyBroker = new BrokerCore(store, {
     heartbeatTimeoutMs: config.heartbeatTimeoutMs,
@@ -72,6 +77,11 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
     profileManager?.grants
   );
   legacyBroker.setTransport(extensionGateway);
+  const credentials = new ProxyCredentialStore(resolve(dirname(config.dbPath), 'proxy-credentials'));
+  const network = new ProfileNetworkService(store, () => extensionGateway, credentials, profileManager);
+  broker.setNetworkService(network);
+  if (profileManager) profileManager.network = network;
+  if (launcher) launcher.proxyPort = ref => network.prepareLaunch(ref);
 
   const health = (): Record<string, unknown> => {
     const logical = store.canonical.logical.scanLogicalRecovery();
@@ -111,6 +121,7 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
   return {
     instanceRef,
     profileManager,
+    network,
     store,
     broker,
     legacyBroker,
@@ -133,6 +144,7 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
         await mcpGateway.start();
         mcpStarted = true;
         profileManager?.startObserving();
+        network.start();
         sweepTimer = setInterval(() => {
           legacyBroker.sweep();
           extensionGateway.sweepHeartbeat(config.heartbeatTimeoutMs);
@@ -177,6 +189,7 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
       }
       if (!storeClosed) {
         await broker.waitForIdle();
+        await network.close();
         store.close();
         storeClosed = true;
       }

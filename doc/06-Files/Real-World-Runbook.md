@@ -57,7 +57,7 @@ The command writes local generated state below `.relay-data/`. Keep the final JS
 
 ### A GitHub Release installation keeps one extension path across updates
 
-The historical published-package path uses the standalone updater below. Repository publication records identify `v0.3.0` as the earlier fourteen-tool runtime. It cannot pass this runbook’s eighteen-tool/shared-discovery qualification; use the current source installer or a locally built discovery-capable package for that scope:
+The historical published-package path uses the standalone updater below. Repository publication records identify `v0.3.0` as the earlier fourteen-tool runtime. It cannot pass this runbook’s twenty-two-tool/shared-discovery qualification; use the current source installer or a locally built discovery-capable package for that scope:
 
 ```powershell
 Invoke-WebRequest `
@@ -183,7 +183,7 @@ Check `http://127.0.0.1:7340/health` before assigning browser work.
 
 ### Codex launches a session-owned stdio adapter from the generated fragment
 
-Open `.relay-data/bootstrap/MCP-REGISTRATION.md`. Merge `.relay-data/bootstrap/codex-mcp.toml` into the active Codex configuration and start a new Codex session. Confirm the session can list an MCP server named `tabro` and exactly eighteen tools.
+Open `.relay-data/bootstrap/MCP-REGISTRATION.md`. Merge `.relay-data/bootstrap/codex-mcp.toml` into the active Codex configuration and start a new Codex session. Confirm the session can list an MCP server named `tabro` and exactly twenty-two tools.
 
 The generated fragment launches the compiled Node stdio adapter and supplies `TABRO_RUNTIME_FILE` pointing to `.relay-data/runtime.json`, the `.relay-data/admin-token.txt` path, and `codex` runtime label. It does not embed the token. The repository generates the fragment but does not locate or overwrite the active Codex configuration.
 
@@ -239,7 +239,7 @@ For each asynchronous call, capture the acceptance result and the final `get_bro
 
 ### Both runtimes perform the same contract without runtime-specific tool bodies
 
-Run the single-session cycle once from Codex and once from Hermes, using separate fixtures or separate workspaces. Both sessions must see the same eighteen tool names, use the same MCP input structure, receive broker-issued IDs, poll tickets, and obtain the assigned marker.
+Run the single-session cycle once from Codex and once from Hermes, using separate fixtures or separate workspaces. Both sessions must see the same twenty-two tool names, use the same MCP input structure, receive broker-issued IDs, poll tickets, and obtain the assigned marker.
 
 Record any difference in schema loading, structured results, authorization headers, session evidence, or polling behavior. Adapter differences are failures to investigate; they do not authorize a different browser contract for one runtime.
 
@@ -298,7 +298,7 @@ Record this table for the run:
 | --- | --- |
 | Setup | Installer output and preflight `READY` |
 | Pairing | A distinct saved generated or customized code and endpoint nickname plus `Status: connected` in every profile, with no broker-issued code entry |
-| MCP surface | Exactly eighteen canonical tools in Codex and Hermes |
+| MCP surface | Exactly twenty-two canonical tools in Codex and Hermes |
 | Ticket ordering | Accepted `request_ref` observed before terminal result |
 | Routing | A/B/C workspaces return A/B/C fixture markers |
 | Concurrency | Independent workspaces and same-tab acceptance order behave as specified |
@@ -317,7 +317,7 @@ State which browser product and version, extension version, broker service versi
 - The installer generates but does not apply Codex configuration. Its generated Hermes command applies registration to every profile installed when that command runs; profiles created later require another run.
 - Independent-session proof requires one stdio adapter process per session or a supported runtime session environment value; a deliberately shared unidentified adapter process cannot pass it.
 - An adapter crash between the broker's HTTP handoff and the adapter's stdout write can leave dispatched work whose ticket was not received by the agent runtime.
-- The relay-v1 compatibility path and older real-world harness files are migration evidence; they do not substitute for the canonical eighteen-tool checkpoints above.
+- The relay-v1 compatibility path and older real-world harness files are migration evidence; they do not substitute for the canonical twenty-two-tool checkpoints above.
 - The older isolated Chrome/Profile probes set their own relay URL but do not provision isolated native discovery. A Native Host already pointing at the shared Broker overrides that URL; follow the limitation in [the probe guide](../../tests/demo/README.md) before a new physical run.
 - The System's general worker/queue bounds and time/size retention policies remain implementation targets. Current source does not enforce those bounds or implement log rotation, audit expiry or event pruning; a successful routing test does not prove them.
 - Direct WebSocket proves only its diagnostic transport path.
@@ -345,10 +345,38 @@ Automated coverage is in `tests/integration/runtime-discovery.test.ts` and `test
 
 ## Managed Profile qualification
 
-### Principal-owned Profiles require enabled management before the lifecycle tools can succeed
+### Broker-owned Profiles require enabled launch support while both ownerships support automation
 
-Use the current source installer with `-Install -EnableManagedProfiles -StartBroker` on the verified Windows/Chrome runtime described in [Operational defaults](../02-User-Experience/Operational-Defaults.md). Follow [the Demo runbook](../../tests/demo/RUNBOOK.md) for list/create/open/stop, Profile isolation, native tab groups and persisted identity. Existing manually connected endpoints remain valid browser endpoints but gain no automatic process-management authority.
+Use the current source installer with `-Install -EnableManagedProfiles -StartBroker` on the verified Windows/Chrome runtime described in [Operational defaults](../02-User-Experience/Operational-Defaults.md). Follow [the Demo runbook](../../tests/demo/RUNBOOK.md) for create/open/stop, Profile isolation, native tab groups and persisted identity. `list_browser_profiles` includes every authenticated extension identity, with or without a configured launcher. Report each nickname and `ownership`: `broker` supports MCP launch; `user` needs the human to open Chrome. Both use the same workspace and CDP tools after connection. Update the Broker and adapters together to MCP contract version 5; existing version-2 or version-3 adapter processes must reconnect with the rebuilt adapter. Profile names come only from `endpoint_nickname`; creation takes an idempotency key and the extension assigns the alias.
 
 End active workspaces before stopping a managed Profile. Stop preserves its data. Broker shutdown and fixture shutdown are not commands to delete or close unrelated Chrome instances. Hermes Plugin packaging, cross-platform installation and upstream Provider discovery remain pending in [the Provider plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md).
+
+## Profile proxies
+
+### Operators provision credentials locally before agents configure a Profile
+
+Build the 0.4.0 Broker, adapter and extension together. MCP uses contract 5; reconnect existing MCP clients after upgrading. Proxy configuration is available only for `ownership=broker`. Those Profiles load the rebuilt extension on their next MCP launch. User-owned Chrome remains available for ordinary workspace automation but does not accept proxy configuration.
+
+Provision a credential reference from a local PowerShell prompt. This sends the secret over stdin instead of putting it in command arguments or MCP history:
+
+```powershell
+$proxyLogin = Get-Credential -Message 'Proxy username and password'
+@{ username = $proxyLogin.UserName; password = $proxyLogin.GetNetworkCredential().Password } |
+  ConvertTo-Json -Compress |
+  pnpm exec tsx tools/provision-proxy-credential.ts
+$proxyLogin = $null
+```
+
+The default database is `.relay-data/relay.sqlite`, and the credential belongs to its admin principal. Use `--db` and `--principal` to select another existing Broker principal. The output contains only `credential_ref`; copy that opaque value into `set_browser_proxy`. The local vault is `.relay-data/proxy-credentials/`; clearing a Profile binding does not delete its credential. The Windows account that provisions the credential must also run the Broker.
+
+### Agents close a broker-owned Profile, save its proxy and explicitly reopen it
+
+Resolve the Profile's stable reference through `list_browser_profiles` and verify `ownership=broker`. End active work and call `stop_browser_profile` first. Then call `get_browser_proxy` and use its revision for `set_browser_proxy`, with a new idempotency key and a proxy object containing `scheme`, `host`, `port` and optional `credential_ref`. Supported schemes are `http`, `https` and `socks5`. Poll the returned ticket with `get_browser_request`. An open Profile rejects even when it has no workspaces; extension disconnection alone does not prove closure.
+
+The saved change reports `pending_connection` and leaves Chrome closed. Call `open_browser_profile`, then wait for `application.state=applied` before running `check_browser_proxy` with the current revision. The check runs in the extension against the fixed ipify HTTPS endpoint and returns a dated IP observation. To clear, close the Profile again and call `clear_browser_proxy` with its current revision and an idempotency key. It stays closed; the next explicit launch omits the startup proxy flag and releases the extension setting. User-owned references reject with `PROFILE_USER_OWNED`; no user confirmation bypass is provided.
+
+### The isolated proxy harness verifies the delivered routing behavior
+
+Run `pnpm exec tsx tools/probe-profile-proxy.ts` after building. It creates disposable Profiles and its own Native Messaging registration and controlled upstreams. It verifies the closed-configure-open flow on broker-owned Chrome and rejects user-owned changes both online and offline. It fails if the required Windows/Chrome environment is unavailable. Preserve its `report.json` under the emitted evidence directory. See the [closed-Profile amendment](../80-Plans/profile-proxy-2026-10-03/closed-profile-amendment.md) for current qualification and the [initial implementation report](../80-Plans/profile-proxy-2026-10-03/implementation-report.md) for historical transport evidence.
 
 Parent: [`Files MOC`](./_MOC.md).

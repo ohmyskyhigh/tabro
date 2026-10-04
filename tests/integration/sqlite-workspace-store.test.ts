@@ -72,7 +72,7 @@ describe('canonical SQLite workspace store', () => {
     const migrated = store.canonical.logical.getEndpointByNickname('legacy-profile');
     expect(migrated?.legacyTargetId).toBe(store.listTargets()[0]?.targetId);
     expect(migrated?.credential).toEqual({});
-    expect(store.sqliteDiagnostics()).toEqual({ journalMode: 'wal', foreignKeys: true, migrationVersion: 6 });
+    expect(store.sqliteDiagnostics()).toEqual({ journalMode: 'wal', foreignKeys: true, migrationVersion: 8 });
     store.close();
   });
 

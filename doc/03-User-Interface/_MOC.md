@@ -4,7 +4,7 @@ Authority level: User Interface.
 
 For this vault, User Interface is the runtime-independent, agent-facing MCP contract rather than a graphical interface. It owns exact tool names and modes, model-authored inputs, returned envelopes, public facts, problems, request tickets, event cursors, available actions, and machine-readable schemas.
 
-Status: confirmed as wire-contract version `2` and ready for System realization. Numeric limits and runtime adapters remain evidence-tunable only where the contract advertises the active value and preserves the same public semantics.
+Status: confirmed as wire-contract version `5` and ready for System realization. Numeric limits and runtime adapters remain evidence-tunable only where the contract advertises the active value and preserves the same public semantics.
 
 ## Canonical contract
 
@@ -18,7 +18,7 @@ Status: confirmed as wire-contract version `2` and ready for System realization.
 
 ### One Draft 2020-12 bundle defines every public body
 
-[`MCP-Contract.schema.json`](./MCP-Contract.schema.json) is the exact closed schema bundle for the eighteen input roots, eighteen output roots, common facts, principal-owned Profiles, request tickets, problems, raw CDP results, pause and recovery facts, pagination, and executable available actions.
+[`MCP-Contract.schema.json`](./MCP-Contract.schema.json) is the exact closed schema bundle for the twenty-two input roots, twenty-two output roots, common facts, extension-registered Profiles with broker/user launch ownership, request tickets, problems, raw CDP results, pause and recovery facts, pagination, and executable available actions.
 
 The broker issues every Tabro reference and cursor. Caller identity is injected outside model-authored inputs. Agents only echo returned references and browser-issued CDP handles accepted by a supported method.
 
@@ -33,3 +33,9 @@ Test evidence may tune advertised numeric limits, polling guidance, implementati
 The accepted historical proposal remains at [`../90-Proposals/User-Interface-MCP-Contract.md`](../90-Proposals/User-Interface-MCP-Contract.md).
 
 Parent: [`02-User-Experience`](../02-User-Experience/_MOC.md).
+
+## Profile networking
+
+### Profile proxy support follows the accepted network decision
+
+The [Profile proxy decision](../90-Proposals/Profile-Proxy.md) permits authenticated HTTP, HTTPS and SOCKS5 configuration only for closed broker-owned Profiles. The canonical owner in this directory defines its layer; [the implementation plan](../80-Plans/profile-proxy-2026-10-03/README.md) and implementation report track delivery evidence.

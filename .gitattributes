@@ -1,3 +1,7 @@
 * text=auto eol=lf
 
+# Runtime checksums cover exact published bytes, including copied text files.
+integrations/hermes/runtime/** -text -whitespace linguist-generated=true
+integrations/hermes/runtime-manifest.json -text
+
 doc/90-Proposals/initial-vault-population/architecture/interactive/index.html -whitespace linguist-generated=true

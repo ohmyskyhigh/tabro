@@ -1,6 +1,6 @@
 # MCP contract
 
-Status: canonical implementation baseline for wire-contract version `2`.
+Status: canonical implementation baseline for wire-contract version `5`.
 
 The companion [`MCP-Contract.schema.json`](./MCP-Contract.schema.json) is the exact machine-readable authority for public tool inputs and structured outputs. This document explains how agents use that schema. If prose and schema disagree, the mismatch is a contract defect that must be corrected before implementation is considered conformant.
 
@@ -20,10 +20,13 @@ Unsupported, unknown, browser-wide, or out-of-scope methods reject synchronously
 
 ## Tool catalog
 
-### Thirteen tools submit durable asynchronous requests
+### Sixteen tools submit durable asynchronous requests
 
 | Tool | Purpose |
 | --- | --- |
+| `set_browser_proxy` | Save and apply authenticated Profile routing while idle. |
+| `clear_browser_proxy` | Release Tabro routing while idle. |
+| `check_browser_proxy` | Observe the applied route from a browser-originated IP check. |
 | `create_browser_profile` | Create an owned Profile, load the extension and establish readiness. |
 | `open_browser_profile` | Ensure an existing owned Profile is ready. |
 | `stop_browser_profile` | Normally close an owned Profile after active work ends. |
@@ -40,11 +43,12 @@ Unsupported, unknown, browser-wide, or out-of-scope methods reject synchronously
 
 Every accepted asynchronous call returns a broker-issued `request_ref` before browser or extension work becomes eligible. Rejections completed before durable acceptance return synchronously and create no public ticket.
 
-### Four tools read current bounded facts immediately
+### Five tools read current bounded facts immediately
 
 | Tool | Purpose |
 | --- | --- |
-| `list_browser_profiles` | List persistent owned Profiles and their observed states. |
+| `get_browser_proxy` | Read configuration, application and exit-IP observations. |
+| `list_browser_profiles` | List all extension-registered Profiles with nicknames, broker/user ownership and observed states. |
 | `get_browser_context` | Read one targeted, paginated broker, endpoint, window, capability, workspace, tab, or request-summary view. |
 | `read_cdp_events` | Read retained raw CDP events from a required broker-issued tab cursor. |
 | `get_browser_request` | Read one authority-visible request ticket by its broker-issued reference. |
@@ -59,7 +63,7 @@ These reads create no request ticket and never release, reorder, or advance brow
 
 ### Agents only echo references that Tabro previously returned
 
-The broker issues Profile, session, lineage, window, workspace, tab, request, pagination-cursor, and event-cursor values. The caller supplies the Profile display name and creation idempotency key; that key deduplicates creation and is not a broker-issued resource reference. The model must not generate, derive, parse, or modify them.
+The broker issues Profile, session, lineage, window, workspace, tab, request, pagination-cursor, and event-cursor values. The caller supplies only the creation idempotency key; that key deduplicates creation and is not a broker-issued resource reference. The model must not generate, derive, parse, or modify them.
 
 The extension proposes a human-readable endpoint nickname during pairing. Raw browser-issued CDP values such as `sessionId`, `objectId`, or `nodeId` may be echoed only where the selected supported CDP method accepts them; they are not Tabro references.
 
@@ -99,7 +103,7 @@ Polling is lane-neutral. Human resolution can atomically terminalize and release
 
 ### Ticket phases and checkpoints are diagnostic rather than agent-defined state machines
 
-The version `2` schema retains a nonempty phase string and a checkpoint with `name`, `recorded_at`, and bounded details. Agents may display and reason from these values but must use lifecycle state, pause condition, problem, and available actions for control decisions.
+The version `5` schema retains a nonempty phase string and a checkpoint with `name`, `recorded_at`, and bounded details. Agents may display and reason from these values but must use lifecycle state, pause condition, problem, and available actions for control decisions.
 
 Implementations may add internal phases without changing the wire version only when the public schema still accepts them and their meaning does not change a required public action.
 
@@ -133,13 +137,13 @@ Context collection views and event reads accept `page_size` from 1 through 100, 
 
 Changing a query or crossing an authority, stream, or connection generation invalidates the cursor rather than silently continuing a different collection.
 
-### Contract version two keeps raw values inline and rejects oversized payloads
+### The current contract keeps raw values inline and rejects oversized payloads
 
 Raw CDP JSON remains inline. A request or response that exceeds the active broker, Native Messaging, or MCP bound returns `PAYLOAD_TOO_LARGE` with no silent truncation. Broker-issued artifact retrieval requires a later wire-contract revision after both target runtimes prove support.
 
 ## Compatibility
 
-### Contract version two is closed and shared by both target runtimes
+### The current contract is closed and shared by both target runtimes
 
 Every tool publishes the exact input and output root from [`MCP-Contract.schema.json`](./MCP-Contract.schema.json). Unknown input fields reject. Required public fields, discriminators, references, states, ownership semantics, and tool names change only under a new contract version.
 
@@ -154,15 +158,29 @@ Codex and Hermes conformance must prove the same tool catalog, non-model caller 
 
 | Tool | Input | Response |
 | --- | --- | --- |
-| `list_browser_profiles` | Optional `limit` (1–100, default 50) and opaque `cursor` | Immediate owned Profile facts, including closed Profiles |
-| `create_browser_profile` | Trimmed `display_name` (1–80 UTF-16 units) and `idempotency_key` (8–128 ASCII letters, digits, dot, underscore, colon or hyphen) | Durable ticket; an already completed or closed same-key request returns the existing Profile |
+| `list_browser_profiles` | Optional `limit` (1–100, default 50) and opaque `cursor` | Immediate extension-registered Profile facts for both ownerships, including previously connected offline Profiles |
+| `create_browser_profile` | Only `idempotency_key` (8–128 ASCII letters, digits, dot, underscore, colon or hyphen) | Durable ticket; an already completed or closed same-key request returns the existing Profile |
 | `open_browser_profile` | Broker-issued `profile_ref` | Durable ensure-ready ticket |
 | `stop_browser_profile` | Broker-issued `profile_ref` | Durable normal-stop ticket; active work blocks closure |
 
-Profile facts separate browser state, extension state, readiness and automation pause. No tool accepts process IDs, data paths, extension IDs, Chrome arguments or principal IDs. `profiles:read` governs discovery and request inspection; `profiles:manage` governs lifecycle actions and terminal request closure. The current authenticated principal must own the Profile. That authority takes precedence over historical requester-session fields and cannot fall back to workspace authority.
+Profile, endpoint and window facts include required `ownership` (`broker` or `user`) describing launch responsibility. All authenticated MCP callers can discover registered Profiles regardless of creator and whether the managed launcher is configured. `profile_ref` retains the launch-directory reference for a broker-owned Profile and uses the broker-issued endpoint reference for a user-owned Profile. `endpoint_nickname` is the sole human-facing name (pairing alias) for both. Profile facts have no `display_name`, and creation does not accept that field. Before first pairing, lifecycle facts may have a null nickname and retain their opaque `profile_ref`. The list contains identities with at least one authenticated connection, retains offline identities, and omits incomplete or revoked registrations. Its bounded opaque cursor belongs to the calling session and authenticated principal.
 
-### Contract version 2 requires a matching Broker and adapter before tool execution
+Browser state, extension state, readiness and automation pause remain separate. A disconnected user-owned browser has unknown process state; disconnection does not prove Chrome has closed. Current connection generation and fresh eligible-window inventory determine readiness. No tool accepts process IDs, data paths, Chrome extension IDs, Chrome arguments or principal IDs. `profiles:read` governs lifecycle ticket inspection; `profiles:manage` governs Broker lifecycle operations and terminal ticket closure. Launch capacity is shared across authorized principals, while lifecycle ticket inspection and closure stay with the requesting principal. `open_browser_profile` and `stop_browser_profile` reject user-owned references with `PROFILE_USER_OWNED`; agents use `request_browser_workspace` after the human opens Chrome. No launch ownership grants access to another agent's workspace.
 
-The Broker exposes eighteen tools and returns `contract_version: "2"`. The HTTP MCP transport requires `x-octopus-contract-version: 2`; authenticated mismatches return HTTP 409 before admission, while unauthenticated requests remain HTTP 401. The stdio adapter checks `/health` before connecting and sends the version header. Browser extension relay protocol remains version 2 independently.
+The database migration removes the retired display name from the Profile schema and stored Profile ticket arguments/results. Pre-v4 creation hashes are normalized to the key-only request, so the original Profile is still reused. Raw CDP data and unrelated agent names are outside this migration.
+
+### Contract version 5 requires a matching Broker and adapter before tool execution
+
+The Broker exposes twenty-two tools and returns `contract_version: "5"`. The HTTP MCP transport requires `x-octopus-contract-version: 5`; authenticated mismatches return HTTP 409 before admission, while unauthenticated requests remain HTTP 401. The stdio adapter checks `/health` before connecting and sends the version header. Browser extension relay protocol remains version 2 independently.
+
+## Profile networking
+
+### Four network tools extend the contract to twenty-two tools in version 5
+
+`get_browser_proxy` reads one `profile_ref`. `set_browser_proxy` accepts that reference, `expected_revision`, `idempotency_key` and a `proxy` containing `scheme` (http/https/socks5), `host`, `port` and optional `credential_ref`. `clear_browser_proxy` accepts the reference, expected revision and idempotency key. `check_browser_proxy` accepts the reference and expected revision. Get is an immediate read; the other three return durable tickets before effects. No tool accepts passwords or proxy URLs with embedded credentials. Set/clear require `profiles:network:manage`; reads/checks require Profile read authority. Request inspection stays with the requesting principal. Profile facts include a compact proxy summary. The schema bundle owns exact result shapes and error names.
+
+### Network observations never replace workspace or launch ownership
+
+Get can read saved facts for either ownership. Set, clear and exit checks require `ownership=broker`; user-owned references reject with `PROFILE_USER_OWNED`. Set and clear additionally require the Profile to be closed: a connected extension or known open instance rejects with `PROFILE_IN_USE`, and unverified process inspection reports `PROFILE_INSTANCE_UNVERIFIED`. Active work, acquisition and lifecycle conflicts also prevent changes. A saved change does not launch Chrome and remains pending until the next explicit launch and extension read-back. Get remains usable while open; exit checks require an applied proxy. Effective state and IP observations carry revisions and freshness. Contract 5 retains the same closed tool inputs and outputs; network-capable extensions advertise an explicit proxy capability on relay version 2. Unsupported extensions cannot be marked applied.
 
 Parent: [`User Interface MOC`](./_MOC.md).

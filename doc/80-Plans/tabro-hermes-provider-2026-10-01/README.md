@@ -1,8 +1,21 @@
 # Tabro 的 Hermes Provider 与一键安装方案
 
-日期：2026-10-01。状态：Plugin 与上游仍待实现；用户要求先将 Demo 与普通 MCP 统一为动态端口 Broker。
+日期：2026-10-01；更新：2026-10-04。状态：Windows Portable Plugin 已实现并通过隔离安装检查，目录提交正在准备；其余平台和上游菜单仍待交付。证据见 [October 4 交付记录](./plugin-delivery-2026-10-04.md)。
 
-父级：[开发计划](../_MOC.md)。保持现有十八工具 MCP 契约；本机运行环境按用户最新决定先统一。
+父级：[开发计划](../_MOC.md)。下文十八工具与 0.3.1 是 October 1 计划基线；后续交付以[当前 MCP 契约](../../03-User-Interface/MCP-Contract.md)为准。October 4 的商城分发要求见下一节，优先于旧计划中仅复用本机运行环境的交付范围。
+
+## 商城分发
+
+### 首次设置必须下载安装 Broker 并包含现有代理能力
+
+2026-10-04 用户已确认[全组件开源和首次安装要求](../../01-Product/Product-Definition.md#distribution)，对应[首次设置体验](../../02-User-Experience/User-Experience-Definition.md#first-time-hermes-setup-downloads-and-installs-the-local-browser-runtime)。公开发行必须覆盖没有 Tabro 的新机器；仅在开发者电脑上复用已有 Broker 的 M 阶段不能作为商城交付完成证据。
+
+- [ ] 交付插件设置入口和安装流程，下载并安装配套 Broker、Adapter、Native Host、扩展及所需运行依赖，完成启动、注册和连接检查。
+- [ ] 将现有代理实现和使用说明纳入发行内容，验证 HTTP/HTTPS 与 SOCKS5 账号密码代理，以及关闭 broker-owned Profile 后配置、重开应用和出口检查。
+- [ ] 在没有 Tabro 的环境验证首次安装，并验证已有安装复用、重复设置和失败恢复；全部 Tabro 自有实现均遵循 Product 的开源要求。
+- [ ] 完成插件校验和固定代码版本的目录提交；上架状态以 Hermes 维护者审核为准。
+
+以上是 October 4 最初的完整交付门槛。后续 Windows 实现与已完成检查见[交付记录](./plugin-delivery-2026-10-04.md)；干净机器浏览器验收和上游收录仍待交付。拟采用与审核代码绑定的固定运行包版本和校验值；首次下载运行组件及后续更新机制须在提交中说明，并按[商城准入规则](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins/catalog-submission)接受审核，不把通用下载器当作已获准的发行机制。
 
 ## 目标
 
@@ -59,7 +72,7 @@ Plugin 制作、安装与启用仍待执行；共享运行环境完成不等于 
 
 ### Hermes 的公开接口支持插件承载 MCP，但浏览器 Provider 仍以 CDP 会话为中心
 
-本地核对版本：Hermes checkout `c2606ad109f5f169ed1fc611c494a41089095aeb`。Tabro 当前源码版本为 0.3.1，README 表明该版本尚未发布安装包；旧包不能冒充本方案的合格发行版。
+October 1 核对快照：Hermes checkout `c2606ad109f5f169ed1fc611c494a41089095aeb`；当时 Tabro 源码版本为 0.3.1，README 表明该版本尚未发布安装包。该快照不代表当前版本或发行状态；旧包不能冒充本方案的合格发行版。
 
 官方插件指南支持插件包携带 MCP 配置和 Skills；贡献指南要求第三方产品在独立插件仓库维护，通用接口扩展单独讨论。因此，独立包、通用接口和默认发现分别推进。参考：[Hermes 插件指南](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins/)、[贡献指南](https://github.com/NousResearch/hermes-agent/blob/main/CONTRIBUTING.md#third-party-product-integrations-ship-as-a-standalone-plugin)。
 

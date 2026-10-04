@@ -26,8 +26,12 @@ const refs = {
 } as const;
 
 const validInputs: Readonly<Record<McpToolName, unknown>> = {
+  get_browser_proxy: { profile_ref: 'profile-ref' },
+  set_browser_proxy: { profile_ref: 'profile-ref', expected_revision: 0, idempotency_key: 'proxy-test-1', proxy: { scheme: 'http', host: 'proxy.test', port: 8080 } },
+  clear_browser_proxy: { profile_ref: 'profile-ref', expected_revision: 0, idempotency_key: 'proxy-test-2' },
+  check_browser_proxy: { profile_ref: 'profile-ref', expected_revision: 0 },
   list_browser_profiles: {},
-  create_browser_profile: { display_name: 'Alice', idempotency_key: 'create-alice' },
+  create_browser_profile: { idempotency_key: 'create-alice' },
   open_browser_profile: { profile_ref: 'profile-ref' },
   stop_browser_profile: { profile_ref: 'profile-ref' },
   get_browser_context: { view: { kind: 'broker' } },
@@ -75,7 +79,7 @@ const payloadTooLargeProblem = {
 
 function rejectedOutput() {
   return {
-    contract_version: '2',
+    contract_version: '5',
     disposition: 'rejected',
     observed_at: '2026-08-31T00:00:00.000Z',
     caller,
@@ -87,7 +91,7 @@ function rejectedOutput() {
 
 function acceptedWorkspaceOutput(requestTool = 'request_browser_workspace') {
   return {
-    contract_version: '2',
+    contract_version: '5',
     disposition: 'accepted',
     observed_at: '2026-08-31T00:00:00.000Z',
     caller,
@@ -126,12 +130,12 @@ function acceptedWorkspaceOutput(requestTool = 'request_browser_workspace') {
   };
 }
 
-describe('canonical MCP contract version 2', () => {
-  it('publishes exactly eighteen tools and thirty-six validator roots', () => {
-    expect(MCP_TOOL_NAMES).toHaveLength(18);
-    expect(new Set(MCP_TOOL_NAMES).size).toBe(18);
-    expect(MCP_ASYNC_TOOL_NAMES).toHaveLength(13);
-    expect(MCP_READ_TOOL_NAMES).toHaveLength(4);
+describe('canonical MCP contract version 5', () => {
+  it('publishes exactly twenty-two tools and forty-four validator roots', () => {
+    expect(MCP_TOOL_NAMES).toHaveLength(22);
+    expect(new Set(MCP_TOOL_NAMES).size).toBe(22);
+    expect(MCP_ASYNC_TOOL_NAMES).toHaveLength(16);
+    expect(MCP_READ_TOOL_NAMES).toHaveLength(5);
     expect(MCP_IMMEDIATE_CONTROL_TOOL_NAMES).toEqual(['close_browser_request']);
     expect(MCP_TOOL_CATALOG.map((tool) => tool.name)).toEqual([...MCP_TOOL_NAMES]);
     expect(Object.keys(mcpToolInputSchemas)).toEqual([...MCP_TOOL_NAMES]);
@@ -157,6 +161,10 @@ describe('canonical MCP contract version 2', () => {
     for (const name of MCP_TOOL_NAMES) {
       expect(safeParseMcpToolInput(name, validInputs[name]), name).toMatchObject({ success: true });
     }
+  });
+
+  it('rejects the retired Profile display name', () => {
+    expect(safeParseMcpToolInput('create_browser_profile', { idempotency_key: 'create-alice', display_name: 'Alice' }).success).toBe(false);
   });
 
   it('publishes and enforces the broker pagination range', () => {

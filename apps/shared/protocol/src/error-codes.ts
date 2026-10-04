@@ -25,6 +25,16 @@ export const ErrorCodes = {
 } as const;
 
 export const PublicProblemCodes = [
+  "PROXY_UNSUPPORTED",
+  "PROXY_BUSY",
+  "PROXY_REVISION_CONFLICT",
+  "PROXY_NOT_READY",
+  "PROXY_CREDENTIALS_UNAVAILABLE",
+  "PROXY_LISTENER_UNAVAILABLE",
+  "PROXY_CONTROL_CONFLICT",
+  "PROXY_APPLY_FAILED",
+  "PROXY_CHECK_FAILED",
+
   "INVALID_ARGUMENT",
   "CALLER_CONTEXT_UNAVAILABLE",
   "CURSOR_INVALID",
@@ -90,7 +100,8 @@ export const PublicProblemCodes = [
   "PROFILE_BOOTSTRAP_REQUIRED",
   "PROFILE_BOOTSTRAP_INVALID",
   "PROFILE_OPERATION_FAILED",
-  "IDEMPOTENCY_CONFLICT"
+  "IDEMPOTENCY_CONFLICT",
+  "PROFILE_USER_OWNED"
 ] as const;
 
 export type PublicProblemCode = (typeof PublicProblemCodes)[number];

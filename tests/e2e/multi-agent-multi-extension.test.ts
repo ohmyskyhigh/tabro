@@ -57,6 +57,13 @@ describe('multi-agent / multi-extension canonical real transport path', () => {
       clients.push(await connectAgent(mcpPort, record.token, `agent-session-${index}`));
     }
 
+    for (const client of clients) {
+      const listed = await call(client, 'list_browser_profiles', {});
+      const profiles = (listed.facts as { profiles: { endpoint_nickname: string; ownership: string; ready: boolean }[] }).profiles;
+      expect(profiles.map(profile => profile.endpoint_nickname).sort()).toEqual([...aliases].sort());
+      expect(profiles.every(profile => profile.ownership === 'user' && profile.ready)).toBe(true);
+    }
+
     const workspaceTickets = await Promise.all(aliases.map((alias, index) => call(
       clients[index]!,
       'request_browser_workspace',

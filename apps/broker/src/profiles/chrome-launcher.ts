@@ -33,6 +33,7 @@ export function matchesInstance(process: ChromeProcessIdentity, value: ManagedBr
 
 /** Only lifecycle actions are exposed; it never evaluates website scripts. */
 export class ChromeLauncher {
+  proxyPort: ((profileRef: string) => Promise<number | null>) | null = null;
   constructor(readonly config: ProfileRuntimeConfig, private readonly processes = chromeProcesses) {}
 
   prepare(profile: ManagedProfile, bootstrap: Record<string, unknown>): void {
@@ -79,6 +80,7 @@ export class ChromeLauncher {
   async launch(profile: ManagedProfile, instance: ManagedBrowserInstance, checkpoint: (value: ManagedBrowserInstance) => void): Promise<ManagedBrowserInstance> {
     const paths = profileLayout(this.config.root, profile.dataDirKey);
     if ((await this.processes()).some(p => processUsesDataDir(p, paths.dataDir))) throw new ProfileError('PROFILE_IN_USE');
+    const proxyPort = await this.proxyPort?.(profile.profileRef);
     const marker = resolve(paths.directory, 'launch-intent.json');
     // A prior unresolved spawn must be reconciled before another launch.
     if (existsSync(marker)) throw new ProfileError('PROFILE_INSTANCE_UNVERIFIED');
@@ -87,7 +89,7 @@ export class ChromeLauncher {
     if (existsSync(active)) unlinkSync(active);
     let value = { ...instance, dataDir: paths.dataDir, executablePath: this.config.executablePath };
     checkpoint(value);
-    const child = spawn(this.config.executablePath, [`--user-data-dir=${paths.dataDir}`, `--octopus-instance-ref=${instance.instanceRef}`, '--no-first-run', '--no-default-browser-check',
+    const child = spawn(this.config.executablePath, [...(proxyPort ? [`--proxy-server=http://127.0.0.1:${proxyPort}`] : []), `--user-data-dir=${paths.dataDir}`, `--octopus-instance-ref=${instance.instanceRef}`, '--no-first-run', '--no-default-browser-check',
       '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', '--enable-unsafe-extension-debugging', '--disable-background-mode', 'about:blank'],
     { detached: true, stdio: 'ignore', windowsHide: true });
     await new Promise<void>((ok, fail) => { child.once('spawn', ok); child.once('error', fail); });
@@ -126,6 +128,11 @@ export class ChromeLauncher {
     if (process && matchesInstance(process, value)) return 'running';
     if (process || processes.some(p => processUsesDataDir(p, value.dataDir!))) return 'unknown';
     return 'stopped';
+  }
+
+  async isClosed(profile: ManagedProfile): Promise<boolean> {
+    const { dataDir } = profileLayout(this.config.root, profile.dataDirKey);
+    return !(await this.processes()).some(process => processUsesDataDir(process, dataDir));
   }
 
   async ensureWindow(value: ManagedBrowserInstance, guard: () => void = () => {}): Promise<void> {

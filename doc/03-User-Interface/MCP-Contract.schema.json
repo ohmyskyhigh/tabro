@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:octopus-browser-relay:mcp-contract:v2",
-  "title": "Tabro MCP wire contract version 2",
-  "description": "Eighteen tools: thirteen durable asynchronous operations, four reads and terminal request closure. Profile management uses authenticated principal authority.",
+  "$id": "urn:octopus-browser-relay:mcp-contract:v4",
+  "title": "Tabro MCP contract version 5",
+  "description": "Eighteen tools: thirteen durable asynchronous operations, four reads and terminal request closure. Extension-registered Profiles have broker/user launch ownership; lifecycle tickets retain authenticated requester authority. Pairing aliases are the sole public Profile names.",
   "$defs": {
     "broker_issued_ref": {
       "type": "string",
@@ -168,6 +168,15 @@
       "properties": {
         "code": {
           "enum": [
+            "PROXY_UNSUPPORTED",
+            "PROXY_BUSY",
+            "PROXY_REVISION_CONFLICT",
+            "PROXY_NOT_READY",
+            "PROXY_CREDENTIALS_UNAVAILABLE",
+            "PROXY_LISTENER_UNAVAILABLE",
+            "PROXY_CONTROL_CONFLICT",
+            "PROXY_APPLY_FAILED",
+            "PROXY_CHECK_FAILED",
             "INVALID_ARGUMENT",
             "CALLER_CONTEXT_UNAVAILABLE",
             "CURSOR_INVALID",
@@ -233,7 +242,8 @@
             "PROFILE_BOOTSTRAP_REQUIRED",
             "PROFILE_BOOTSTRAP_INVALID",
             "PROFILE_OPERATION_FAILED",
-            "IDEMPOTENCY_CONFLICT"
+            "IDEMPOTENCY_CONFLICT",
+            "PROFILE_USER_OWNED"
           ]
         },
         "message": {
@@ -441,6 +451,13 @@
         },
         "observed_at": {
           "$ref": "#/$defs/timestamp"
+        },
+        "ownership": {
+          "enum": [
+            "broker",
+            "user"
+          ],
+          "description": "Browser launch ownership. Broker can reopen the Profile through MCP; user opens Chrome manually. Both support workspace automation while connected."
         }
       },
       "required": [
@@ -450,7 +467,8 @@
         "condition",
         "killed",
         "workspace_ownership_frozen",
-        "observed_at"
+        "observed_at",
+        "ownership"
       ],
       "additionalProperties": false
     },
@@ -478,6 +496,13 @@
         },
         "observed_at": {
           "$ref": "#/$defs/timestamp"
+        },
+        "ownership": {
+          "enum": [
+            "broker",
+            "user"
+          ],
+          "description": "Browser launch ownership. Broker can reopen the Profile through MCP; user opens Chrome manually. Both support workspace automation while connected."
         }
       },
       "required": [
@@ -486,7 +511,8 @@
         "eligible_for_workspace",
         "eligibility_reason",
         "last_focused_at",
-        "observed_at"
+        "observed_at",
+        "ownership"
       ],
       "additionalProperties": false
     },
@@ -1305,7 +1331,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "2"
+          "const": "5"
         },
         "disposition": {
           "enum": [
@@ -2241,7 +2267,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "2"
+          "const": "5"
         },
         "disposition": {
           "enum": [
@@ -3001,6 +3027,15 @@
         },
         {
           "$ref": "#/$defs/stop_browser_profile_request_body"
+        },
+        {
+          "$ref": "#/$defs/set_browser_proxy_request_body"
+        },
+        {
+          "$ref": "#/$defs/clear_browser_proxy_request_body"
+        },
+        {
+          "$ref": "#/$defs/check_browser_proxy_request_body"
         }
       ]
     },
@@ -3455,6 +3490,66 @@
             "facts"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "const": "set_browser_proxy"
+            },
+            "disposition": {
+              "const": "complete"
+            },
+            "facts": {
+              "$ref": "#/$defs/proxy_operation_facts"
+            }
+          },
+          "required": [
+            "tool",
+            "disposition",
+            "facts"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "const": "clear_browser_proxy"
+            },
+            "disposition": {
+              "const": "complete"
+            },
+            "facts": {
+              "$ref": "#/$defs/proxy_operation_facts"
+            }
+          },
+          "required": [
+            "tool",
+            "disposition",
+            "facts"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "const": "check_browser_proxy"
+            },
+            "disposition": {
+              "const": "complete"
+            },
+            "facts": {
+              "$ref": "#/$defs/proxy_operation_facts"
+            }
+          },
+          "required": [
+            "tool",
+            "disposition",
+            "facts"
+          ],
+          "additionalProperties": false
         }
       ]
     },
@@ -3558,7 +3653,10 @@
                 "resume_browser_endpoint",
                 "create_browser_profile",
                 "open_browser_profile",
-                "stop_browser_profile"
+                "stop_browser_profile",
+                "set_browser_proxy",
+                "clear_browser_proxy",
+                "check_browser_proxy"
               ]
             },
             "kind": {
@@ -3765,7 +3863,10 @@
             "resume_browser_endpoint",
             "create_browser_profile",
             "open_browser_profile",
-            "stop_browser_profile"
+            "stop_browser_profile",
+            "set_browser_proxy",
+            "clear_browser_proxy",
+            "check_browser_proxy"
           ]
         },
         "problem": {
@@ -4166,6 +4267,15 @@
         },
         {
           "$ref": "#/$defs/request_ticket_tool_match_stop_browser_profile"
+        },
+        {
+          "$ref": "#/$defs/request_ticket_tool_match_set_browser_proxy"
+        },
+        {
+          "$ref": "#/$defs/request_ticket_tool_match_clear_browser_proxy"
+        },
+        {
+          "$ref": "#/$defs/request_ticket_tool_match_check_browser_proxy"
         }
       ]
     },
@@ -4710,7 +4820,7 @@
       "description": "Accepted means durable admission, not execution success. The ticket response must be delivered before dispatch; delivery failure means no dispatch and is an immediate transport bug. Rejected submissions contain no ticket or request_ref. No asynchronous input carries an agent deadline, no public tool cancels one ticket, and the broker applies no elapsed-time terminal timeout.",
       "properties": {
         "contract_version": {
-          "const": "2"
+          "const": "5"
         },
         "disposition": {
           "enum": [
@@ -5948,11 +6058,6 @@
         "profile_ref": {
           "$ref": "#/$defs/profile_ref"
         },
-        "display_name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80
-        },
         "instance_ref": {
           "oneOf": [
             {
@@ -6017,11 +6122,20 @@
               "type": "null"
             }
           ]
+        },
+        "ownership": {
+          "enum": [
+            "broker",
+            "user"
+          ],
+          "description": "Browser launch ownership. Broker can reopen the Profile through MCP; user opens Chrome manually. Both support workspace automation while connected."
+        },
+        "proxy": {
+          "$ref": "#/$defs/profile_proxy_summary"
         }
       },
       "required": [
         "profile_ref",
-        "display_name",
         "instance_ref",
         "browser_state",
         "extension_state",
@@ -6029,7 +6143,8 @@
         "automation_paused",
         "endpoint_nickname",
         "observed_at",
-        "problem_code"
+        "problem_code",
+        "ownership"
       ],
       "additionalProperties": false
     },
@@ -6123,18 +6238,12 @@
     "create_browser_profile_input": {
       "type": "object",
       "properties": {
-        "display_name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80
-        },
         "idempotency_key": {
           "type": "string",
           "pattern": "^[A-Za-z0-9._:-]{8,128}$"
         }
       },
       "required": [
-        "display_name",
         "idempotency_key"
       ],
       "additionalProperties": false
@@ -6503,6 +6612,671 @@
                     "properties": {
                       "request": {
                         "$ref": "#/$defs/stop_browser_profile_request_body"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "upstream_proxy": {
+      "type": "object",
+      "properties": {
+        "scheme": {
+          "enum": [
+            "http",
+            "https",
+            "socks5"
+          ]
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9a-fA-F:]+\\])$"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "credential_ref": {
+          "type": "string",
+          "pattern": "^pcr_[0-9a-f-]{36}$"
+        }
+      },
+      "required": [
+        "scheme",
+        "host",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "proxy_application": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "unmanaged",
+            "pending_connection",
+            "applying",
+            "applied",
+            "failed",
+            "control_conflict"
+          ]
+        },
+        "applied_revision": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "problem_code": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "applied_revision",
+        "observed_at",
+        "problem_code"
+      ],
+      "additionalProperties": false
+    },
+    "proxy_exit": {
+      "type": "object",
+      "properties": {
+        "ip": {
+          "type": "string"
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source": {
+          "const": "browser"
+        }
+      },
+      "required": [
+        "ip",
+        "latency_ms",
+        "observed_at",
+        "revision",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "profile_proxy_fact": {
+      "type": "object",
+      "properties": {
+        "profile_ref": {
+          "$ref": "#/$defs/profile_ref"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "proxy": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/upstream_proxy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "application": {
+          "$ref": "#/$defs/proxy_application"
+        },
+        "exit": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/proxy_exit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "profile_ref",
+        "revision",
+        "proxy",
+        "application",
+        "exit"
+      ],
+      "additionalProperties": false
+    },
+    "profile_proxy_summary": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "application": {
+          "$ref": "#/$defs/proxy_application"
+        },
+        "exit": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/proxy_exit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "configured",
+        "application",
+        "exit"
+      ],
+      "additionalProperties": false
+    },
+    "proxy_operation_facts": {
+      "type": "object",
+      "properties": {
+        "proxy": {
+          "$ref": "#/$defs/profile_proxy_fact"
+        }
+      },
+      "required": [
+        "proxy"
+      ],
+      "additionalProperties": false
+    },
+    "proxy_reused_facts": {
+      "type": "object",
+      "properties": {
+        "proxy": {
+          "$ref": "#/$defs/profile_proxy_fact"
+        },
+        "request_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/request_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "proxy",
+        "request_ref"
+      ],
+      "additionalProperties": false
+    },
+    "get_browser_proxy_input": {
+      "type": "object",
+      "properties": {
+        "profile_ref": {
+          "$ref": "#/$defs/profile_ref"
+        }
+      },
+      "required": [
+        "profile_ref"
+      ],
+      "additionalProperties": false
+    },
+    "get_browser_proxy_output": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/immediate_output_base"
+        },
+        {
+          "if": {
+            "properties": {
+              "disposition": {
+                "const": "complete"
+              }
+            },
+            "required": [
+              "disposition"
+            ]
+          },
+          "then": {
+            "properties": {
+              "problem": {
+                "type": "null"
+              },
+              "facts": {
+                "$ref": "#/$defs/proxy_operation_facts"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "problem": {
+                "$ref": "#/$defs/problem"
+              },
+              "facts": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "set_browser_proxy_input": {
+      "type": "object",
+      "properties": {
+        "profile_ref": {
+          "$ref": "#/$defs/profile_ref"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idempotency_key": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+        },
+        "proxy": {
+          "$ref": "#/$defs/upstream_proxy"
+        }
+      },
+      "required": [
+        "profile_ref",
+        "expected_revision",
+        "idempotency_key",
+        "proxy"
+      ],
+      "additionalProperties": false
+    },
+    "set_browser_proxy_request_body": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "const": "set_browser_proxy"
+        },
+        "arguments": {
+          "$ref": "#/$defs/set_browser_proxy_input"
+        }
+      },
+      "required": [
+        "tool",
+        "arguments"
+      ],
+      "additionalProperties": false
+    },
+    "request_ticket_tool_match_set_browser_proxy": {
+      "if": {
+        "properties": {
+          "request": {
+            "properties": {
+              "tool": {
+                "const": "set_browser_proxy"
+              }
+            },
+            "required": [
+              "tool"
+            ]
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "properties": {
+              "tool": {
+                "const": "set_browser_proxy"
+              }
+            }
+          },
+          "failure": {
+            "properties": {
+              "tool": {
+                "const": "set_browser_proxy"
+              }
+            }
+          },
+          "uncertainty": {
+            "properties": {
+              "tool": {
+                "const": "set_browser_proxy"
+              }
+            }
+          }
+        }
+      }
+    },
+    "set_browser_proxy_output": {
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/request_submission_output"
+            },
+            {
+              "if": {
+                "properties": {
+                  "disposition": {
+                    "const": "accepted"
+                  }
+                },
+                "required": [
+                  "disposition"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "facts": {
+                    "properties": {
+                      "ticket": {
+                        "properties": {
+                          "request": {
+                            "$ref": "#/$defs/set_browser_proxy_request_body"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/immediate_output_base"
+            },
+            {
+              "properties": {
+                "disposition": {
+                  "const": "complete"
+                },
+                "problem": {
+                  "type": "null"
+                },
+                "facts": {
+                  "$ref": "#/$defs/proxy_reused_facts"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "clear_browser_proxy_input": {
+      "type": "object",
+      "properties": {
+        "profile_ref": {
+          "$ref": "#/$defs/profile_ref"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idempotency_key": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+        }
+      },
+      "required": [
+        "profile_ref",
+        "expected_revision",
+        "idempotency_key"
+      ],
+      "additionalProperties": false
+    },
+    "clear_browser_proxy_request_body": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "const": "clear_browser_proxy"
+        },
+        "arguments": {
+          "$ref": "#/$defs/clear_browser_proxy_input"
+        }
+      },
+      "required": [
+        "tool",
+        "arguments"
+      ],
+      "additionalProperties": false
+    },
+    "request_ticket_tool_match_clear_browser_proxy": {
+      "if": {
+        "properties": {
+          "request": {
+            "properties": {
+              "tool": {
+                "const": "clear_browser_proxy"
+              }
+            },
+            "required": [
+              "tool"
+            ]
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "properties": {
+              "tool": {
+                "const": "clear_browser_proxy"
+              }
+            }
+          },
+          "failure": {
+            "properties": {
+              "tool": {
+                "const": "clear_browser_proxy"
+              }
+            }
+          },
+          "uncertainty": {
+            "properties": {
+              "tool": {
+                "const": "clear_browser_proxy"
+              }
+            }
+          }
+        }
+      }
+    },
+    "clear_browser_proxy_output": {
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/request_submission_output"
+            },
+            {
+              "if": {
+                "properties": {
+                  "disposition": {
+                    "const": "accepted"
+                  }
+                },
+                "required": [
+                  "disposition"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "facts": {
+                    "properties": {
+                      "ticket": {
+                        "properties": {
+                          "request": {
+                            "$ref": "#/$defs/clear_browser_proxy_request_body"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/immediate_output_base"
+            },
+            {
+              "properties": {
+                "disposition": {
+                  "const": "complete"
+                },
+                "problem": {
+                  "type": "null"
+                },
+                "facts": {
+                  "$ref": "#/$defs/proxy_reused_facts"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "check_browser_proxy_input": {
+      "type": "object",
+      "properties": {
+        "profile_ref": {
+          "$ref": "#/$defs/profile_ref"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "profile_ref",
+        "expected_revision"
+      ],
+      "additionalProperties": false
+    },
+    "check_browser_proxy_request_body": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "const": "check_browser_proxy"
+        },
+        "arguments": {
+          "$ref": "#/$defs/check_browser_proxy_input"
+        }
+      },
+      "required": [
+        "tool",
+        "arguments"
+      ],
+      "additionalProperties": false
+    },
+    "request_ticket_tool_match_check_browser_proxy": {
+      "if": {
+        "properties": {
+          "request": {
+            "properties": {
+              "tool": {
+                "const": "check_browser_proxy"
+              }
+            },
+            "required": [
+              "tool"
+            ]
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "properties": {
+              "tool": {
+                "const": "check_browser_proxy"
+              }
+            }
+          },
+          "failure": {
+            "properties": {
+              "tool": {
+                "const": "check_browser_proxy"
+              }
+            }
+          },
+          "uncertainty": {
+            "properties": {
+              "tool": {
+                "const": "check_browser_proxy"
+              }
+            }
+          }
+        }
+      }
+    },
+    "check_browser_proxy_output": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/request_submission_output"
+        },
+        {
+          "if": {
+            "properties": {
+              "disposition": {
+                "const": "accepted"
+              }
+            },
+            "required": [
+              "disposition"
+            ]
+          },
+          "then": {
+            "properties": {
+              "facts": {
+                "properties": {
+                  "ticket": {
+                    "properties": {
+                      "request": {
+                        "$ref": "#/$defs/check_browser_proxy_request_body"
                       }
                     }
                   }

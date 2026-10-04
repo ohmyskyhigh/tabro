@@ -70,7 +70,8 @@ export function verifyDemoEvidence(e: DemoEvidence): { status: 'passed' | 'faile
   check('overlapping-summary-work', starts.length === 3 && ends.length === 3 && Math.max(...starts) < Math.min(...ends)
     && !!bobEnd && e.fixture.events.filter(v => v.role !== 'Bob' && v.type === 'summary_finished').every(v => Date.parse(v.at) < Date.parse(bobEnd.at)),
     'All summary intervals overlap and both Alice and Carol finish before Bob.');
-  const bobBefore = e.before.profiles.find(p => p.display_name === 'Bob'); const bobAfter = e.after.profiles.find(p => p.display_name === 'Bob');
+  const bobProfileRef = e.assignments.find(a => a.role === 'Bob')?.profile_ref;
+  const bobBefore = e.before.profiles.find(p => p.profile_ref === bobProfileRef); const bobAfter = e.after.profiles.find(p => p.profile_ref === bobProfileRef);
   check('bob-reopen-identity', !!bobBefore && !!bobAfter && bobBefore.profile_ref === bobAfter.profile_ref && bobBefore.identity_hash === bobAfter.identity_hash
     && bobBefore.instance_ref !== bobAfter.instance_ref && Number(bobAfter.generation) === Number(bobBefore.generation) + 1 && bobAfter.process_verified === true,
     'Bob reopened the same persistent Profile with a new verified process generation and the same key.');

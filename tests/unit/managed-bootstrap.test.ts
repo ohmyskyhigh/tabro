@@ -15,7 +15,7 @@ describe('managed bootstrap authority', () => {
   afterEach(() => store.close());
   function setup() {
     const principal = store.createAgent('test', []).principal.principalId;
-    const profile = store.profiles.create(principal, 'test', 'chrome');
+    const profile = store.profiles.create(principal, 'chrome');
     const instance = store.profiles.createInstance(profile.profileRef);
     store.canonical.logical.createEndpoint({ endpointRef: `ep_${profile.profileRef}`, nickname: profile.profileRef });
     return { profile, instance, claim: grants.issue(instance), endpoint: `ep_${profile.profileRef}` };

@@ -56,7 +56,7 @@ const dispatchAndWait = async (operation: string, parameters: Record<string, unk
 
 try {
   await client.connect(new StreamableHTTPClientTransport(new URL(manifest.mcpUrl), {
-    requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${token}` } }
+    requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${token}` } }
   }));
   const binding = await call('get_my_binding', {});
   bindingRef = String(binding.bindingRef);

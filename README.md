@@ -9,7 +9,7 @@ Tabro was previously named Octopus Browser Relay. New MCP registrations use `tab
 Tabro connects a local MCP gateway to one extension instance in each browser profile. An agent asks for browser capacity, receives broker-issued workspace and tab references, submits extension-supported Chrome DevTools Protocol (CDP) commands, and polls durable request tickets. The extension relays those commands through `chrome.debugger`; Chrome does not need a public remote-debugging port.
 
 > [!IMPORTANT]
-> The `0.3.1` development tree implements the canonical eighteen-tool runtime, relay-v2 protocol, Native Messaging path, and extension-backed CDP adapter. A packaged `0.3.1` release has not been published. The existing `v0.3.0` release uses the previous Octopus name and fourteen-tool contract; use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime) for current Tabro features and automatic managed Profile lifecycle. Automated verification and physical Chrome, AdsPower, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
+> The `0.4.0` tree implements the canonical twenty-two-tool runtime, authenticated HTTP(S)/SOCKS5 profile proxies, relay-v2, Native Messaging and extension-backed CDP. The [Hermes plugin package](./integrations/hermes/README.md) includes the Windows runtime and first-time setup; catalog admission requires a separate upstream review. The existing `v0.3.0` release uses the previous Octopus name and fourteen-tool contract; use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime) for current Tabro features and automatic managed Profile lifecycle. Automated verification and physical Chrome, AdsPower, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
 
 ## Features
 
@@ -35,14 +35,16 @@ Configure HTTP, HTTPS, or SOCKS5 proxies with username/password authentication t
 
 ## Quick start
 
+For Hermes, start with the [plugin installation guide](./integrations/hermes/README.md). Named Hermes profiles enable their own plugin connections and share one local Broker. The source-build path below remains available for development and other MCP clients.
+
 The current source updater requires a release declaring shared runtime discovery support; it rejects older packages before stopping an existing installation. The published `v0.3.0` installer retains its older contract. Use the source installer below for the shared dynamic runtime until a qualified package is published.
 
-### The source installer prepares the current eighteen-tool shared runtime
+### The source installer prepares the current twenty-two-tool shared runtime
 
 1. Prepare the Windows source-build prerequisites under [Requirements](#requirements), then clone this repository and open its root directory.
 2. Run `pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker`. Add `-EnableManagedProfiles` when using the verified managed Chrome lifecycle.
 3. For external profiles, load the reported extension directory through `chrome://extensions` and wait for Native companion connection. Managed Profiles load their extension during create/open.
-4. Apply `.relay-data/bootstrap/codex-mcp.toml` or the generated `hermes-mcp.txt` command, then start a new agent session and verify eighteen tools.
+4. Apply `.relay-data/bootstrap/codex-mcp.toml` or the generated `hermes-mcp.txt` command, then start a new agent session and verify twenty-two tools.
 5. Read actual MCP and relay addresses from `.relay-data/runtime.json`. Broker health and a real managed-tab operation establish different parts of readiness.
 
 The [Release installation section](#github-releases-provide-verified-installation-and-updates) retains the published-package procedure; its historical package contract differs from this source baseline.
@@ -50,7 +52,8 @@ The [Release installation section](#github-releases-provide-verified-installatio
 ## What agents can do
 
 - discover connected browser-profile endpoints and broker-issued window choices;
-- list owned persistent Profiles, create new ones, and reopen or stop existing ones;
+- list all extension-registered Profiles with broker/user ownership, create broker-owned ones, and reopen or stop them;
+- configure authenticated HTTP(S)/SOCKS5 proxies on closed broker-owned Profiles, then reopen and verify their exit IP;
 - request one or more workspaces on distinct profiles;
 - receive an initial managed tab and CDP event cursor for each workspace;
 - create additional managed tabs;
@@ -67,7 +70,7 @@ The broker keeps the relationship among agent sessions, endpoints, windows, work
 flowchart LR
   C["Codex session"] --> A1["Session-owned stdio adapter"]
   H["Hermes session"] --> A2["Session-owned stdio adapter"]
-  A1 --> M["HTTP MCP gateway\n18 tools"]
+  A1 --> M["HTTP MCP gateway\n22 tools"]
   A2 --> M
   M --> B["Local broker\nrouting, status, tickets, controls, logs"]
   B <--> D["SQLite durable state"]
@@ -334,7 +337,7 @@ pnpm build
 
 For a source checkout, run `pwsh -NoProfile -File .\tools\real-world-preflight.ps1`. For a GitHub Release install, check both health endpoints and the generated handoff files directly.
 
-### An agent that cannot see eighteen tools needs a fresh stdio adapter process
+### An agent that cannot see twenty-two tools needs a fresh stdio adapter process
 
 Confirm the broker health first. Then verify that the Codex or Hermes registration points to the generated stable adapter launcher and token-file path. Rerun `hermes-mcp.txt` if the affected Hermes profile is missing its entry, and restart the agent session after changing its MCP registration. Hermes can check that profile with:
 
@@ -342,7 +345,7 @@ Confirm the broker health first. Then verify that the Codex or Hermes registrati
 hermes -p <profile> mcp test tabro
 ```
 
-Exactly eighteen tools must be discovered. Do not point an agent at the relay WebSocket port; agents use the stdio adapter and HTTP MCP gateway.
+Exactly twenty-two tools must be discovered. Do not point an agent at the relay WebSocket port; agents use the stdio adapter and HTTP MCP gateway.
 
 ### Dynamic port allocation avoids conflicts without stopping unrelated applications
 
@@ -357,7 +360,7 @@ Both ports default to `0`; clients use the actual addresses in the discovery rec
 - The HTTP broker confirms an accepted ticket after handing it to the stdio adapter. MCP has no transaction spanning that HTTP handoff and the adapter's later stdout write, so an adapter crash in that narrow interval can dispatch work whose ticket the agent runtime did not receive.
 - The extension executes only methods published by `octopus-extension-baseline-v1`; flattened child CDP sessions are disabled.
 - Relay-v2 extension envelopes are limited to 1 MiB. Capability and inventory limits are published in the same manifest.
-- The relay-v1 compatibility bridge remains enabled for migration, while the public MCP gateway exposes only the canonical eighteen tools.
+- The relay-v1 compatibility bridge remains enabled for migration, while the public MCP gateway exposes only the canonical twenty-two tools.
 - The repository does not install Codex, Hermes, Chrome, or AdsPower. The current release has recorded a three-profile, independent-Codex-session, and Hermes physical qualification; another machine or browser build still requires its own preflight and physical evidence.
 - There is a PID-verified broker stop command but no full uninstall command yet.
 
@@ -389,6 +392,6 @@ Tabro is available under the [MIT License](./LICENSE).
 
 ### Agents can create and reopen persistent Chrome Profiles through MCP
 
-The development implementation adds list_browser_profiles, create_browser_profile, open_browser_profile and stop_browser_profile under MCP contract v2. It is verified on Windows with Chrome 153.0.8010.53 and a one-time Native Messaging installation. New Profiles automatically load the extension; normal stop retains cookies, website storage and identity. This is a local development change, not a newly published release.
+The development implementation includes list_browser_profiles, create_browser_profile, open_browser_profile and stop_browser_profile under MCP contract v4. The pairing alias (`endpoint_nickname`) is each Profile's only public name; creation requires only an idempotency key. It is verified on Windows with Chrome 153.0.8010.53 and a one-time Native Messaging installation. New Profiles automatically load the extension; normal stop retains cookies, website storage and identity. This is a local development change, not a newly published release.
 
 Use `tools/install-local.ps1 -Install -EnableManagedProfiles` for local setup, or `-EnableManagedProfiles` with a package built from this source. Broker and adapter must upgrade together. Read the [single-Agent Demo runbook](./tests/demo/RUNBOOK.md) for the two verified three-Profile runs and reproduction steps.

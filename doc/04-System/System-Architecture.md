@@ -78,6 +78,8 @@ Installation reports one explicit unmet prerequisite at a time. It does not beco
 
 ### GitHub Releases install immutable runtimes behind stable local launch and extension paths
 
+The approved [first-time Hermes setup journey](../02-User-Experience/User-Experience-Definition.md#first-time-hermes-setup-downloads-and-installs-the-local-browser-runtime) must compose package download, dependency preparation, local installation, Native Messaging registration, Broker startup and MCP readiness for a machine without Tabro. It uses the shared runtime and preserves the existing Profile proxy contract. The Windows portable package implements this flow through the pinned plugin payload and setup scripts. Multiple Hermes profiles enable independent MCP connections to one shared local Broker. The [delivery record](../80-Plans/tabro-hermes-provider-2026-10-01/plugin-delivery-2026-10-04.md) distinguishes isolated installation evidence from pending clean-machine browser qualification and catalog admission.
+
 Release construction bundles the broker and MCP adapter with their production dependencies, copies migrations and the unpacked extension, gives the native executable a versioned filename, and records the hash and byte length of every packaged file. GitHub publishes the Windows archive, its SHA-256 checksum, and the updater.
 
 The updater verifies the archive checksum and internal manifest before stopping a process. It installs the runtime under a versioned directory, preserves the durable data directory, points stable broker and MCP launchers at the selected release, updates the Native Messaging manifest to the versioned native executable, mirrors extension files into one stable unpacked-extension directory, and commits current-release state before startup. Health must report the selected version. A failed startup restores the prior current-release state, extension files, Native Messaging target, and previously running broker.
@@ -299,7 +301,7 @@ Real-world qualification uses Codex and Hermes sessions against separately insta
 
 ### Profile state survives browser and Broker shutdown independently of online endpoints
 
-The persistent directory owns Profile references, immutable directory keys, principal ownership and optional endpoint bindings. A separate instance record retains launch generation, process identity and observations. Profile request associations add principal authority without replacing the existing owner/requester ticket schema. Creation reserves Profile, ticket and idempotency key atomically before acknowledgement.
+The extension registry owns discovery membership after the first authenticated connection and retains offline identities. Joining its endpoint to a persistent launch record yields ownership=broker; otherwise ownership=user. The launch directory retains stable Profile references, immutable directory keys, creator metadata and endpoint bindings, but the creator does not exclusively own launch capacity. A separate instance record retains launch generation, process identity and observations. Profile request associations retain requester-principal authority without replacing workspace owner/requester rules. Creation reserves Profile, ticket and idempotency key atomically before acknowledgement. Profile names come only from the bound extension nickname. Migration 007 drops the extra Profile name column and removes it from stored Profile request arguments and result facts. In the same transaction, creation hashes are normalized to the key-only request so existing reservations remain reusable. The migration preserves references, directory keys, endpoint bindings, instances and unrelated raw CDP data.
 
 ### Signed extension authentication binds a bootstrap grant to one verified instance
 
@@ -308,5 +310,19 @@ The stable private extension directory receives instance-specific bootstrap conf
 ### Profile operations serialize independently from tab execution lanes
 
 Profile operations retain the existing acknowledgement-before-dispatch rule. Per-Profile queues and renewable fenced leases serialize lifecycle work, with three concurrent operations and a bounded pending queue. Stop establishes an admission barrier and checks workspaces and in-flight work before normal closure. Unverified process ownership cannot trigger a blind restart or process termination.
+
+### Fresh inventory retires missing idle workspaces before they can indefinitely block Profile closure
+
+When the current connected inventory proves a persisted group and all tracked active tabs absent, Broker Core may end its idle logical workspace. Stale connection/inventory evidence, unreadable tab locators, surviving tabs, unfinished workspace requests, workspace acquisition and endpoint controls prevent this retirement. One transaction revalidates owner/control state, advances the control fence, ends the workspace, closes missing tab records, clears its pause causes and records `workspace.missing_ended`. This observation changes no Chrome state and grants no workspace ownership. Profile stop still rejects genuine active work.
+
+## Profile networking
+
+### The Broker forwards Profile URL traffic through a dedicated loopback listener
+
+A per-Profile loopback HTTP proxy forwards through one configured HTTP, HTTPS or SOCKS5 upstream, including authentication. Upstream certificates are verified. Absent upstream configuration is an error, never implicit direct forwarding. Persistent listener reservations survive Broker restart. The extension applies regular-only fixed-server settings and preserves Chrome loopback bypass for local control and canvas traffic. OS-protected credentials remain in the Broker and never enter relay payloads, public tickets or logs.
+
+### A persistent network revision coordinates mutations and automation admission
+
+Network changes use acknowledgement-before-dispatch, principal-scoped idempotency and expected revisions. Set, clear and exit checks require broker ownership. Pending network mutations fence workspace admission and Profile lifecycle; admission rejects open Profiles and execution verifies actual process closure before committing. Unknown closure never counts as stopped. Set and clear save intent without applying to a live browser or launching Chrome. Observed application belongs to a connection generation and desired revision. Reconnect reconciles before automation resumes. Gateway readiness precedes configured launch; a cleared configuration omits the startup proxy flag on the next explicit launch. No proxy command or automatic proxy reconciliation targets user-owned Chrome. Conflicts or missing credentials prevent readiness without clearing unrelated pause causes.
 
 Parent: [`System MOC`](./_MOC.md).

@@ -139,10 +139,11 @@ export class SqliteLogicalRepository implements LogicalRepository {
     return row ? toEndpoint(row) : null;
   }
 
-  listEndpoints(query: PageQuery): Page<StoredEndpoint> {
+  listEndpoints(query: PageQuery & { registeredOnly?: boolean }): Page<StoredEndpoint> {
     const limit = pageLimit(query.limit);
-    const rows = this.db.prepare(`SELECT * FROM browser_endpoints WHERE endpoint_ref > ? ORDER BY endpoint_ref LIMIT ?`)
-      .all(query.after ?? '', limit + 1) as Row[];
+    const rows = this.db.prepare(`SELECT * FROM browser_endpoints WHERE endpoint_ref > ?
+      AND (? = 0 OR (connection_generation > 0 AND lifecycle = 'paired')) ORDER BY endpoint_ref LIMIT ?`)
+      .all(query.after ?? '', query.registeredOnly ? 1 : 0, limit + 1) as Row[];
     const hasMore = rows.length > limit;
     const items = rows.slice(0, limit).map(toEndpoint);
     return { items, next: hasMore ? items.at(-1)?.endpointRef ?? null : null };

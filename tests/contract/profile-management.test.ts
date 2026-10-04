@@ -3,6 +3,8 @@ import { SqliteRelayStore } from '../../apps/broker/src/storage/index.js';
 import { OctopusBroker, type CallerEvidence } from '../../apps/broker/src/core/index.js';
 import { ProfileManager } from '../../apps/broker/src/profiles/profile-manager.js';
 import { parseMcpToolOutput } from '../../apps/shared/protocol/src/index.js';
+import { requestTicketFacts } from '../../apps/broker/src/core/octopus/mcp-presenter.js';
+import { problem } from '../../apps/broker/src/core/octopus/broker-problem.js';
 
 describe('Profile MCP tickets', () => {
   let store: SqliteRelayStore;
@@ -22,6 +24,7 @@ describe('Profile MCP tickets', () => {
         checkpoint(running);
         const ep = `ep_${profile.profileRef}`;
         store.canonical.logical.createEndpoint({ endpointRef: ep, nickname: 'testprofile' });
+        store.canonical.logical.openEndpointConnection({ endpointRef: ep, connectionRef: 'con', transport: 'test', protocolVersion: '2' });
         store.profiles.bind(profile.profileRef, ep, 'hash'); store.profiles.authenticateInstance(instance.instanceRef);
         store.canonical.logical.upsertWindow({ windowRef: 'win', endpointRef: ep, privateWindowKey: 'key', locatorGeneration: 1, eligible: true, focused: true });
         return running;
@@ -30,7 +33,7 @@ describe('Profile MCP tickets', () => {
     broker.setProfileManager(manager);
   });
   afterEach(async () => { broker.beginShutdown(); await manager.shutdown(); await broker.waitForIdle(); store.close(); });
-  const input = { display_name: ' Alice ', idempotency_key: 'create-alice' };
+  const input = { idempotency_key: 'create-alice' };
   function requestRef(reply: Record<string, unknown>): string {
     return ((reply.facts as { ticket: { request_ref: string } }).ticket).request_ref;
   }
@@ -48,6 +51,8 @@ describe('Profile MCP tickets', () => {
     const read = broker.getBrowserRequest({ request_ref: ref }, next);
     expect(read.disposition).toBe('complete');
     expect(() => parseMcpToolOutput('get_browser_request', read)).not.toThrow();
+    expect(read.facts).toMatchObject({ ticket: { result: { facts: { profile: { endpoint_nickname: 'testprofile' } } } } });
+    expect(JSON.stringify(read)).not.toContain('display_name');
     const closed = broker.closeBrowserRequest({ request_ref: ref }, next);
     expect(closed.disposition).toBe('complete');
     const repeated = broker.submit('create_browser_profile', input, next);
@@ -62,16 +67,38 @@ describe('Profile MCP tickets', () => {
     const foreign = { ...evidence, managementAuthority: { principalId: other.principalId, scopes: other.scopes } };
     expect(broker.getBrowserRequest({ request_ref: ref }, foreign).disposition).toBe('rejected');
     expect(broker.closeBrowserRequest({ request_ref: ref }, foreign).disposition).toBe('rejected');
-    expect((broker.listBrowserProfiles({}, foreign).facts as { profiles: unknown[] }).profiles).toEqual([]);
+    expect((broker.listBrowserProfiles({}, foreign).facts as { profiles: unknown[] }).profiles).toMatchObject([
+      { endpoint_nickname: 'testprofile', ownership: 'broker' }
+    ]);
   });
-  it('does not dispatch after failed acknowledgement and does not reserve on conflicting keys', async () => {
+  it('does not dispatch after failed acknowledgement and rejects retired display names before reservation', async () => {
     const ref = requestRef(broker.submit('create_browser_profile', input, evidence));
     broker.confirmAcknowledgement(ref, false);
     await new Promise(resolve => setTimeout(resolve, 20)); expect(starts).toBe(0);
     const conflict = broker.submit('create_browser_profile', { ...input, display_name: 'Bob' }, evidence);
     expect(conflict.disposition).toBe('rejected');
-    expect((conflict.problem as { code: string }).code).toBe('IDEMPOTENCY_CONFLICT');
+    expect((conflict.problem as { code: string }).code).toBe('INVALID_ARGUMENT');
     expect(store.profiles.all()).toHaveLength(1);
+  });
+
+  it.each(['succeeded', 'failed', 'uncertain'] as const)('reads historical %s Profile facts without rewriting saved results or raw CDP', state => {
+    const ref = requestRef(broker.submit('create_browser_profile', input, evidence));
+    const profile = store.profiles.get(store.profiles.request(ref)!.profileRef)!;
+    const facts = manager.facts(profile);
+    delete facts.ownership;
+    const failure = { tool: 'create_browser_profile', problem: { ...problem('PROFILE_OPERATION_FAILED', 'failed', false) }, known_facts: { profile: facts } };
+    const result = state === 'succeeded'
+      ? { tool: 'create_browser_profile', disposition: 'complete', facts: { profile: facts } }
+      : state === 'uncertain' ? failure : { ...failure, kind: 'octopus_problem', debugger_error: null };
+    store.canonical.requests.terminalizeRequest({ requestRef: ref, state, phase: 'complete', checkpoint: {}, result });
+    const read = broker.getBrowserRequest({ request_ref: ref }, evidence);
+    expect(() => parseMcpToolOutput('get_browser_request', read)).not.toThrow();
+    expect(JSON.stringify(read)).toContain('"ownership":"broker"');
+    expect(JSON.stringify(read)).not.toContain('display_name');
+    expect(store.canonical.requests.getRequest(ref)!.result).toEqual(result);
+    expect(JSON.stringify(store.canonical.requests.getRequest(ref)!.result)).not.toContain('ownership');
+    const rawTicket = { ...store.canonical.requests.getRequest(ref)!, toolName: 'send_cdp_command' as const, state: 'succeeded' as const };
+    expect(requestTicketFacts(rawTicket).result).toEqual(result);
   });
 
   it('does not reschedule terminal uncertainty or starve timers and other requests', async () => {
@@ -82,6 +109,22 @@ describe('Profile MCP tickets', () => {
     await new Promise(resolve => setTimeout(resolve, 30));
     expect(starts).toBe(0);
     expect(store.canonical.requests.getRequest(ref)?.claimGeneration).toBe(0);
+  });
+
+  it('explains active-work closure failures after lifecycle permission passed', async () => {
+    const created = requestRef(broker.submit('create_browser_profile', input, evidence)); await complete(created);
+    const profile = store.profiles.all()[0]!;
+    const caller = broker.getBrowserContext({ view: { kind: 'broker' } }, evidence).caller as { session_ref: string; lineage_ref: string };
+    store.canonical.logical.createWorkspace({ workspaceRef: 'live-work', endpointRef: profile.endpointRef!, windowRef: 'win',
+      lineageRef: caller.lineage_ref, ownerSessionRef: caller.session_ref, groupLabel: 'Live work' });
+    const stopped = requestRef(broker.submit('stop_browser_profile', { profile_ref: profile.profileRef }, evidence));
+    broker.confirmAcknowledgement(stopped, true);
+    await viWait(() => store.canonical.requests.getRequest(stopped)?.state === 'failed');
+    const result = broker.getBrowserRequest({ request_ref: stopped }, evidence);
+    expect(() => parseMcpToolOutput('get_browser_request', result)).not.toThrow();
+    expect(result.facts).toMatchObject({ ticket: { failure: { problem: {
+      code: 'PROFILE_HAS_ACTIVE_WORK', message: expect.stringContaining('Profile lifecycle permission passed.')
+    } } } });
   });
 });
 

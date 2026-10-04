@@ -1,6 +1,6 @@
 {
   "name": "tabro",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.19.0",
@@ -15,6 +15,7 @@
     "build:extension": "tsx tools/build-extension.ts",
     "build:native": "pwsh -NoProfile -File tools/build-native-host.ps1",
     "stage:release": "tsx tools/stage-release.ts",
+    "stage:hermes": "tsx tools/stage-hermes-plugin.ts",
     "package:release": "pwsh -NoProfile -File tools/package-release.ps1",
     "update:local": "pwsh -NoProfile -File tools/update-local.ps1",
     "typecheck": "tsc --noEmit",
@@ -31,6 +32,7 @@
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "pino": "10.3.1",
+    "proxy-chain": "3.0.1",
     "ws": "8.21.3",
     "zod": "4.4.3"
   },

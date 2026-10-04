@@ -11,12 +11,6 @@ export const isProfileOperation = (tool: string): tool is ProfileOperation => (P
 export class ProfileRequestService {
   constructor(readonly manager: ProfileManager) {}
 
-  list(input: JsonObject, authority: ProfileAuthority | undefined, caller: StoredCallerSession): JsonObject {
-    this.manager.authorize(authority, 'profiles:read');
-    const page = this.manager.store.profiles.page(authority!.principalId, input.limit as number | undefined, input.cursor as string | undefined);
-    return completeRead(caller, { profiles: page.profiles.map(p => this.manager.facts(p)), next_cursor: page.nextCursor, returned_count: page.profiles.length });
-  }
-
   submit(tool: ProfileOperation, input: JsonObject, authority: ProfileAuthority | undefined, caller: StoredCallerSession): JsonObject {
     this.manager.authorize(authority, 'profiles:manage');
     if (!this.manager.launchesEnabled && tool !== 'stop_browser_profile') throw new ProfileError('PROFILE_MANAGEMENT_UNAVAILABLE');
@@ -32,11 +26,10 @@ export class ProfileRequestService {
     };
     let requestRef: string;
     if (tool === 'create_browser_profile') {
-      const name = typeof input.display_name === 'string' ? input.display_name.trim() : '';
-      if (!name || name.length > 80 || typeof input.idempotency_key !== 'string' || !/^[A-Za-z0-9._:-]{8,128}$/u.test(input.idempotency_key)) throw new ProfileError('INVALID_ARGUMENT');
-      input = { display_name: name, idempotency_key: input.idempotency_key };
+      if (Object.keys(input).some(key => key !== 'idempotency_key') || typeof input.idempotency_key !== 'string' || !/^[A-Za-z0-9._:-]{8,128}$/u.test(input.idempotency_key)) throw new ProfileError('INVALID_ARGUMENT');
+      input = { idempotency_key: input.idempotency_key };
       const reserved = store.profiles.reserveCreation({ principalId: authority!.principalId, key: input.idempotency_key as string,
-        displayName: name, bodyHash: createHash('sha256').update(JSON.stringify(input)).digest('hex'), runtimeRef: 'configured-chrome' }, accept);
+        bodyHash: createHash('sha256').update(JSON.stringify(input)).digest('hex'), runtimeRef: 'configured-chrome' }, accept);
       requestRef = reserved.requestRef;
       const ticket = store.canonical.requests.getRequest(requestRef)!;
       if (reserved.reused && (ticket.state !== 'queued' || !ticket.publiclyVisible)) {
@@ -85,7 +78,9 @@ export class ProfileRequestService {
     } catch (error) {
       if (!store.profiles.ownsRequest(ticket.requestRef, ticket.claimGeneration)) return;
       const code = error instanceof ProfileError ? error.code : 'PROFILE_OPERATION_FAILED';
-      const failure = problem((PublicProblemCodes as readonly string[]).includes(code) ? code as PublicProblemCode : 'PROFILE_OPERATION_FAILED', code, false);
+      const message = code === 'PROFILE_HAS_ACTIVE_WORK'
+        ? 'Profile lifecycle permission passed. Closing is blocked by active workspaces or unfinished browser requests; finish that work before stopping the Profile.' : code;
+      const failure = problem((PublicProblemCodes as readonly string[]).includes(code) ? code as PublicProblemCode : 'PROFILE_OPERATION_FAILED', message, false);
       const uncertain = code === 'PROFILE_INSTANCE_UNVERIFIED' || code === 'PROFILE_STOP_TIMEOUT' || code === 'PROFILE_LEASE_LOST';
       const known = { profile: this.manager.facts(store.profiles.get(association.profileRef)!) };
       store.canonical.requests.terminalizeRequest({ requestRef: ticket.requestRef, expectedClaimGeneration: ticket.claimGeneration,

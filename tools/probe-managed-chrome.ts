@@ -65,7 +65,7 @@ export async function runManagedChromeProbe(runId: string, chromePath: string): 
   async function connectClient(): Promise<Client> {
     const result = new Client({ name: 'managed-chrome-probe', version: '0.1' }, { versionNegotiation: { mode: 'auto' } });
     await result.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${config.mcpPort}/mcp`), {
-      requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${token}`, 'x-octopus-runtime': 'probe', 'x-octopus-runtime-session': runId } }
+      requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${token}`, 'x-octopus-runtime': 'probe', 'x-octopus-runtime-session': runId } }
     }));
     return result;
   }

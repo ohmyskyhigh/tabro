@@ -17,7 +17,7 @@ it('blocks upgrades with a managed instance and snapshots inactive data with Pro
   const store = new SqliteRelayStore(path);
   try {
     const principal = store.createAgent('Owner', ['profiles:manage']).principal;
-    const p = store.profiles.create(principal.principalId, 'Retained', 'chrome');
+    const p = store.profiles.create(principal.principalId, 'chrome');
     const instance = store.profiles.createInstance(p.profileRef);
     const run = (...args: string[]) => spawnSync(process.execPath, ['tools/managed-upgrade-snapshot.mjs', path, backup, ...args], { encoding: 'utf8', windowsHide: true });
     expect(run('--check-only').status).not.toBe(0); expect(existsSync(backup)).toBe(false);

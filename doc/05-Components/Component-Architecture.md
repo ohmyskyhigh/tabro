@@ -11,7 +11,7 @@ Components are operational owners of confirmed System responsibilities. They may
 | Component | Repository owner | Primary responsibility |
 | --- | --- | --- |
 | Broker Runtime | `apps/broker/src/runtime` | Process composition, validated configuration, lifecycle, health, and dependency wiring |
-| MCP Gateway | `apps/broker/src/mcp` and `apps/mcp-stdio-adapter` | Codex/Hermes transport adapters, caller evidence, eighteen tools, schema publication, and acknowledgement-delivery confirmation |
+| MCP Gateway | `apps/broker/src/mcp` and `apps/mcp-stdio-adapter` | Codex/Hermes transport adapters, caller evidence, twenty-two tools, schema publication, and acknowledgement-delivery confirmation |
 | Broker Core | `apps/broker/src/core` and `apps/broker/src/profiles` | Logical identity, authority, admission, routing, workspace and Profile lifecycle, scheduling, reconciliation, controls, status, and audit decisions |
 | Durable Store | `apps/broker/src/storage` | Atomic persistence, migrations, repositories, request/event/audit retention, and restart recovery queries |
 | Extension Gateway | `apps/broker/src/extension-relay` and `apps/native-host` | Automatic relay-v2 endpoint registration, authenticated live connections, bounded framing, generation fencing, and extension message correlation |
@@ -214,6 +214,8 @@ The manifest describes scope and support; Browser Extension executes. Broker Cor
 
 ### Installation scripts are idempotent and report explicit readiness
 
+Under the [System installation contract](../04-System/System-Architecture.md#github-releases-install-immutable-runtimes-behind-stable-local-launch-and-extension-paths), Setup and Qualification owns the Hermes first-time setup flow, including Broker delivery and the current proxy capability. The Windows portable plugin installs its pinned runtime outside Hermes profile homes and supplies each enabled profile with a separate adapter. Setup and launch share an installation lock; failed setup restores prior configuration. Its [delivery record](../80-Plans/tabro-hermes-provider-2026-10-01/plugin-delivery-2026-10-04.md) records isolated verification and the remaining clean-machine browser gate.
+
 Setup scripts build artifacts, register the native host, generate MCP configuration for Codex, register MCP configuration separately in the default and every installed named Hermes profile, print extension load paths, verify broker health, and explain automatic extension pairing. The Hermes helper discovers the installed profile directories when it runs and must run again after another profile is created. The scripts do not issue or require a pairing code; optional profile-local customization happens in the extension options. Re-running them repairs matching configuration without deleting pairing or workspace state unless reset is explicitly requested.
 
 Runtime-specific templates remain separate from agent-visible MCP schemas.
@@ -251,6 +253,12 @@ A failing test can fix an implementation defect directly when the canonical beha
 
 ### The Broker Profile Manager coordinates lifecycle operations before workspace allocation
 
-The Profile Manager under `apps/broker/src/profiles` owns the persistent directory, launcher coordination, instance observations, ready predicate and stopping barrier. ProfileRequestService integrates principal-scoped lifecycle requests with durable admission, acknowledgement, worker claims and terminal facts. ChromeLauncher owns the Windows process check and private lifecycle connection. BootstrapGrants owns credential validation and atomic binding after signed AUTH. The existing extension relay remains the website execution owner.
+Broker Core lists authenticated extension identities directly, enriches them with broker/user launch ownership from the launch directory, and exposes the same ownership in endpoint and window facts. Discovery works without a configured launcher and uses the extension alias as the sole public Profile name. SQLite migration 007 removes the second Profile name from storage and Profile ticket history; the migration runner normalizes creation hashes in the same transaction. The Profile model and repository accept no extra name. The Profile Manager under `apps/broker/src/profiles` owns the persistent launch directory, launcher coordination, instance observations, ready predicate and stopping barrier. ProfileRequestService integrates principal-scoped lifecycle requests with durable admission, acknowledgement, worker claims and terminal facts. ChromeLauncher owns the Windows process check and private lifecycle connection. BootstrapGrants owns credential validation and atomic binding after signed AUTH. The existing extension relay remains the website execution owner.
+
+## Profile networking
+
+### Network services separate configuration, credential custody and extension application
+
+ProfileNetworkService owns MCP authorization, broker-only proxy operations, durable tickets, revisions, closed-Profile admission and deferred reconciliation. ProxyRepository stores bindings, requests, observations and private listener reservations. ProxyCredentialStore protects credentials with Windows DPAPI CurrentUser. ProxyGatewayManager owns bounded loopback listeners and authenticated upstream connections. ExtensionProxyController applies and reads back Chrome settings and performs fixed-origin exit-IP probes. ProfileManager and ChromeLauncher verify process closure independently of extension connectivity and integrate next-launch readiness and startup routing. Network operations are explicit capability-advertised relay messages, not browser-wide CDP.
 
 Parent: [`Components MOC`](./_MOC.md).
