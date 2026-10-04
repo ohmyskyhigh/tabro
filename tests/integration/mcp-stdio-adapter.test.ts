@@ -25,7 +25,7 @@ describe('stdio MCP session adapter', () => {
   });
 
   it('rejects old or unversioned Brokers before opening MCP or dispatching tools', async () => {
-    for (const health of [{ mcpContractVersion: '1' }, {}]) {
+    for (const health of [{ mcpContractVersion: '1' }, { mcpContractVersion: '2' }, { mcpContractVersion: '3' }, {}]) {
       const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(health), { status: 200 }));
       await expect(startStdioAdapter({ brokerUrl: new URL('http://127.0.0.1:17331/mcp'), bearerToken: TOKEN,
         serviceVersion: 'test', identity: { runtimeName: 'test', runtimeSessionKey: 'version-check', source: 'explicit' } })).rejects.toThrow('MCP_CONTRACT_VERSION_MISMATCH');

@@ -6,8 +6,9 @@ import { BootstrapGrants } from './bootstrap-grants.js';
 import type { ChromeLauncher } from './chrome-launcher.js';
 import { ProfileError, type ManagedBrowserInstance, type ManagedProfile, type ProfileAuthority, type ProfileOperation } from './types.js';
 
-export type ProfileLifecycleLauncher = Pick<ChromeLauncher, 'prepare' | 'launch' | 'inspect' | 'ensureWindow' | 'close'> & Partial<Pick<ChromeLauncher, 'clearBootstrapSecret' | 'repair'>>;
+export type ProfileLifecycleLauncher = Pick<ChromeLauncher, 'prepare' | 'launch' | 'inspect' | 'ensureWindow' | 'close'> & Partial<Pick<ChromeLauncher, 'clearBootstrapSecret' | 'repair' | 'isClosed'>>;
 export class ProfileManager {
+  network: { summary(ref: string): Record<string, unknown>; assertLifecycle(ref: string, except?: string): void; ready(ref: string, ignoreBusy?: boolean): boolean; reconcile(ref: string, except?: string): Promise<void> } | null = null;
   readonly grants: BootstrapGrants;
   private readonly queues = new Map<string, Promise<unknown>>();
   private active = 0;
@@ -25,7 +26,10 @@ export class ProfileManager {
   authorize(authority: ProfileAuthority | undefined, scope: 'profiles:read' | 'profiles:manage', profileRef?: string): ManagedProfile | null {
     if (!authority || !authority.scopes.includes(scope) || !this.store.getAgentById(authority.principalId)?.scopes.includes(scope)) throw new ProfileError('PROFILE_FORBIDDEN');
     if (!profileRef) return null;
-    const profile = this.store.profiles.getVisible(authority.principalId, profileRef);
+    const profile = this.store.profiles.get(profileRef);
+    if (!profile && this.store.canonical.logical.getEndpoint(profileRef)) {
+      throw new ProfileError('PROFILE_USER_OWNED', 'This browser is user-owned. Open Chrome manually, then use its connected extension through a workspace.');
+    }
     if (!profile) throw new ProfileError('PROFILE_NOT_FOUND');
     return profile;
   }
@@ -35,14 +39,21 @@ export class ProfileManager {
     return !!profile && (this.barriers.has(profile.profileRef) || this.store.profiles.currentInstance(profile.profileRef)?.browserState === 'stopping');
   }
 
+  async assertClosed(profile: ManagedProfile, guard: () => void = () => {}): Promise<void> {
+    if (!this.launcher.isClosed) throw new ProfileError('PROFILE_INSTANCE_UNVERIFIED');
+    const closed = await this.launcher.isClosed(profile).catch(() => { throw new ProfileError('PROFILE_INSTANCE_UNVERIFIED'); });
+    guard();
+    if (!closed) throw new ProfileError('PROFILE_IN_USE', 'Close the Profile before changing its proxy.');
+  }
+
   facts(profile: ManagedProfile): Record<string, unknown> {
     const value = this.store.profiles.currentInstance(profile.profileRef);
     const endpoint = profile.endpointRef ? this.store.canonical.logical.getEndpoint(profile.endpointRef) : null;
     const connected = profile.endpointRef ? this.connection(profile.endpointRef) : null;
-    const ready = !!value && value.browserState === 'running' && this.store.profiles.instanceAuthenticated(value.instanceRef)
+    const ready = (this.network?.ready(profile.profileRef, true) ?? true) && !!value && value.browserState === 'running' && this.store.profiles.instanceAuthenticated(value.instanceRef)
       && connected?.connected === true && connected.inventoryGeneration > 0
       && this.store.canonical.logical.listWindows(profile.endpointRef!).some(window => window.eligible);
-    return { profile_ref: profile.profileRef, display_name: profile.displayName,
+    return { profile_ref: profile.profileRef, ownership: 'broker', ...(this.network ? { proxy: this.network.summary(profile.profileRef) } : {}),
       browser_state: value?.browserState ?? 'stopped', extension_state: value?.browserState === 'stopped' || (!value && profile.endpointRef) ? 'disconnected' : connected?.connected ? 'connected' : profile.endpointRef ? 'disconnected' : value?.extensionState ?? 'unknown',
       instance_ref: value?.instanceRef ?? null, endpoint_nickname: endpoint?.nickname ?? null,
       ready, automation_paused: profile.endpointRef === null ? null : this.store.canonical.logical.getEndpointKillState(profile.endpointRef).killed || this.store.canonical.logical.listActiveWorkspaces({ endpointRef: profile.endpointRef }).some(workspace => workspace.pauseCauses.length > 0),
@@ -50,7 +61,8 @@ export class ProfileManager {
   }
 
   async run(operation: ProfileOperation, profile: ManagedProfile, assertRequestOwner: () => void = () => {},
-    checkpoint: (phase: string) => void = () => {}): Promise<Record<string, unknown>> {
+    checkpoint: (phase: string) => void = () => {}, networkRequestRef = ''): Promise<Record<string, unknown>> {
+    this.network?.assertLifecycle(profile.profileRef, networkRequestRef);
     if (this.stopping) throw new ProfileError('PROFILE_MANAGER_STOPPING');
     if (!this.launchesEnabled && operation !== 'stop_browser_profile') throw new ProfileError('PROFILE_MANAGEMENT_UNAVAILABLE');
     if (this.pending >= 32) throw new ProfileError('PROFILE_QUEUE_FULL');
@@ -70,6 +82,7 @@ export class ProfileManager {
       let lost = false;
       const guard = () => {
         assertRequestOwner();
+        this.network?.assertLifecycle(profile.profileRef, networkRequestRef);
         if (lost || this.stopping || !repository.owns(lease)) throw new ProfileError('PROFILE_LEASE_LOST');
       };
       const timer = setInterval(() => { if (!repository.renew(lease, 30_000)) lost = true; }, 8_000);
@@ -77,7 +90,7 @@ export class ProfileManager {
         guard();
         const update = (value: ManagedBrowserInstance) => repository.transaction(() => { guard(); repository.updateInstance(value); });
         if (operation === 'stop_browser_profile') await this.stopProfile(profile, guard, update);
-        else await this.openProfile(profile, guard, update, checkpoint);
+        else await this.openProfile(profile, guard, update, checkpoint, networkRequestRef);
         guard(); repository.setProblem(profile.profileRef, null);
         return this.facts(repository.get(profile.profileRef)!);
       } catch (error) {
@@ -91,7 +104,7 @@ export class ProfileManager {
     try { return await work; } finally { this.pending--; if (this.queues.get(profile.profileRef) === work) this.queues.delete(profile.profileRef); }
   }
 
-  private async openProfile(profile: ManagedProfile, guard: () => void, update: (value: ManagedBrowserInstance) => void, checkpoint: (phase: string) => void): Promise<void> {
+  private async openProfile(profile: ManagedProfile, guard: () => void, update: (value: ManagedBrowserInstance) => void, checkpoint: (phase: string) => void, networkRequestRef: string): Promise<void> {
     let instance = this.store.profiles.currentInstance(profile.profileRef);
     if (instance) {
       const state = await this.launcher.inspect(instance); guard();
@@ -128,6 +141,7 @@ export class ProfileManager {
     while (Date.now() < deadline) {
       guard();
       const currentProfile = this.store.profiles.get(profile.profileRef)!;
+      await this.network?.reconcile(profile.profileRef, networkRequestRef); guard();
       if (this.facts(currentProfile).ready) {
         if (await this.launcher.inspect(instance) !== 'running') throw new ProfileError('PROFILE_INSTANCE_UNVERIFIED');
         guard(); update({ ...instance, browserState: 'running', extensionState: 'connected', observedAt: new Date().toISOString() });
@@ -149,7 +163,7 @@ export class ProfileManager {
     const requests = this.store.canonical.requests.scanRequestRecovery().requests;
     if (snapshot.activeWorkspaces.some(workspace => workspace.endpointRef === profile.endpointRef)
       || requests.some(request => request.toolName === 'request_browser_workspace'
-        || (profile.endpointRef && request.endpointRef === profile.endpointRef && !this.store.profiles.request(request.requestRef)))) {
+        || (profile.endpointRef && request.endpointRef === profile.endpointRef && !this.store.profiles.request(request.requestRef) && !this.store.proxies.request(request.requestRef)))) {
       throw new ProfileError('PROFILE_HAS_ACTIVE_WORK');
     }
     const before = instance;

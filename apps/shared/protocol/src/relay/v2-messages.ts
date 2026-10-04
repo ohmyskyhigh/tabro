@@ -10,6 +10,7 @@ export const RELAY_V2_MESSAGE_TYPES = [
   'PAIRED',
   'READY',
   'HEARTBEAT',
+  'PROFILE_PROXY',
   'INVENTORY_REQUEST',
   'INVENTORY_SNAPSHOT',
   'CREATE_TAB',
@@ -157,6 +158,7 @@ const OperationTypeSchema = z.enum([
   'ATTACH_DEBUGGER',
   'SEND_CDP',
   'DETACH_DEBUGGER',
+  'PROFILE_PROXY',
   'RECONCILE_ATTEMPT'
 ]);
 
@@ -169,6 +171,7 @@ const DebuggerErrorSchema = z.strictObject({
 
 export const relayV2PayloadSchemas = {
   HELLO: z.strictObject({
+    profileProxy: z.literal(1).optional(),
     managedClaim: z.strictObject({
       instanceRef: z.string().regex(/^ins_[0-9a-f-]{36}$/u),
       generation: PositiveGenerationSchema,
@@ -223,6 +226,11 @@ export const relayV2PayloadSchemas = {
     connectionGeneration: PositiveGenerationSchema,
     inventoryGeneration: GenerationSchema,
     activeAttemptIds: z.array(RelayV2AttemptIdSchema).max(64)
+  }),
+  PROFILE_PROXY: z.strictObject({
+    attemptId: RelayV2AttemptIdSchema, expected: ExpectedBaseSchema,
+    action: z.enum(['read', 'apply', 'clear', 'probe']), revision: GenerationSchema,
+    port: z.number().int().min(1).max(65535).nullable()
   }),
   INVENTORY_REQUEST: z.strictObject({
     attemptId: RelayV2AttemptIdSchema,

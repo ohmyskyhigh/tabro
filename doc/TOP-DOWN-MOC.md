@@ -21,16 +21,21 @@ This is the entry point for project knowledge. Read canonical knowledge in autho
 
 ### Canonical owners cover managed Profiles and the shared dynamic runtime
 
-The Product and UX contracts include principal-owned persistent Profiles alongside session-owned tab-group workspaces. User Interface owns MCP contract version `2`: eighteen tools, including Profile list/create/open/stop. System owns the shared local Broker, runtime discovery and recovery rules; Components assigns their owners; Files maps their source, tests and operator procedures. Follow those owners for the normative details.
+The Product and UX contracts include extension-registered Profiles with broker/user launch ownership alongside session-owned tab-group workspaces. User Interface owns MCP contract version `5`: twenty-two tools, including Profile lifecycle and authenticated proxy controls. System owns the shared local Broker, runtime discovery and recovery rules; Components assigns their owners; Files maps their source, tests and operator procedures. Follow those owners for the normative details.
 
 The source package version is recorded in `package.json`. Repository publication evidence is in [the September 30 source publication](./99-Changelog/2026-09-30-tabro-source-publication.md); publication of source does not establish publication of an equivalent installer package.
 
 ## Delivery records
 
+- [Hermes plugin package](./99-Changelog/2026-10-04-hermes-plugin-package.md) records the Windows implementation and isolated multi-profile checks. Catalog admission and fresh-machine browser qualification remain pending.
+
 ### Completed migrations and pending integration work have separate evidence
 
 - [Open-source Hermes distribution](./99-Changelog/2026-10-04-open-source-hermes-distribution.md) records approved full-component open-source scope, Broker installation during first-time setup and proxy-inclusive distribution; plugin delivery and catalog admission remain pending.
 
+- [Closed managed Profile proxies](./99-Changelog/2026-10-03-closed-managed-profile-proxy.md) records broker-only eligibility and close, configure, reopen behavior.
+
+- [Profile alias naming](./99-Changelog/2026-10-03-profile-alias-only.md) records the alias-only Profile names and MCP contract 4 deployment.
 - [Managed Profile implementation report](./80-Plans/single-agent-multi-chrome-demo-2026-09-27/implementation-report.md) records the September 27 Windows qualification and its limits.
 - [Hermes reference migration](./99-Changelog/2026-10-01-hermes-tabro-migration.md) and [shared dynamic runtime](./99-Changelog/2026-10-01-shared-dynamic-runtime.md) record the October 1 changes in execution order.
 - [Hermes Provider plan](./80-Plans/tabro-hermes-provider-2026-10-01/README.md) owns the remaining Plugin, cross-platform installation and upstream menu work. Shared-runtime consolidation is complete in that plan; those later milestones remain pending.

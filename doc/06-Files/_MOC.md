@@ -41,3 +41,9 @@ The runbook keeps Native Messaging qualification separate from direct-WebSocket 
 The active plan under [`../80-Plans`](../80-Plans/_MOC.md) retains unfinished qualification and follow-up work. A path enters this File map only after it exists; a behavior becomes verified only through its stated executable evidence.
 
 Parent: [`05-Components`](../05-Components/_MOC.md).
+
+## Profile networking
+
+### Profile proxy support follows the accepted network decision
+
+The [Profile proxy decision](../90-Proposals/Profile-Proxy.md) permits authenticated HTTP, HTTPS and SOCKS5 configuration only for closed broker-owned Profiles. The canonical owner in this directory defines its layer; [the implementation plan](../80-Plans/profile-proxy-2026-10-03/README.md) and implementation report track delivery evidence.

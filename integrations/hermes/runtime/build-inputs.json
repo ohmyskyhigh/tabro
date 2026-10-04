@@ -1,0 +1,275 @@
+{
+  "version": "0.4.0",
+  "sourceHashEncoding": "utf8-lf",
+  "packageLockSha256": "dbe5d6e79354294e518c39ee5cdc807a79490fc815cd0b44d398d8af94a0e7a9",
+  "sources": [
+    {
+      "path": "apps/broker/src/core/broker-core.ts",
+      "sha256": "c7ab84e84b32fcf19c1f5f8ca473df4a5d5eb33e9bdf14fa258464716208dda7"
+    },
+    {
+      "path": "apps/broker/src/core/command-state-machine.ts",
+      "sha256": "6c55963ec59923387b1ad0d2d3fefba4f2b332d29ef31eeb5351527ec9b030c5"
+    },
+    {
+      "path": "apps/broker/src/core/index.ts",
+      "sha256": "4a17e7aa07e0fac6f741048b51468c58df34bc25a51f612a0d6b5d93625c1875"
+    },
+    {
+      "path": "apps/broker/src/core/lease-manager.ts",
+      "sha256": "21615ee2b3999c2e1ca3fe657f2a49c1c6ea8f8454458dda5fbad4d13d989db3"
+    },
+    {
+      "path": "apps/broker/src/core/octopus/broker-problem.ts",
+      "sha256": "0bc9a53416a137b4d21d762f70a83aeffaf5085896d91507015253c14f042b37"
+    },
+    {
+      "path": "apps/broker/src/core/octopus/caller-registry.ts",
+      "sha256": "0f4c8d968a7efd27cd20c7eb5e57239d845a0bcebbea633e17e3c11b806539f8"
+    },
+    {
+      "path": "apps/broker/src/core/octopus/extension-port.ts",
+      "sha256": "eb0c9f96ae1e78648537f842314ae6f06e1bcec4964b5a8458ef4605a134690f"
+    },
+    {
+      "path": "apps/broker/src/core/octopus/mcp-presenter.ts",
+      "sha256": "9385fe82f339459dd306f2cfab79270bb0fa81833c60884c8b351836989859c0"
+    },
+    {
+      "path": "apps/broker/src/core/octopus/octopus-broker.ts",
+      "sha256": "50cf5ff4531358e0ee37f858ea660de2cf4d670efc4b398582af87e8c343b0d6"
+    },
+    {
+      "path": "apps/broker/src/core/octopus/reference-factory.ts",
+      "sha256": "8fc72b7f16d9c21ef992e92f9deaaf8378c36f3b5537bdde7770e00083701691"
+    },
+    {
+      "path": "apps/broker/src/core/octopus/request-state-machine.ts",
+      "sha256": "4ade4162638031e9fa27d92b7aeb3991aa90b9899a963f3b9cac44efac0e952a"
+    },
+    {
+      "path": "apps/broker/src/core/octopus/tab-lane.ts",
+      "sha256": "525faeda462d0941f2024b60f0dddac23d110741be84c8177d5d3af447133132"
+    },
+    {
+      "path": "apps/broker/src/core/routing-policy.ts",
+      "sha256": "40d4a71120161f532ec692340de400a82712e656c64301c182497d1b32f83fc2"
+    },
+    {
+      "path": "apps/broker/src/core/target-state-index.ts",
+      "sha256": "a074f983c560b98d6c5c1494ffdaf6cd341c4d7b35d9f4241edce9955319d578"
+    },
+    {
+      "path": "apps/broker/src/extension-relay/connection-registry.ts",
+      "sha256": "0b9b0861336650387087e4c6d85d1c5e35f6cc663544dbdc38108466e150dbeb"
+    },
+    {
+      "path": "apps/broker/src/extension-relay/index.ts",
+      "sha256": "3775f1d808c0c707eb43b8b65fe782ff3b51205e2e896bdd39f08621d4c1c5cc"
+    },
+    {
+      "path": "apps/broker/src/extension-relay/websocket-server.ts",
+      "sha256": "939076b716c8d79a73f5c0236fcba4b4c1a5cb8053944eb6e2b6caaed186a3d4"
+    },
+    {
+      "path": "apps/broker/src/mcp/auth.ts",
+      "sha256": "5f78a5aa5ab37550b443f6dd1e2f624e0573e1e8112f6dc80e473fd593d71a50"
+    },
+    {
+      "path": "apps/broker/src/mcp/caller-evidence.ts",
+      "sha256": "8fe39b8d34a0f02dcd6386073c75ca84730c775453e2bdd5fcef0000af1eebfd"
+    },
+    {
+      "path": "apps/broker/src/mcp/index.ts",
+      "sha256": "6ad34b09c180145b64bcb87c0c0d96b574e5e82ccc62b1e904f9fc69fe2029f5"
+    },
+    {
+      "path": "apps/broker/src/mcp/server.ts",
+      "sha256": "ec85630f557b4a5801e60d1c1746fcef42f4fd37fb1c043985b77c78c87aadab"
+    },
+    {
+      "path": "apps/broker/src/profiles/bootstrap-grants.ts",
+      "sha256": "bb3ef4118f75915c71e63be782507b1a6d890a3950e94480d2f65ff0d2a04c1d"
+    },
+    {
+      "path": "apps/broker/src/profiles/chrome-launcher.ts",
+      "sha256": "43d859be007c4eda0368b5d9c5407eb9ad0db3b7f939e2138a236e0e59d457a6"
+    },
+    {
+      "path": "apps/broker/src/profiles/management-connection.ts",
+      "sha256": "58eba2e9a82bb8a448af7a50143b32c29c4e09396cbb3e415a9801b2c9ef1748"
+    },
+    {
+      "path": "apps/broker/src/profiles/profile-manager.ts",
+      "sha256": "4c0c92b8d19b08978332b101f1a4c1484a91aaaf3ed622d5295fdd2f45fb2486"
+    },
+    {
+      "path": "apps/broker/src/profiles/profile-request-service.ts",
+      "sha256": "35ec37b9f5f8b07e425c5d4d92ae5822ec98fdd85ddf2b69df2768b449047c50"
+    },
+    {
+      "path": "apps/broker/src/profiles/runtime-config.ts",
+      "sha256": "e4c7cdd63f18ac58bd3325f413a24eac402a006efa5b887242261a212f03b75c"
+    },
+    {
+      "path": "apps/broker/src/profiles/types.ts",
+      "sha256": "1a9c541f283bf33ba552350c1cc4855df47bae59fa56859000d22f7905345cfd"
+    },
+    {
+      "path": "apps/broker/src/proxy/profile-network-service.ts",
+      "sha256": "cdfd47822ffd08cf10f1ea97981e470fd45fe2d54d392f5ce6619e91473a80e2"
+    },
+    {
+      "path": "apps/broker/src/proxy/proxy-credential-store.ts",
+      "sha256": "9acc44fe37f835c0c40777ac0a7a1e7f4a9ccd9c5c971ee36b7eb505ad7c6972"
+    },
+    {
+      "path": "apps/broker/src/proxy/proxy-gateway-manager.ts",
+      "sha256": "b47bb585931f85586b444f6cb019a8d4bb4879e12e87ae2996dbe401bedfef82"
+    },
+    {
+      "path": "apps/broker/src/proxy/types.ts",
+      "sha256": "6a2f8cc08fc9b9bb1e3c75604c209c9b979e05c0709ea44b595bd98fdc6002d9"
+    },
+    {
+      "path": "apps/broker/src/runtime/bootstrap.ts",
+      "sha256": "0708a34938662e79e280b58df2126e200f1995f7458407d2d0be6e9ab9bf81b4"
+    },
+    {
+      "path": "apps/broker/src/runtime/config.ts",
+      "sha256": "f892a2fd5775c02aaf14b035c059cf4a386aaefcd8b58c24690b7533b2795a11"
+    },
+    {
+      "path": "apps/broker/src/runtime/main.ts",
+      "sha256": "d7cfb5568523f4ec60a816c141318f8fbbeaa84897bee7a584a1a5978ecf06d4"
+    },
+    {
+      "path": "apps/broker/src/storage/index.ts",
+      "sha256": "a5d7189e4f110b1bb409a9d732e2a3b7d94b5b4682508b261056b7d4fe7b61d5"
+    },
+    {
+      "path": "apps/broker/src/storage/repositories.ts",
+      "sha256": "83a7d7e20398890588f62b4c6f972db30c61d28abd9d3cdd0e18f334aca77a04"
+    },
+    {
+      "path": "apps/broker/src/storage/sqlite/audit-repository.ts",
+      "sha256": "0504ade9bfab9099b522a5d7a4dc5e7dddfbb4837f198c8d9a32e0ec81774e5c"
+    },
+    {
+      "path": "apps/broker/src/storage/sqlite/database.ts",
+      "sha256": "d60df66cd3307294fcd3e6a4b83d87c6dd652724093e4cdbc678b1a6b3633ed0"
+    },
+    {
+      "path": "apps/broker/src/storage/sqlite/event-repository.ts",
+      "sha256": "670ca722b5ba008834ba2492759a5e311dfa4bf484e920fc759144182f3510b6"
+    },
+    {
+      "path": "apps/broker/src/storage/sqlite/logical-repository.ts",
+      "sha256": "f1b2a2ba36c27e57bbdd7c4a487a1b02b0e11146d4d5eee9ed5fad2b2a6dc7d8"
+    },
+    {
+      "path": "apps/broker/src/storage/sqlite/profile-repository.ts",
+      "sha256": "3498a0bb870a3ca9cb369c6e0968c0cb0fd2b467a576ccad28f71c5bba1d8464"
+    },
+    {
+      "path": "apps/broker/src/storage/sqlite/proxy-repository.ts",
+      "sha256": "fcef04b518a4bbb6afbee52f6de4a5dcef68370bdb62abdea5482d9132db1e97"
+    },
+    {
+      "path": "apps/broker/src/storage/sqlite/request-repository.ts",
+      "sha256": "2e9cdff76060e1485c84b554104ba6c15d265ba0678e9f42d265a5112bd10b02"
+    },
+    {
+      "path": "apps/broker/src/storage/sqlite/runtime.ts",
+      "sha256": "079d99b8ef98d50819c8cdc3cac8e90338e99b79b10d60a017c813160bb10f42"
+    },
+    {
+      "path": "apps/broker/src/storage/sqlite/shared.ts",
+      "sha256": "e6776b9a65f860b2729c2b34b5e6c02d2212a1a22ce2e753d8c0bf37aa1e1cc6"
+    },
+    {
+      "path": "apps/mcp-stdio-adapter/src/config.ts",
+      "sha256": "5fb55112239fe3ec539119f9cf00cefafe71d94952492b2e4c9c7b060c553e7e"
+    },
+    {
+      "path": "apps/mcp-stdio-adapter/src/demo-trace.ts",
+      "sha256": "bbdfec0478ba4e10c42b6856bb35ee042de3908fa72632e8f04f44668ca25ba4"
+    },
+    {
+      "path": "apps/mcp-stdio-adapter/src/main.ts",
+      "sha256": "ce13e9e4093862d3c3a71b3e14088c167d16433bc2849b071520b876adea653e"
+    },
+    {
+      "path": "apps/mcp-stdio-adapter/src/server.ts",
+      "sha256": "a0eac1f1c388399a1b61a8601282370d70ab5e957ea7e88dc99e7a0dd722b8db"
+    },
+    {
+      "path": "apps/shared/protocol/capabilities/extension-baseline.json",
+      "sha256": "0c59e7c79555b68470b339bc9ab69b2450dea64ab80b697310eea7defaf3aa30"
+    },
+    {
+      "path": "apps/shared/protocol/src/capabilities/manifest.ts",
+      "sha256": "4d1640a4da8eb6c5c5dd5cd36ab65b054ec9b8dd18c4a569794ade4e5cfadd87"
+    },
+    {
+      "path": "apps/shared/protocol/src/domain-types.ts",
+      "sha256": "fccaa3b3f1c5006d86a2180937028f10d91d4c0939e1cb0e0f69c87712daf420"
+    },
+    {
+      "path": "apps/shared/protocol/src/domain/facts.ts",
+      "sha256": "44e57547ff7e992b5c4071121f7c92fc671bacedd06151d1cf2972e77a0db01f"
+    },
+    {
+      "path": "apps/shared/protocol/src/domain/references.ts",
+      "sha256": "48121bf5e8b15cef1aa460e41bece46efd62ed7ef18a26a3e97f22c97478458c"
+    },
+    {
+      "path": "apps/shared/protocol/src/error-codes.ts",
+      "sha256": "1753a2a3a92ab244888e21538e298063704f28180066c8c89d6e31255a665adc"
+    },
+    {
+      "path": "apps/shared/protocol/src/index.ts",
+      "sha256": "093c24edbe129bbbf946091fd9548915edd055021eced923d5edc7e33cde8950"
+    },
+    {
+      "path": "apps/shared/protocol/src/mcp/tool-catalog.ts",
+      "sha256": "9034b7c4af92c773c0640d1788c13e747edc385510f68aa7bce769fe34bd54ce"
+    },
+    {
+      "path": "apps/shared/protocol/src/mcp/validators.ts",
+      "sha256": "c25b04b45e979ef10bc1abf2e31dc6d3d75432fa9068d301439da0f5f0909a4f"
+    },
+    {
+      "path": "apps/shared/protocol/src/relay-messages.ts",
+      "sha256": "e76f2e4d019fc4f6f95cba7143177197c417e47d2bcc1eb90e769d47861c301d"
+    },
+    {
+      "path": "apps/shared/protocol/src/relay/v2-messages.ts",
+      "sha256": "25f213a0948c994dcf369bf92ee8f28f1d7dad3d18cc5b81e41164be2954f0a3"
+    },
+    {
+      "path": "apps/shared/protocol/src/runtime-discovery.ts",
+      "sha256": "d8592c73d97b3762a7cc5046de3c55fc8a648e65ae6dc687ff4266c48dcb053b"
+    },
+    {
+      "path": "apps/shared/protocol/src/schemas.ts",
+      "sha256": "ee0a3d96c8fd29ee63574d03e567d99c28ebeb2c0da777b9086eeb3efbaa2e4a"
+    },
+    {
+      "path": "apps/shared/protocol/src/version.ts",
+      "sha256": "f2bc1dd556fab8f213b1ddd58d55b332fb70f5ca05ced88e7a671017bc440bf4"
+    },
+    {
+      "path": "doc/03-User-Interface/MCP-Contract.schema.json",
+      "sha256": "70e13f39b30048afc47f685ed7c70be619893885c0b28e518da8bdc8bf189f6d"
+    },
+    {
+      "path": "tools/provision-proxy-credential.ts",
+      "sha256": "5ac8d9ae2e8ffff3331a0d80b7068bfa10bc672e07e4690fd8c06d7a931f9255"
+    }
+  ],
+  "nativeSource": {
+    "path": "apps/native-host/src/relay-native-host.cpp",
+    "sha256": "d10c2ed6af2683a53572d8d22c8e0c1ba6e15fd8b2c0c27e1c1c216b7a4a7bad"
+  }
+}

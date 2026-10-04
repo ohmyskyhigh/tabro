@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { ProfileManager } from '../../profiles/profile-manager.js';
+import type { ProfileNetworkService } from '../../proxy/profile-network-service.js';
+import { isProxyOperation } from '../../proxy/types.js';
 import { ProfileRequestService, isProfileOperation } from '../../profiles/profile-request-service.js';
 import { ProfileError, type ProfileAuthority } from '../../profiles/types.js';
 import { PublicProblemCodes } from '../../../../shared/protocol/src/error-codes.js';
 import {
   CONSERVATIVE_CAPABILITY_MANIFEST,
+  MCP_CONTRACT_VERSION,
   supportsCdpMethod,
   type McpAsyncToolName,
   type RelayV2PayloadByType
@@ -79,6 +82,8 @@ const browserRefFor = (endpointRef: string): string => `brw_${Buffer.from(endpoi
 
 export class OctopusBroker implements ExtensionEventSink {
   private profileManager: ProfileManager | null = null;
+  private network: ProfileNetworkService | null = null;
+  setNetworkService(service: ProfileNetworkService): void { this.network = service; }
   private profileRequests: ProfileRequestService | null = null;
   private readonly managementAuthorities = new Map<string, ProfileAuthority>();
 
@@ -208,7 +213,17 @@ export class OctopusBroker implements ExtensionEventSink {
     const caller = this.resolveCaller(evidence);
     try {
       const input = isObject(rawInput) ? rawInput : {};
+      if (isProxyOperation(tool)) {
+        if (!this.network) throw new ProfileError('PROXY_UNSUPPORTED');
+        return this.network.submit(tool, input, evidence.managementAuthority, caller);
+      }
       if (isProfileOperation(tool)) {
+        if (typeof input.profile_ref === 'string') this.network?.assertLifecycle(input.profile_ref);
+        if (tool !== 'create_browser_profile' && typeof input.profile_ref === 'string'
+          && this.repositories.logical.getEndpoint(input.profile_ref)
+          && !this.repositories.profiles.forEndpoint(input.profile_ref)) {
+          throw new ProfileError('PROFILE_USER_OWNED', 'Open this user-owned Chrome profile manually, then use its connected extension through a workspace.');
+        }
         if (!this.profileRequests) throw new ProfileError('PROFILE_MANAGEMENT_UNAVAILABLE');
         return this.profileRequests.submit(tool, input, evidence.managementAuthority, caller);
       }
@@ -240,12 +255,63 @@ export class OctopusBroker implements ExtensionEventSink {
     }
   }
 
+  getBrowserProxy(rawInput: unknown, evidence: CallerEvidence): JsonObject {
+    const caller = this.resolveCaller(evidence);
+    try {
+      if (!this.network) throw new ProfileError('PROXY_UNSUPPORTED');
+      return this.network.get(isObject(rawInput) ? rawInput : {}, evidence.managementAuthority, caller);
+    } catch (error) { return rejectedRead(caller, this.publicProblem(error)); }
+  }
+
   listBrowserProfiles(rawInput: unknown, evidence: CallerEvidence): JsonObject {
     const caller = this.resolveCaller(evidence);
     try {
-      if (!this.profileRequests) throw new ProfileError('PROFILE_MANAGEMENT_UNAVAILABLE');
-      return this.profileRequests.list(isObject(rawInput) ? rawInput : {}, evidence.managementAuthority, caller);
+      const input = isObject(rawInput) ? rawInput : {};
+      const limit = this.pageSize(input.limit ?? 50);
+      const query = `registered_profiles:${evidence.managementAuthority?.principalId ?? ''}`;
+      let after = '';
+      if (input.cursor !== undefined) {
+        const entry = typeof input.cursor === 'string' ? this.cursors.get(input.cursor) : undefined;
+        if (!entry || entry.callerSessionRef !== caller.sessionRef || entry.query !== query) {
+          throw new OctopusBrokerError(problem('CURSOR_INVALID', 'The pagination cursor does not match this Profile query.'));
+        }
+        after = entry.after;
+      }
+      const page = this.repositories.logical.listEndpoints({ limit, after, registeredOnly: true });
+      let nextCursor: string | null = null;
+      if (page.next !== null) {
+        nextCursor = this.references.issue('cursor');
+        this.cursors.set(nextCursor, { callerSessionRef: caller.sessionRef, query, after: page.next });
+      }
+      return completeRead(caller, {
+        profiles: page.items.map(endpoint => this.registeredProfileFact(endpoint)),
+        next_cursor: nextCursor, returned_count: page.items.length
+      });
     } catch (error) { return rejectedRead(caller, this.publicProblem(error)); }
+  }
+
+  private registeredProfileFact(endpoint: StoredEndpoint): JsonObject {
+    const profile = this.repositories.profiles.forEndpoint(endpoint.endpointRef);
+    const instance = profile ? this.repositories.profiles.currentInstance(profile.profileRef) : null;
+    const connection = this.repositories.logical.getCurrentConnection(endpoint.endpointRef);
+    const connected = this.isEndpointConnected(endpoint.endpointRef);
+    const windows = this.repositories.logical.listWindows(endpoint.endpointRef)
+      .filter(window => connection !== null && this.locatorUsesConnection(window.privateWindowKey, connection.connectionGeneration));
+    return {
+      ...(this.network ? { proxy: this.network.summary(profile?.profileRef ?? endpoint.endpointRef) } : {}),
+      profile_ref: profile?.profileRef ?? endpoint.endpointRef,
+      ownership: profile ? 'broker' : 'user',
+      endpoint_nickname: endpoint.nickname,
+      instance_ref: instance?.instanceRef ?? null,
+      browser_state: connected ? 'running' : profile ? instance?.browserState ?? 'stopped' : 'unknown',
+      extension_state: connected ? 'connected' : 'disconnected',
+      ready: this.isEndpointReady(endpoint.endpointRef) && windows.some(window => window.eligible),
+      automation_paused: this.repositories.logical.getEndpointKillState(endpoint.endpointRef).killed
+        || this.repositories.logical.listActiveWorkspaces({ endpointRef: endpoint.endpointRef }).some(workspace => workspace.pauseCauses.length > 0),
+      problem_code: connected ? null : profile?.problemCode ?? null,
+      observed_at: windows.reduce((latest, window) => window.lastObservedAt > latest ? window.lastObservedAt : latest,
+        [endpoint.updatedAt, instance?.observedAt ?? ''].sort().at(-1)!)
+    };
   }
 
   getBrowserRequest(rawInput: unknown, evidence: CallerEvidence): JsonObject {
@@ -280,10 +346,25 @@ export class OctopusBroker implements ExtensionEventSink {
           required_arguments: ['decision']
         });
       }
-      return completeRead(caller, { ticket: requestTicketFacts(ticket) }, actions);
+      return completeRead(caller, { ticket: requestTicketFacts(this.ticketWithLaunchOwnership(ticket)) }, actions);
     } catch (error) {
       return rejectedRead(caller, this.publicProblem(error));
     }
+  }
+
+  /** Enrich historical endpoint facts without rewriting history or raw CDP. */
+  private ticketWithLaunchOwnership(ticket: StoredRequestTicket): StoredRequestTicket {
+    if (!isObject(ticket.result)) return ticket;
+    const result = { ...ticket.result };
+    if (ticket.toolName === 'kill_browser_endpoint' || ticket.toolName === 'resume_browser_endpoint') {
+      const facts = result.facts;
+      if (isObject(facts) && isObject(facts.endpoint) && facts.endpoint.ownership === undefined) {
+        const endpointRef = String(facts.endpoint.extension_ref);
+        result.facts = { ...facts, endpoint: { ...facts.endpoint,
+          ownership: this.repositories.profiles.forEndpoint(endpointRef) ? 'broker' : 'user' } };
+      }
+    }
+    return { ...ticket, result };
   }
 
   closeBrowserRequest(rawInput: unknown, evidence: CallerEvidence): JsonObject {
@@ -303,7 +384,7 @@ export class OctopusBroker implements ExtensionEventSink {
       }
       if (!this.repositories.requests.closeRequest({
         requestRef,
-        authoritySessionRef: isProfileOperation(ticket.toolName) ? ticket.authoritySessionRef : caller.sessionRef,
+        authoritySessionRef: isProfileOperation(ticket.toolName) || isProxyOperation(ticket.toolName) ? ticket.authoritySessionRef : caller.sessionRef,
         ...(ticket.acceptedOwnerEpoch === null ? {} : { expectedOwnerEpoch: ticket.acceptedOwnerEpoch })
       })) {
         throw new OctopusBrokerError(problem('REQUEST_NOT_FOUND', 'Request authority changed before closure.', false, { request_ref: requestRef }));
@@ -356,7 +437,7 @@ export class OctopusBroker implements ExtensionEventSink {
         .filter((event) => filters.length === 0 || filters.includes(event.method))
         .map((event) => ({ method: event.method, params: event.params, received_at: event.observedAt }));
       return {
-        contract_version: '2',
+        contract_version: MCP_CONTRACT_VERSION,
         disposition: 'complete',
         observed_at: new Date().toISOString(),
         caller: callerFacts(caller),
@@ -378,7 +459,7 @@ export class OctopusBroker implements ExtensionEventSink {
     } catch (error) {
       const rejectedProblem = this.publicProblem(error);
       return {
-        contract_version: '2', disposition: 'rejected', observed_at: new Date().toISOString(), caller: callerFacts(caller),
+        contract_version: MCP_CONTRACT_VERSION, disposition: 'rejected', observed_at: new Date().toISOString(), caller: callerFacts(caller),
         problem: rejectedProblem, facts: null, available_actions: []
       };
     }
@@ -611,7 +692,7 @@ export class OctopusBroker implements ExtensionEventSink {
     for (const selection of byNickname.values()) {
       const endpoint = this.repositories.logical.getEndpointByNickname(selection.endpoint_nickname);
       if (!endpoint) throw new OctopusBrokerError(problem('ENDPOINT_NOT_FOUND', `No endpoint is named ${selection.endpoint_nickname}.`, false, { endpoint_nickname: selection.endpoint_nickname }));
-      if (this.profileManager?.blocksEndpoint(endpoint.endpointRef)) throw new OctopusBrokerError(problem('ENDPOINT_UNAVAILABLE', 'This Profile is stopping.', true));
+      if ((this.profileManager?.blocksEndpoint(endpoint.endpointRef) || this.network?.blocksEndpoint(endpoint.endpointRef))) throw new OctopusBrokerError(problem('ENDPOINT_UNAVAILABLE', 'This Profile is stopping.', true));
       if (!this.isEndpointConnected(endpoint.endpointRef)) throw new OctopusBrokerError(problem('ENDPOINT_UNAVAILABLE', `Endpoint ${selection.endpoint_nickname} is not connected.`, true, { endpoint_nickname: selection.endpoint_nickname }));
       if (selection.window_ref) {
         const window = this.repositories.logical.getWindow(selection.window_ref);
@@ -620,7 +701,7 @@ export class OctopusBroker implements ExtensionEventSink {
       }
     }
     const endpoints = this.repositories.logical.listEndpoints({ limit: 200 }).items
-      .filter((endpoint) => this.isEndpointConnected(endpoint.endpointRef) && !this.profileManager?.blocksEndpoint(endpoint.endpointRef))
+      .filter((endpoint) => this.isEndpointConnected(endpoint.endpointRef) && !(this.profileManager?.blocksEndpoint(endpoint.endpointRef) || this.network?.blocksEndpoint(endpoint.endpointRef)))
       .sort((left, right) => left.nickname.localeCompare(right.nickname));
     for (const endpoint of endpoints) {
       if (byNickname.size >= count) break;
@@ -671,6 +752,7 @@ export class OctopusBroker implements ExtensionEventSink {
   }
 
   private canReadTicket(caller: StoredCallerSession, ticket: StoredRequestTicket): boolean {
+    if (isProxyOperation(ticket.toolName)) return this.network?.canRead(ticket, this.managementAuthorities.get(caller.sessionRef)) ?? false;
     if (isProfileOperation(ticket.toolName)) return this.profileRequests?.canRead(ticket, this.managementAuthorities.get(caller.sessionRef)) ?? false;
     if (ticket.authorityScope === 'requester') return ticket.requesterSessionRef === caller.sessionRef;
     return ticket.authoritySessionRef === caller.sessionRef || ticket.authorityLineageRef === caller.lineageRef;
@@ -863,6 +945,10 @@ export class OctopusBroker implements ExtensionEventSink {
   }
 
   private async executeClaim(ticket: StoredRequestTicket): Promise<void> {
+    if (isProxyOperation(ticket.toolName)) {
+      if (!this.network) throw new ProfileError('PROXY_UNSUPPORTED');
+      await this.network.execute(ticket); return;
+    }
     if (isProfileOperation(ticket.toolName)) {
       if (!this.profileRequests) throw new ProfileError('PROFILE_MANAGEMENT_UNAVAILABLE');
       await this.profileRequests.execute(ticket); return;
@@ -963,7 +1049,7 @@ export class OctopusBroker implements ExtensionEventSink {
     window: StoredLogicalWindow,
     ordinal: number
   ): Promise<{ workspace: StoredWorkspace; tab: StoredManagedTab }> {
-    if (this.profileManager?.blocksEndpoint(endpoint.endpointRef)) throw new OctopusBrokerError(problem('ENDPOINT_UNAVAILABLE', 'This Profile is stopping.', true));
+    if ((this.profileManager?.blocksEndpoint(endpoint.endpointRef) || this.network?.blocksEndpoint(endpoint.endpointRef))) throw new OctopusBrokerError(problem('ENDPOINT_UNAVAILABLE', 'This Profile is stopping.', true));
     const creation = await this.createTabReliably(ticket, endpoint.endpointRef, window.windowRef, null);
     const connection = this.requireConnection(endpoint.endpointRef);
     const createdTab = creation.rawTab;
@@ -2219,6 +2305,7 @@ export class OctopusBroker implements ExtensionEventSink {
           cause: 'workspace_missing_after_reconnect',
           at: payload.capturedAt
         });
+        this.retireMissingIdleWorkspace(workspaceSnapshot, payload);
         continue;
       }
 
@@ -2319,6 +2406,43 @@ export class OctopusBroker implements ExtensionEventSink {
     return true;
   }
 
+  private retireMissingIdleWorkspace(workspace: StoredWorkspace, inventory: RelayV2PayloadByType['INVENTORY_SNAPSHOT']): void {
+    const connection = this.extensionPort?.connection(workspace.endpointRef);
+    if (!connection?.connected || connection.connectionGeneration !== inventory.connectionGeneration
+      || inventory.inventoryGeneration < connection.inventoryGeneration) return;
+    const liveTabIds = new Set(inventory.windows.flatMap(window => window.tabs.map(tab => tab.tabId)));
+    this.repositories.transaction(({ logical, requests, audit }) => {
+      const current = logical.getWorkspace(workspace.workspaceRef);
+      if (!current || current.lifecycle !== 'active' || current.controlEpoch !== workspace.controlEpoch
+        || current.ownerEpoch !== workspace.ownerEpoch || current.privateGroupKey !== workspace.privateGroupKey
+        || logical.getActiveEndpointControl(workspace.endpointRef)) return;
+      if (requests.scanRequestRecovery().requests.some(ticket => ticket.workspaceRef === workspace.workspaceRef
+        || ticket.toolName === 'request_browser_workspace'
+        || (ticket.endpointRef === workspace.endpointRef && ['kill_browser_endpoint', 'resume_browser_endpoint'].includes(ticket.toolName)))) return;
+      const tabs = logical.listWorkspaceTabs(workspace.workspaceRef);
+      for (const tab of tabs) {
+        if (tab.lifecycle !== 'active') continue;
+        try {
+          if (liveTabIds.has(Number(parsePrivate<JsonObject>(tab.privateTabKey, 'tab').tabId))) return;
+        } catch { return; }
+      }
+      const claimed = logical.claimWorkspaceControl({ workspaceRef: workspace.workspaceRef,
+        expectedControlEpoch: workspace.controlEpoch, at: inventory.capturedAt });
+      if (!claimed) return;
+      const ended = logical.finishWorkspaceTermination({ workspaceRef: workspace.workspaceRef,
+        expectedControlEpoch: claimed.controlEpoch, succeeded: true, at: inventory.capturedAt });
+      if (!ended) throw new Error('Missing workspace changed during retirement.');
+      for (const tab of tabs.filter(tab => tab.lifecycle === 'active')) {
+        logical.updateTab({ workspaceRef: workspace.workspaceRef, tabRef: tab.tabRef,
+          expectedLocatorGeneration: tab.locatorGeneration, lifecycle: 'closed', observedAt: inventory.capturedAt });
+      }
+      for (const cause of ended.pauseCauses) logical.clearWorkspacePauseCause({ workspaceRef: workspace.workspaceRef, cause, at: inventory.capturedAt });
+      audit.append({ auditRef: `aud_${randomUUID()}`, eventType: 'workspace.missing_ended', endpointRef: workspace.endpointRef,
+        workspaceRef: workspace.workspaceRef, context: { reason: 'group_and_tabs_absent',
+          connection_generation: inventory.connectionGeneration, inventory_generation: inventory.inventoryGeneration }, observedAt: inventory.capturedAt });
+    });
+  }
+
   private reconcileEventStream(tab: StoredManagedTab, workspace: StoredWorkspace, reset: boolean, observedAt: string): void {
     const existing = this.repositories.events.scanEventRecovery().streams
       .find((stream) => stream.tabRef === tab.tabRef && stream.state === 'active');
@@ -2339,7 +2463,7 @@ export class OctopusBroker implements ExtensionEventSink {
   }
 
   private mostRecentWindow(endpointRef: string): StoredLogicalWindow | null {
-    if (this.profileManager?.blocksEndpoint(endpointRef)) return null;
+    if ((this.profileManager?.blocksEndpoint(endpointRef) || this.network?.blocksEndpoint(endpointRef))) return null;
     const connection = this.repositories.logical.getCurrentConnection(endpointRef);
     if (!connection) return null;
     const eligible = this.repositories.logical.listWindows(endpointRef)
@@ -2409,6 +2533,7 @@ export class OctopusBroker implements ExtensionEventSink {
     return {
       window_ref: window.windowRef,
       endpoint_nickname: endpoint?.nickname ?? 'unknown-endpoint',
+      ownership: this.repositories.profiles.forEndpoint(window.endpointRef) ? 'broker' : 'user',
       eligible_for_workspace: window.eligible,
       eligibility_reason: window.eligible ? null : 'window_not_eligible',
       last_focused_at: window.lastFocusedAt,
@@ -2422,6 +2547,7 @@ export class OctopusBroker implements ExtensionEventSink {
     const activeControl = this.repositories.logical.getActiveEndpointControl(endpoint.endpointRef);
     return {
       endpoint_nickname: endpoint.nickname,
+      ownership: this.repositories.profiles.forEndpoint(endpoint.endpointRef) ? 'broker' : 'user',
       extension_ref: endpoint.endpointRef,
       browser_ref: connection ? browserRefFor(endpoint.endpointRef) : null,
       condition: connection ? (this.isEndpointReady(endpoint.endpointRef) ? 'usable' : 'busy') : 'offline',
@@ -2493,7 +2619,7 @@ export class OctopusBroker implements ExtensionEventSink {
   }
 
   private isEndpointReady(endpointRef: string): boolean {
-    return this.isEndpointConnected(endpointRef) && !this.pendingEndpointReconciliation.has(endpointRef);
+    return this.isEndpointConnected(endpointRef) && !this.pendingEndpointReconciliation.has(endpointRef) && !this.network?.blocksEndpoint(endpointRef);
   }
 
   private locatorUsesConnection(privateKey: string, connectionGeneration: number): boolean {

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "tabro": {
+      "type": "stdio",
+      "command": "powershell.exe",
+      "args": ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", "${PLUGIN_ROOT}/launch.ps1"],
+      "env": { "TABRO_RUNTIME": "hermes" }
+    }
+  }
+}

@@ -3,6 +3,7 @@ import type {
   StoredRequestTicket
 } from '../../storage/index.js';
 import type { PublicProblem } from './broker-problem.js';
+import { MCP_CONTRACT_VERSION } from '../../../../shared/protocol/src/mcp/tool-catalog.js';
 
 export type JsonObject = Record<string, unknown>;
 
@@ -23,7 +24,25 @@ const checkpoint = (ticket: StoredRequestTicket): JsonObject => {
   };
 };
 
-export const requestTicketFacts = (ticket: StoredRequestTicket): JsonObject => {
+const isRecord = (value: unknown): value is JsonObject => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/** Enrich pre-v3 Profile ownership without changing stored results or raw CDP data. */
+const profileTicketForMcp = (ticket: StoredRequestTicket): StoredRequestTicket => {
+  if (!['create_browser_profile', 'open_browser_profile', 'stop_browser_profile'].includes(ticket.toolName)) return ticket;
+  if (!isRecord(ticket.result)) return ticket;
+  const result = { ...ticket.result };
+  for (const key of ['facts', 'known_facts']) {
+    const facts = result[key];
+    if (isRecord(facts) && isRecord(facts.profile)) {
+      const profile = { ...facts.profile, ownership: facts.profile.ownership ?? 'broker' };
+      result[key] = { ...facts, profile };
+    }
+  }
+  return { ...ticket, result };
+};
+
+export const requestTicketFacts = (storedTicket: StoredRequestTicket): JsonObject => {
+  const ticket = profileTicketForMcp(storedTicket);
   const terminal = ticket.state === 'succeeded' || ticket.state === 'failed' || ticket.state === 'uncertain';
   return {
     request_ref: ticket.requestRef,
@@ -57,7 +76,7 @@ export const closeAction = (requestRef: string): JsonObject => ({
 });
 
 export const acceptedSubmission = (caller: StoredCallerSession, ticket: StoredRequestTicket): JsonObject => ({
-  contract_version: '2',
+  contract_version: MCP_CONTRACT_VERSION,
   disposition: 'accepted',
   observed_at: new Date().toISOString(),
   caller: callerFacts(caller),
@@ -67,7 +86,7 @@ export const acceptedSubmission = (caller: StoredCallerSession, ticket: StoredRe
 });
 
 export const rejectedSubmission = (caller: StoredCallerSession, rejectedProblem: PublicProblem): JsonObject => ({
-  contract_version: '2',
+  contract_version: MCP_CONTRACT_VERSION,
   disposition: 'rejected',
   observed_at: new Date().toISOString(),
   caller: callerFacts(caller),
@@ -81,7 +100,7 @@ export const completeRead = (
   facts: JsonObject,
   availableActions: JsonObject[] = []
 ): JsonObject => ({
-  contract_version: '2',
+  contract_version: MCP_CONTRACT_VERSION,
   disposition: 'complete',
   observed_at: new Date().toISOString(),
   caller: callerFacts(caller),
@@ -91,7 +110,7 @@ export const completeRead = (
 });
 
 export const rejectedRead = (caller: StoredCallerSession, rejectedProblem: PublicProblem): JsonObject => ({
-  contract_version: '2',
+  contract_version: MCP_CONTRACT_VERSION,
   disposition: 'rejected',
   observed_at: new Date().toISOString(),
   caller: callerFacts(caller),

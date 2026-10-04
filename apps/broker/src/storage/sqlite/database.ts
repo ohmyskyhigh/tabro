@@ -26,6 +26,7 @@ import { SqliteAuditRepository } from './audit-repository.js';
 import { SqliteEventRepository } from './event-repository.js';
 import { SqliteLogicalRepository } from './logical-repository.js';
 import { SqliteRequestRepository } from './request-repository.js';
+import { SqliteProxyRepository } from './proxy-repository.js';
 import { SqliteProfileRepository } from './profile-repository.js';
 import { NodeSqliteDatabase, type SqliteDatabase } from './runtime.js';
 
@@ -124,6 +125,7 @@ export class SqliteRelayStore implements RelayRepositories {
   private readonly db: SqliteDatabase;
   readonly canonical: CanonicalRepositories;
   readonly profiles: SqliteProfileRepository;
+  readonly proxies: SqliteProxyRepository;
 
   constructor(databasePath: string) {
     const existingDatabase = databasePath !== ':memory:' && existsSync(databasePath);
@@ -134,7 +136,9 @@ export class SqliteRelayStore implements RelayRepositories {
     this.db.pragma('busy_timeout = 5000');
     try { this.migrate(existingDatabase ? databasePath : null); } catch (error) { this.db.close(); throw error; }
     this.profiles = new SqliteProfileRepository(this.db);
+    this.proxies = new SqliteProxyRepository(this.db);
     const repositories: CanonicalRepositorySet = {
+      profiles: this.profiles,
       logical: new SqliteLogicalRepository(this.db),
       requests: new SqliteRequestRepository(this.db),
       events: new SqliteEventRepository(this.db),
@@ -153,7 +157,9 @@ export class SqliteRelayStore implements RelayRepositories {
       { version: 3, sql: readFileSync(new URL('./migrations/003-agent-target-bindings.sql', import.meta.url), 'utf8') },
       { version: 4, sql: readFileSync(new URL('./migrations/004-workspaces-requests.sql', import.meta.url), 'utf8') },
       { version: 5, sql: readFileSync(new URL('./migrations/005-window-focus-history.sql', import.meta.url), 'utf8') },
-      { version: 6, sql: readFileSync(new URL('./migrations/006-managed-profiles.sql', import.meta.url), 'utf8') }
+      { version: 6, sql: readFileSync(new URL('./migrations/006-managed-profiles.sql', import.meta.url), 'utf8') },
+      { version: 7, sql: readFileSync(new URL('./migrations/007-profile-alias-only.sql', import.meta.url), 'utf8') },
+      { version: 8, sql: readFileSync(new URL('./migrations/008-profile-proxy.sql', import.meta.url), 'utf8') }
     ];
     this.db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
     if (backupSource && !this.db.prepare('SELECT 1 FROM schema_migrations WHERE version=6').get()) {
@@ -164,6 +170,13 @@ export class SqliteRelayStore implements RelayRepositories {
       if (applied) continue;
       this.db.transaction(() => {
         this.db.exec(migration.sql);
+        if (migration.version === 7) {
+          const update = this.db.prepare('UPDATE profile_create_keys SET body_hash=? WHERE principal_id=? AND idempotency_key=?');
+          for (const row of this.db.prepare('SELECT principal_id,idempotency_key FROM profile_create_keys').all()) {
+            const key = String(row.idempotency_key);
+            update.run(hashSecret(JSON.stringify({ idempotency_key: key })), String(row.principal_id), key);
+          }
+        }
         this.db.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)').run(migration.version, nowIso());
       })();
     }

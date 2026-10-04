@@ -5,6 +5,7 @@ import type {
   CommandState,
   RoutingDecision
 } from '../../../shared/protocol/src/index.js';
+import type { ProfileCatalogRepository } from '../profiles/types.js';
 
 export interface StoredTarget {
   targetId: string;
@@ -395,7 +396,7 @@ export interface LogicalRepository {
   }): StoredEndpoint;
   getEndpoint(endpointRef: string): StoredEndpoint | null;
   getEndpointByNickname(nickname: string): StoredEndpoint | null;
-  listEndpoints(query: PageQuery): Page<StoredEndpoint>;
+  listEndpoints(query: PageQuery & { registeredOnly?: boolean }): Page<StoredEndpoint>;
   getCurrentConnection(endpointRef: string): StoredEndpointConnection | null;
   openEndpointConnection(input: {
     endpointRef: string;
@@ -685,6 +686,7 @@ export interface AuditRepository {
 }
 
 export interface CanonicalRepositorySet {
+  profiles: ProfileCatalogRepository;
   logical: LogicalRepository;
   requests: RequestRepository;
   events: EventRepository;

@@ -1,6 +1,7 @@
 import type { WebSocket } from 'ws';
 
 export interface LiveExtensionConnection {
+  profileProxy?: boolean;
   targetId: string;
   /** Canonical broker-private endpoint reference. Present on relay-v2 sessions. */
   endpointRef?: string;

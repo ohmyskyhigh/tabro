@@ -5,6 +5,7 @@ import {
   type RelayV2MessageType,
   type RelayV2PayloadByType
 } from '../../../shared/protocol/src/relay/v2-messages.js';
+import { ExtensionProxyController } from '../proxy/proxy-controller.js';
 import { detectBrowserDescriptor, type BrowserDescriptor } from '../browser/browser-descriptor.js';
 import {
   ExtensionAdapterError,
@@ -23,6 +24,7 @@ import type {
 } from '../executor/recent-command-cache.js';
 
 type MutationType =
+  | 'PROFILE_PROXY'
   | 'CREATE_TAB'
   | 'GROUP_TABS'
   | 'MOVE_TAB'
@@ -61,6 +63,7 @@ interface OperationObserved {
 }
 
 const mutationTypes = new Set<RelayV2MessageType>([
+  'PROFILE_PROXY',
   'CREATE_TAB',
   'GROUP_TABS',
   'MOVE_TAB',
@@ -78,6 +81,7 @@ const asJsonObject = (value: unknown): JsonObject => {
 };
 
 export class RelayDispatcher {
+  private proxy: ExtensionProxyController | null = null;
   private readonly activeAttempts = new Set<string>();
   private readonly browser: BrowserDescriptor;
   private readonly events: CdpEventForwarder;
@@ -209,6 +213,7 @@ export class RelayDispatcher {
 
   private async execute(type: MutationType, payload: RelayV2PayloadByType[MutationType]): Promise<JsonObject> {
     switch (type) {
+      case 'PROFILE_PROXY': return asJsonObject(await (this.proxy ??= new ExtensionProxyController()).execute(relayV2PayloadSchemas.PROFILE_PROXY.parse(payload)));
       case 'CREATE_TAB': {
         const input = relayV2PayloadSchemas.CREATE_TAB.parse(payload);
         const result = await this.dependencies.tabGroups.createTab({

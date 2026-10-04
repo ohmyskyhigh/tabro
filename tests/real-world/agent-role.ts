@@ -23,7 +23,7 @@ const manifest = RealWorldRunManifestSchema.parse(JSON.parse(readFileSync(resolv
 const agent = manifest.agents.find((candidate) => candidate.role === role)!;
 const token = readFileSync(agent.tokenFile, 'utf8').trim();
 const client = new Client({ name: `real-world-agent-${role}`, version: manifest.brokerVersion }, { versionNegotiation: { mode: 'auto' } });
-await client.connect(new StreamableHTTPClientTransport(new URL(manifest.mcpUrl), { requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${token}` } } }));
+await client.connect(new StreamableHTTPClientTransport(new URL(manifest.mcpUrl), { requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${token}` } } }));
 const myBinding = await callMcp('get_my_binding', {});
 const bindingRef = String(myBinding.bindingRef);
 const sessions = new Map<string, string>();

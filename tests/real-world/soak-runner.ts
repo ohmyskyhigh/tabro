@@ -76,7 +76,7 @@ try {
     const token = readFileSync(agent.tokenFile, 'utf8').trim();
     const client = new Client({ name: `soak-agent-${agent.role}`, version: manifest.brokerVersion }, { versionNegotiation: { mode: 'auto' } });
     await client.connect(new StreamableHTTPClientTransport(new URL(manifest.mcpUrl), {
-      requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${token}` } }
+      requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${token}` } }
     }));
     clients.push(client);
     const binding = await call(client, 'get_my_binding', {});

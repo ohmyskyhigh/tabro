@@ -5,7 +5,7 @@ import type { SqliteDatabase } from './runtime.js';
 import { nullableString, type Row } from './shared.js';
 
 const profile = (row: Row): ManagedProfile => ({
-  profileRef: String(row.profile_ref), displayName: String(row.display_name), principalId: String(row.principal_id),
+  profileRef: String(row.profile_ref), principalId: String(row.principal_id),
   dataDirKey: String(row.data_dir_key), runtimeRef: String(row.runtime_ref), endpointRef: nullableString(row.endpoint_ref),
   identityHash: nullableString(row.identity_hash), problemCode: nullableString(row.problem_code),
   createdAt: String(row.created_at), updatedAt: String(row.updated_at)
@@ -24,15 +24,16 @@ export class SqliteProfileRepository {
 
   transaction<T>(work: () => T): T { return this.db.transaction(work)(); }
 
-  reserveCreation(input: { principalId: string; key: string; bodyHash: string; displayName: string; runtimeRef: string },
+  reserveCreation(input: { principalId: string; key: string; bodyHash: string; runtimeRef: string },
     acceptTicket: (value: ManagedProfile) => string): { profile: ManagedProfile; requestRef: string; reused: boolean } {
     return this.transaction(() => {
       const existing = this.findCreation(input.principalId, input.key);
       if (existing) {
+        const value = this.get(existing.profileRef)!;
         if (existing.bodyHash !== input.bodyHash) throw new ProfileError('IDEMPOTENCY_CONFLICT');
-        return { profile: this.get(existing.profileRef)!, requestRef: existing.requestRef, reused: true };
+        return { profile: value, requestRef: existing.requestRef, reused: true };
       }
-      const value = this.create(input.principalId, input.displayName, input.runtimeRef);
+      const value = this.create(input.principalId, input.runtimeRef);
       const requestRef = acceptTicket(value);
       this.associateRequest({ requestRef, profileRef: value.profileRef, principalId: input.principalId });
       this.recordCreation(input.principalId, input.key, input.bodyHash, value.profileRef, requestRef);
@@ -40,12 +41,12 @@ export class SqliteProfileRepository {
     });
   }
 
-  create(principalId: string, displayName: string, runtimeRef: string): ManagedProfile {
+  create(principalId: string, runtimeRef: string): ManagedProfile {
     const id = randomUUID();
     const timestamp = new Date().toISOString();
     const ref = `prf_${id}`;
-    this.db.prepare(`INSERT INTO managed_profiles(profile_ref,display_name,principal_id,data_dir_key,runtime_ref,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?)`).run(ref, displayName, principalId, id, runtimeRef, timestamp, timestamp);
+    this.db.prepare(`INSERT INTO managed_profiles(profile_ref,principal_id,data_dir_key,runtime_ref,created_at,updated_at)
+      VALUES(?,?,?,?,?,?)`).run(ref, principalId, id, runtimeRef, timestamp, timestamp);
     return this.get(ref)!;
   }
 

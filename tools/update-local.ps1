@@ -108,7 +108,7 @@ function Start-InstalledBroker([pscustomobject]$State) {
       if ($record.processId -ne $process.Id) { continue }
       $healthUrl = $record.mcpUrl -replace '/mcp$', '/health'
       $health = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 1
-      if ($health.status -eq 'ok' -and $health.instanceRef -eq $record.instanceRef -and $health.serviceVersion -eq $State.version -and $health.mcpContractVersion -eq '2') {
+      if ($health.status -eq 'ok' -and $health.instanceRef -eq $record.instanceRef -and $health.serviceVersion -eq $State.version -and $health.mcpContractVersion -eq '5') {
         return [ordered]@{ processId = $process.Id; healthUrl = $healthUrl; health = $health }
       }
     } catch { }

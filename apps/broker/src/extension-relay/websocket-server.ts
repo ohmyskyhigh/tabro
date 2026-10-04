@@ -44,6 +44,7 @@ interface BrowserHelloFacts {
 }
 
 interface PendingSocketState {
+  profileProxy?: boolean;
   managedClaim?: ManagedConnectionClaim | undefined;
   protocolVersion?: 1 | 2;
   targetId?: string;
@@ -188,6 +189,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       endpointRef,
       connectionGeneration: connection.epoch,
       inventoryGeneration: connection.inventoryGeneration,
+      profileProxy: connection.profileProxy === true,
       connected: connection.socket.readyState === WebSocket.OPEN
     };
   }
@@ -240,6 +242,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     payload: RelayV2PayloadByType[Type]
   ): Promise<RelayV2PayloadByType['OPERATION_RESULT']> {
     const connection = this.requireV2Connection(endpointRef);
+    if (type === 'PROFILE_PROXY' && !connection.profileProxy) throw new Error('PROXY_UNSUPPORTED');
     const attemptId = payload.attemptId;
     if (this.pendingAttempts.has(attemptId)) {
       return Promise.reject(new Error(`Attempt ${attemptId} is already pending.`));
@@ -434,6 +437,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     await this.managedBootstrap?.check(payload.managedClaim, knownEndpoint?.endpointRef ?? null, payload.publicKeyJwk as JsonWebKey);
     if (socket.readyState !== WebSocket.OPEN) return;
     state.managedClaim = payload.managedClaim;
+    state.profileProxy = payload.profileProxy === 1;
     negotiateRelayProtocol(payload.supportedProtocolVersions);
     const browserMajorMatch = payload.browser.version.match(/\d+/);
     const selection = selectCapabilityManifest({
@@ -576,6 +580,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       endpointId: state.endpointId,
       endpointRef: state.endpointRef,
       protocolVersion: 2,
+      profileProxy: state.profileProxy === true,
       epoch: state.epoch,
       socket,
       connectedAt: Date.now(),

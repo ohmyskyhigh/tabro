@@ -10,7 +10,7 @@ const manifest = RealWorldRunManifestSchema.parse(JSON.parse(readFileSync(resolv
 const token = readFileSync(manifest.adminTokenFile, 'utf8').trim();
 const client = new Client({ name: 'real-world-fixture-navigator', version: manifest.brokerVersion }, { versionNegotiation: { mode: 'auto' } });
 await client.connect(new StreamableHTTPClientTransport(new URL(manifest.mcpUrl), {
-  requestInit: { headers: { 'x-octopus-contract-version': '2', Authorization: `Bearer ${token}` } }
+  requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${token}` } }
 }));
 
 async function call(name: string, argumentsValue: Record<string, unknown>): Promise<Record<string, unknown>> {

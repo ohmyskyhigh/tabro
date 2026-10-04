@@ -26,7 +26,7 @@ try {
   runtime.relayUrl = `ws://127.0.0.1:${app.extensionGateway.address().port}/relay`;
   config = { ...config, mcpPort: app.mcpGateway.address().port, wsPort: app.extensionGateway.address().port };
   const principal = app.store.createAgent('Manager probe', ['profiles:read', 'profiles:manage']).principal;
-  const profile = app.store.profiles.create(principal.principalId, 'Manager probe', 'chrome-153');
+  const profile = app.store.profiles.create(principal.principalId, 'chrome-153');
   const result = await app.profileManager!.run('create_browser_profile', profile);
   if (result.ready !== true) throw new Error('Profile was not ready');
   checks.push('formal-launcher-managed-auth-ready'); console.error('PASS formal launcher + managed authentication');

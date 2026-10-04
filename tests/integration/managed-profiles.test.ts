@@ -33,7 +33,7 @@ describe('Profile lifecycle coordination', () => {
   afterEach(async () => { await manager.shutdown(); store.close(); });
   function profile() {
     const principal = store.createAgent('test', ['profiles:read', 'profiles:manage']).principal;
-    return store.profiles.create(principal.principalId, 'test', 'chrome');
+    return store.profiles.create(principal.principalId, 'chrome');
   }
   it('serializes open/open and reuses the authenticated browser instance', async () => {
     const p = profile();
@@ -55,14 +55,14 @@ describe('Profile lifecycle coordination', () => {
     await expect(manager.run('open_browser_profile', p)).rejects.toThrow('PROFILE_INSTANCE_UNVERIFIED');
     expect(starts).toBe(1);
   });
-  it('checks current scopes and ownership even if cached transport scopes were broader', () => {
+  it('shares broker-owned Profiles while checking current scopes even if cached transport scopes were broader', () => {
     const p = profile();
     const evidence = { principalId: p.principalId, scopes: ['profiles:read', 'profiles:manage'] };
     expect(manager.authorize(evidence, 'profiles:manage', p.profileRef)?.profileRef).toBe(p.profileRef);
     store.updateAgentScopes(p.principalId, ['profiles:read']);
     expect(() => manager.authorize(evidence, 'profiles:manage', p.profileRef)).toThrow('PROFILE_FORBIDDEN');
     const other = profile();
-    expect(() => manager.authorize({ principalId: other.principalId, scopes: ['profiles:read'] }, 'profiles:read', p.profileRef)).toThrow('PROFILE_NOT_FOUND');
+    expect(manager.authorize({ principalId: other.principalId, scopes: ['profiles:manage'] }, 'profiles:manage', p.profileRef)?.profileRef).toBe(p.profileRef);
   });
   it('refuses stop while an active workspace remains and releases its barrier', async () => {
     const p = profile(); await manager.run('open_browser_profile', p);

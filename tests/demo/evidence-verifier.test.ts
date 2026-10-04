@@ -30,7 +30,7 @@ function evidence(): DemoEvidence {
     e.fixture.events.push({ runId: e.runId, role, type: 'login', at: time(1) }, { runId: e.runId, role, type: 'summary_started', at: time(10) }, { runId: e.runId, role, type: 'summary_finished', at: time(role === 'Bob' ? 30 : 20) });
     ticket('create_browser_profile', { profile: { profile_ref: role, endpoint_nickname: role, ready: true } });
     e.assignments.push({ role, profile_ref: role, workspace_ref: role, tab_ref: role, owner_session_ref: 'session' });
-    e.before.profiles.push({ profile_ref: role, display_name: role, identity_hash: role, instance_ref: role, generation: 1, pid: roles.indexOf(role) + 1, process_verified: true, authenticated: true });
+    e.before.profiles.push({ profile_ref: role, endpoint_nickname: role, identity_hash: role, instance_ref: role, generation: 1, pid: roles.indexOf(role) + 1, process_verified: true, authenticated: true });
     page(role, role, role, 32);
   }
   ticket('request_browser_workspace', { resolved: roles.map(role => allocation(role, role, role)) });

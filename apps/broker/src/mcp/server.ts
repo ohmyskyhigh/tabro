@@ -162,7 +162,9 @@ export class McpGateway {
     const input = parseMcpToolInput(tool, rawInput);
     let output: unknown;
 
-    if (tool === 'list_browser_profiles') {
+    if (tool === 'get_browser_proxy') {
+      output = this.broker.getBrowserProxy(input, evidence);
+    } else if (tool === 'list_browser_profiles') {
       output = await this.broker.listBrowserProfiles(input, evidence);
     } else if (tool === 'get_browser_context') {
       output = await this.broker.getBrowserContext(input, evidence);

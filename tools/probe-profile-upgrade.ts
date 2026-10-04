@@ -36,7 +36,7 @@ async function start(entry: string, managed: boolean) {
 }
 async function connect() {
   client = new Client({ name: 'isolated-upgrade-probe', version: '1' }, { versionNegotiation: { mode: 'auto' } });
-  await client.connect(new StreamableHTTPClientTransport(new URL('http://127.0.0.1:17431/mcp'), { requestInit: { headers: { Authorization: `Bearer ${token}`, 'x-octopus-contract-version': '2', 'x-octopus-runtime': 'probe', 'x-octopus-runtime-session': 'upgrade-probe' } } }));
+  await client.connect(new StreamableHTTPClientTransport(new URL('http://127.0.0.1:17431/mcp'), { requestInit: { headers: { Authorization: `Bearer ${token}`, 'x-octopus-contract-version': '5', 'x-octopus-runtime': 'probe', 'x-octopus-runtime-session': 'upgrade-probe' } } }));
 }
 async function call(tool: string, args: Record<string, unknown>) {
   const result = await client!.callTool({ name: tool, arguments: args });
@@ -65,7 +65,7 @@ try {
   const oldDb = new DatabaseSync(database); oldDb.prepare('VACUUM INTO ?').run(backup); const principal = oldDb.prepare('SELECT principal_id FROM agents').get()?.principal_id; oldDb.close();
   await start(resolve(newRoot, 'broker/main.mjs'), true); await connect();
   if ((await client!.listTools()).tools.length !== 18) throw new Error('Expected 18 new tools');
-  const profile = await operation('create_browser_profile', { display_name: 'Upgrade retained Profile', idempotency_key: 'upgrade-probe-create' }); profileRef = profile.profile_ref;
+  const profile = await operation('create_browser_profile', { idempotency_key: 'upgrade-probe-create' }); profileRef = profile.profile_ref;
   if (!profile.ready) throw new Error('Profile not ready');
   await operation('stop_browser_profile', { profile_ref: profileRef }); profileRef = null; await stop();
   const newDb = new DatabaseSync(database);

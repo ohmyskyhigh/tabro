@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tabro Settings</title>
+</head>
+<body>
+  <main>
+    <h1>Tabro Settings</h1>
+    <p>This extension connects only this Chrome profile to the local broker.</p>
+    <form id="settings-form">
+      <label>Pairing code
+        <input id="pairing-code" name="pairing-code" type="text" required maxlength="17" pattern="[A-Za-z]{3,8}[-_ ][A-Za-z]{3,8}" autocomplete="off" spellcheck="false" placeholder="MINT-WAVE">
+      </label>
+      <p>Profile alias: <strong id="profile-nickname">creating…</strong></p>
+      <label>Local broker relay URL <input id="broker-url" type="url" required value="ws://127.0.0.1:7332/relay"></label>
+      <label>Transport
+        <select id="transport-mode">
+          <option value="native">Native companion (recommended)</option>
+          <option value="websocket">Direct WebSocket (diagnostics only)</option>
+        </select>
+      </label>
+      <button type="submit">Save settings and reconnect</button>
+    </form>
+    <p>The pairing code is saved in this browser profile and persists across browser windows and restarts. Use two 3-8 letter words separated by a hyphen; the lowercase words become the endpoint alias. The code identifies this installation and is not a password.</p>
+    <p>A new installation generates a code and registers automatically. Saving a different code changes the existing endpoint alias only after the broker authenticates this profile.</p>
+    <p>Normal Chrome and AdsPower both use the native companion. Direct WebSocket is retained only for explicit diagnostics.</p>
+    <p id="status" role="status"></p>
+    <button id="reset" type="button">Reset pairing</button>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

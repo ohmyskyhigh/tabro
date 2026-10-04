@@ -29,11 +29,11 @@ manifest 同时保存 runtime 文件路径和当时的 `mcpUrl`。当前 `single
 
 ### 一个 Agent 使用真实 MCP 结果建立三路资源分工
 
-四个管理工具为 `list_browser_profiles`、`create_browser_profile`、`open_browser_profile`、`stop_browser_profile`。后三个返回异步票据，用 `get_browser_request` 等待终态；创建/打开仅在 `succeeded` 且 `ready: true` 时成功。create 必须传 `idempotency_key`；同一主体同键不同参数拒绝。
+四个管理工具为 `list_browser_profiles`、`create_browser_profile`、`open_browser_profile`、`stop_browser_profile`。后三个返回异步票据，用 `get_browser_request` 等待终态；创建/打开仅在 `succeeded` 且 `ready: true` 时成功。create 只传 `idempotency_key`，同一主体同键复用原 Profile。扩展生成的 pairing alias 是唯一名称；Alice、Bob、Carol 是本次演示的账户分工，不是 Profile 显示名称。
 
 演示提示词：
 
-> 列出受管 Profile，创建 Alice、Bob、Carol 三个新 Profile。按返回端点昵称申请三个工作区，访问同一演示 URL，分别选择对应身份。读取待办，完成各自最早到期的未完成事项，备注为 Reviewed by 对应姓名。先处理三路事项，再连续发起三个摘要，等待并回读结果。终止 Bob 工作区、停止 Bob，核对列表中的混合运行状态，再打开 Bob 验证登录、任务和身份保持。重复 open 应复用实例。最后终止全部工作区并停止三个 Profile，确认目录仍保留。
+> 列出受管 Profile，创建三个新 Profile，分别用于 Alice、Bob、Carol。按返回端点昵称申请三个工作区，访问同一演示 URL，分别选择对应身份。读取待办，完成各自最早到期的未完成事项，备注为 Reviewed by 对应姓名。先处理三路事项，再连续发起三个摘要，等待并回读结果。终止 Bob 工作区、停止 Bob 使用的 Profile，核对列表中的混合运行状态，再打开它验证登录、任务和身份保持。重复 open 应复用实例。最后终止全部工作区并停止三个 Profile，确认目录仍保留。
 
 Agent 可使用 `tools/single-agent-demo-call.ts <run-id> <commands.json>` 传送显式工具调用数组。每项包含 `tool`、`arguments`、可选 `wait: true`，后者仅轮询票据；脚本不选择账户、任务或答案。批次沿用 manifest 中同一个 runtime session。可选 `adapterEntry` 指向打包版 adapter。
 

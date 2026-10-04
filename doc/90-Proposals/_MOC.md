@@ -12,6 +12,8 @@ Proposals request changes to the vault. A proposal is non-canonical until the us
 
 - [`Open-Source-Hermes-Distribution.md`](./Open-Source-Hermes-Distribution.md) — accepted on 2026-10-04; full open-source scope, Broker installation during first-time Hermes setup, and proxy-inclusive distribution; delivery pending.
 
+- [`Profile-Proxy.md`](./Profile-Proxy.md) — accepted and implemented on 2026-10-03; authenticated Profile proxies, protected credentials and MCP contract 5.
+
 - [`MCP-Managed-Chrome-Profiles.md`](./MCP-Managed-Chrome-Profiles.md) — accepted for implementation on 2026-09-27; persistent lifecycle, automatic extension bootstrap and MCP contract v2 are implemented.
 
 - [`Persistent-Custom-Pairing-Labels.md`](./Persistent-Custom-Pairing-Labels.md) — accepted on 2026-09-04 and incorporated into the profile identity, automatic registration, authenticated rename, and collision contracts.

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ChromeLauncher, matchesInstance, processUsesDataDir, type ChromeProcessIdentity } from '../../apps/broker/src/profiles/chrome-launcher.js';
 import { containedPath, profileLayout, type ProfileRuntimeConfig } from '../../apps/broker/src/profiles/runtime-config.js';
-import type { ManagedBrowserInstance } from '../../apps/broker/src/profiles/types.js';
+import type { ManagedBrowserInstance, ManagedProfile } from '../../apps/broker/src/profiles/types.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -47,5 +47,15 @@ describe('managed Chrome ownership', () => {
     const outside = join(root, 'outside'); mkdirSync(outside);
     symlinkSync(outside, join(root, 'profiles'), 'junction');
     expect(() => profileLayout(root, randomUUID())).toThrow('PROFILE_PATH_INVALID');
+  });
+  it('checks the complete Profile directory even without a tracked browser instance', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'octopus-path-test-')); roots.push(root);
+    const profile = { dataDirKey: randomUUID() } as ManagedProfile;
+    const config = { root } as ProfileRuntimeConfig;
+    const { dataDir } = profileLayout(root, profile.dataDirKey);
+    const external = { ...processIdentity, commandLine: `chrome.exe "--user-data-dir=${dataDir}"` };
+    expect(await new ChromeLauncher(config, async () => []).isClosed(profile)).toBe(true);
+    expect(await new ChromeLauncher(config, async () => [external]).isClosed(profile)).toBe(false);
+    await expect(new ChromeLauncher(config, async () => { throw new Error('CIM unavailable'); }).isClosed(profile)).rejects.toThrow('CIM unavailable');
   });
 });

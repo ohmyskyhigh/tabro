@@ -18,7 +18,7 @@ if (existsSync(database)) {
     else {
     mkdirSync(dirname(backup), { recursive: true });
     db.prepare('VACUUM INTO ?').run(backup);
-    if (table('managed_profiles')) writeFileSync(`${backup}.profiles.json`, JSON.stringify(db.prepare('SELECT profile_ref,principal_id,display_name,data_dir_key,runtime_ref,endpoint_ref,identity_hash FROM managed_profiles').all(), null, 2));
+    if (table('managed_profiles')) writeFileSync(`${backup}.profiles.json`, JSON.stringify(db.prepare('SELECT profile_ref,principal_id,data_dir_key,runtime_ref,endpoint_ref,identity_hash FROM managed_profiles').all(), null, 2));
     }
   } finally { db.close(); }
 }

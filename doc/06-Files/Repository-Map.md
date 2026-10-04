@@ -2,7 +2,7 @@
 
 Status: canonical map of the app-owned implementation and verification paths as of 2026-08-31.
 
-This File-level document says where confirmed Component responsibilities are implemented. Source and tests remain the authority for the runtime behavior they execute. Relay-v1 files retained for migration do not redefine the canonical eighteen-tool MCP contract.
+This File-level document says where confirmed Component responsibilities are implemented. Source and tests remain the authority for the runtime behavior they execute. Relay-v1 files retained for migration do not redefine the canonical twenty-two-tool MCP contract.
 
 
 ## Repository root
@@ -41,7 +41,7 @@ The root `package.json` owns the monorepo scripts and dependencies. `apps/mcp-st
 
 ## MCP Gateway
 
-### The MCP gateway exposes exactly eighteen authenticated tools over loopback Streamable HTTP
+### The MCP gateway exposes exactly twenty-two authenticated tools over loopback Streamable HTTP
 
 | Path | Current responsibility | Verification |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ The HTTP server owns `/mcp` and `/health` on the configured MCP port and rejects
 | --- | --- | --- |
 | `apps/mcp-stdio-adapter/package.json` | Declares the private adapter package, version, and compiled binary entry | Workspace install and build |
 | `apps/mcp-stdio-adapter/src/config.ts` | Prefers `TABRO_RUNTIME_FILE` discovery over a legacy loopback URL and loads a token or token file; resolves Codex, Hermes, explicit, or process-local session evidence | `tests/integration/mcp-stdio-adapter.test.ts` |
-| `apps/mcp-stdio-adapter/src/server.ts` | Validates Broker health/version/instance, reconnects before new calls on instance change, forwards eighteen tools with caller headers, validates results, and never retries dispatched calls | `tests/integration/mcp-stdio-adapter.test.ts` |
+| `apps/mcp-stdio-adapter/src/server.ts` | Validates Broker health/version/instance, reconnects before new calls on instance change, forwards twenty-two tools with caller headers, validates results, and never retries dispatched calls | `tests/integration/mcp-stdio-adapter.test.ts` |
 | `apps/mcp-stdio-adapter/src/main.ts` | Starts the adapter and closes both MCP transports on signals or stdin end | Adapter integration test and compiled launch path |
 | `apps/mcp-stdio-adapter/src/index.ts` | Exports adapter configuration and server APIs | Typecheck and tests |
 | `apps/mcp-stdio-adapter/README.md` | Records adapter configuration, identity fallback, and the two-transport delivery boundary | Source review |
@@ -187,12 +187,12 @@ The same listener exposes `/relay` for WebSocket upgrades and `/health` for setu
 
 ## Protocol Contract
 
-### Canonical MCP code materializes the approved eighteen-tool JSON Schema
+### Canonical MCP code materializes the approved twenty-two-tool JSON Schema
 
 | Path | Current responsibility | Verification |
 | --- | --- | --- |
 | `doc/03-User-Interface/MCP-Contract.schema.json` | Canonical Draft 2020-12 agent-facing request and result schema | `tests/contract/mcp-contract-v2.test.ts` |
-| `apps/shared/protocol/src/mcp/tool-catalog.ts` | Exact eighteen tool names, execution classes, and descriptions | MCP contract and gateway integration tests |
+| `apps/shared/protocol/src/mcp/tool-catalog.ts` | Exact twenty-two tool names, execution classes, and descriptions | MCP contract and gateway integration tests |
 | `apps/shared/protocol/src/mcp/validators.ts` | Runtime input/output validators and public per-tool JSON Schema roots derived from the canonical schema | `tests/contract/mcp-contract-v2.test.ts` |
 | `apps/shared/protocol/src/domain/references.ts` | Branded canonical public and private reference types | Typecheck and protocol tests |
 | `apps/shared/protocol/src/domain/facts.ts` | Shared endpoint, window, workspace, tab, request, and result facts | Typecheck and broker tests |
@@ -246,7 +246,7 @@ The same listener exposes `/relay` for WebSocket upgrades and `/health` for setu
 | `tools/package-release.ps1` | Runs verification/build, stages the Windows release, produces the ZIP, archive checksum, and standalone updater asset | `pnpm package:release` and the tag release workflow |
 | `tools/update-local.ps1` | Resolves a GitHub Release or local rehearsal package, verifies archive/file hashes and discovery support before shutdown, installs versioned runtime files, preserves data, refreshes stable extension/MCP/native paths including the Hermes all-profile helper, starts and health-checks the broker, and rolls back failed startup | Local update rehearsal and release runbook |
 | `tools/stop-installed-broker.ps1` | Stops only the PID whose command line names the stable installed broker launcher | Local update rehearsal |
-| `tools/register-hermes-profiles.ps1` | Discovers the default and installed named Hermes profiles, then registers the same Tabro stdio adapter and all eighteen tools in each isolated profile | `tests/real-world/register-hermes-profiles.test.ts` and per-profile `hermes mcp list`/`test` |
+| `tools/register-hermes-profiles.ps1` | Discovers the default and installed named Hermes profiles, then registers the same Tabro stdio adapter and all twenty-two tools in each isolated profile | `tests/real-world/register-hermes-profiles.test.ts` and per-profile `hermes mcp list`/`test` |
 | `tools/installed-broker-launcher.mjs` | Loads the selected broker, supplies installed discovery paths and dynamic-port defaults, and loads managed configuration | Installed broker startup and health check |
 | `tools/installed-mcp-adapter-launcher.mjs` | Loads the selected adapter and supplies installed runtime-file discovery | Codex/Hermes tool discovery through an installed release |
 | `tools/copy-assets.ts` | Copies SQLite migrations into the compiled `dist` tree | `pnpm build` |
@@ -285,7 +285,7 @@ Migration backups, live configurations, credentials and browser data remain loca
 | `tests/real-world/fixture-server.ts` | Loopback A/B/C browser-isolation fixture pages |
 | `tests/real-world/native-host-smoke.ts` | Native Messaging companion framing and forwarding evidence |
 
-The remaining `tests/real-world/*` and `tools/real-world-start.ps1`, `real-world-verify.ps1`, and `real-world-cleanup.ps1` are retained from the earlier run-manifest harness. They are useful migration and fixture code, but their relay-v1 roles and version fields do not prove the canonical eighteen-tool physical run.
+The remaining `tests/real-world/*` and `tools/real-world-start.ps1`, `real-world-verify.ps1`, and `real-world-cleanup.ps1` are retained from the earlier run-manifest harness. They are useful migration and fixture code, but their relay-v1 roles and version fields do not prove the canonical twenty-two-tool physical run.
 
 ## Automated verification
 
@@ -349,6 +349,10 @@ These paths do not become canonical documentation and must not be committed with
 
 ## File rules
 
+### The Hermes package ships pinned runtime bytes and profile-aware launch scripts
+
+Under Setup and Qualification, `integrations/hermes/plugin.json`, `mcp.json` and `skills/tabro-browser/SKILL.md` own the portable entry. `setup.ps1`, `common.ps1`, `broker-service.mjs`, `launch.ps1`, `stop.ps1` and `proxy-credential.ps1` own installation, shared startup, stdio transport, guarded shutdown and local credentials. `tools/stage-hermes-plugin.ts` builds the committed `runtime/` and `runtime-manifest.json`; `.gitattributes` preserves exact payload bytes. `tests/real-world/hermes-plugin-installation.test.ts` and `hermes-profile-plugin-probe.py` qualify isolated installations and real Hermes plugin loading. Package instructions and platform limits live in `integrations/hermes/README.md`.
+
 ### Each source area stays inside its confirmed Component boundary
 
 - Browser APIs stay under `apps/browser-extension`.
@@ -369,8 +373,10 @@ Tests may import public Component ports and dedicated fixtures. Production code 
 
 | Source | Responsibility | Verification |
 | --- | --- | --- |
+| `apps/broker/src/core/octopus/octopus-broker.ts` | Shared extension-registry discovery, alias-only names and broker/user ownership facts | `tests/contract/registered-profiles.test.ts`, `tests/e2e/multi-agent-multi-extension.test.ts` |
+| `apps/broker/src/core/octopus/octopus-broker.ts` | Retire missing idle workspaces from current inventory without bypassing pending work | `tests/integration/missing-workspace-retirement.test.ts` |
 | `apps/broker/src/profiles/profile-manager.ts` | Serialized lifecycle, readiness and stopping barrier | `tests/integration/managed-profiles.test.ts` |
-| `apps/broker/src/profiles/profile-request-service.ts` | Principal-scoped durable MCP operations | `tests/contract/profile-management.test.ts` |
+| `apps/broker/src/profiles/profile-request-service.ts` | Principal-scoped durable MCP operations with name-free creation | `tests/contract/profile-management.test.ts` |
 | `apps/broker/src/profiles/chrome-launcher.ts` | Owned Chrome process launch, inspect and close | `tests/unit/chrome-launcher.test.ts`, `tools/probe-profile-manager.ts` |
 | `apps/broker/src/profiles/bootstrap-grants.ts` | Instance-bound signed bootstrap | `tests/unit/managed-bootstrap.test.ts` |
 | `apps/broker/src/storage/sqlite/profile-repository.ts` | Persistent directory, leases and request associations | `tests/integration/profile-repository.test.ts` |
@@ -384,12 +390,19 @@ Tests may import public Component ports and dedicated fixtures. Production code 
 | `apps/broker/src/profiles/runtime-config.ts` | Validates managed browser, extension and storage configuration | `tests/real-world/managed-profile-installation.test.ts` |
 | `apps/broker/src/profiles/types.ts` | Internal Profile, instance, launcher and observation contracts | Typecheck and managed Profile tests |
 | `apps/broker/src/profiles/management-connection.ts` | Private browser lifecycle connection | Launcher and physical Profile probes |
-| `apps/broker/src/storage/sqlite/migrations/006-managed-profiles.sql` | Profile directory, instance, request, idempotency, grant and lease persistence | `tests/integration/profile-repository.test.ts` |
+| `apps/broker/src/storage/sqlite/migrations/006-managed-profiles.sql` | Initial Profile directory, instance, request, idempotency, grant and lease persistence | `tests/integration/profile-repository.test.ts` |
+| `apps/broker/src/storage/sqlite/migrations/007-profile-alias-only.sql` and `database.ts` | Drop the extra Profile name, clean Profile ticket fields and normalize creation hashes atomically | Fresh-schema and schema-six upgrade cases in `tests/integration/profile-repository.test.ts` |
 | `tools/managed-upgrade-snapshot.mjs` | Busy checks, consistent database snapshots and retained Profile metadata | `tests/real-world/managed-profile-installation.test.ts` |
 | `tools/probe-managed-chrome.ts` | Isolated physical Chrome bootstrap and retained-state probe | `tests/real-world/managed-chrome-probe.test.ts` checks harness behavior; physical run remains separate |
 | `tools/probe-profile-manager.ts` | Physical Profile Manager lifecycle and Broker restart qualification | Dated implementation report |
 | `tools/probe-profile-upgrade.ts` | Isolated old/new runtime upgrade and downgrade evidence | Dated implementation report |
 | `tools/lib/chrome-probe-control.ts` | Scoped probe-root and process controls | Managed Chrome probe tests |
 | `tests/e2e/single-agent-multi-extension.test.ts` | Simulated single-session multi-endpoint execution and recovery | Automated E2E, not a physical Chrome run |
+
+## Profile networking
+
+### Proxy implementation paths preserve the Profile and extension boundaries
+
+`apps/broker/src/proxy/` owns network service, gateway and credentials. `apps/broker/src/storage/sqlite/proxy-repository.ts` and migration 008 own persistence. `apps/browser-extension/src/proxy/proxy-controller.ts` owns effective regular-profile settings and exit probes. Existing protocol, MCP, relay, runtime and Profile lifecycle modules wire these operations. `tools/provision-proxy-credential.ts` provisions protected references. `tests/integration/profile-proxy.test.ts`, `proxy-gateway.test.ts`, `proxy-credentials.test.ts` and `tests/unit/extension-proxy.test.ts` supply automated qualification. `ChromeLauncher.isClosed` and `ProfileManager.assertClosed` prove closure by process inspection; `tests/unit/chrome-launcher.test.ts` and the proxy integration suite cover open, disconnected and untracked process cases. `tools/probe-profile-proxy.ts` runs isolated real Chrome and Native Messaging, rejects user ownership online and offline, and verifies closed-configure-open behavior. The [closed-Profile amendment](../80-Plans/profile-proxy-2026-10-03/closed-profile-amendment.md) records current verification; the initial implementation report retains transport history.
 
 Parent: [`Files MOC`](./_MOC.md).

@@ -29,6 +29,12 @@ Worker counts, queue bounds, retention amounts, status thresholds, polling guida
 
 The accepted historical proposal remains at [`../90-Proposals/System-Architecture.md`](../90-Proposals/System-Architecture.md).
 
-The shared-runtime topology in `System-Architecture.md` owns dynamic listener discovery, instance validation, client reconnection, startup exclusion and Demo reuse. Its Profile lifecycle section owns principal-scoped identities, bootstrap binding and lifecycle serialization. These realize the existing agent journey without changing the eighteen-tool contract.
+The shared-runtime topology in `System-Architecture.md` owns dynamic listener discovery, instance validation, client reconnection, startup exclusion and Demo reuse. Its Profile lifecycle section owns principal-scoped identities, bootstrap binding and lifecycle serialization. These realize the existing agent journey without changing the twenty-two-tool contract.
 
 Parent: [`03-User-Interface`](../03-User-Interface/_MOC.md).
+
+## Profile networking
+
+### Profile proxy support follows the accepted network decision
+
+The [Profile proxy decision](../90-Proposals/Profile-Proxy.md) permits authenticated HTTP, HTTPS and SOCKS5 configuration only for closed broker-owned Profiles. The canonical owner in this directory defines its layer; [the implementation plan](../80-Plans/profile-proxy-2026-10-03/README.md) and implementation report track delivery evidence.

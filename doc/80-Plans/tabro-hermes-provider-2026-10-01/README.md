@@ -1,6 +1,6 @@
 # Tabro 的 Hermes Provider 与一键安装方案
 
-日期：2026-10-01。状态：Plugin 与上游仍待实现；用户要求先将 Demo 与普通 MCP 统一为动态端口 Broker。
+日期：2026-10-01；更新：2026-10-04。状态：Windows Portable Plugin 已实现并通过隔离安装检查，目录提交正在准备；其余平台和上游菜单仍待交付。证据见 [October 4 交付记录](./plugin-delivery-2026-10-04.md)。
 
 父级：[开发计划](../_MOC.md)。下文十八工具与 0.3.1 是 October 1 计划基线；后续交付以[当前 MCP 契约](../../03-User-Interface/MCP-Contract.md)为准。October 4 的商城分发要求见下一节，优先于旧计划中仅复用本机运行环境的交付范围。
 
@@ -15,7 +15,7 @@
 - [ ] 在没有 Tabro 的环境验证首次安装，并验证已有安装复用、重复设置和失败恢复；全部 Tabro 自有实现均遵循 Product 的开源要求。
 - [ ] 完成插件校验和固定代码版本的目录提交；上架状态以 Hermes 维护者审核为准。
 
-以上均为待交付项。本轮只更新文档，没有制作、安装或发布插件。拟采用与审核代码绑定的固定运行包版本和校验值；首次下载运行组件及后续更新机制须在提交中说明，并按[商城准入规则](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins/catalog-submission)接受审核，不把通用下载器当作已获准的发行机制。
+以上是 October 4 最初的完整交付门槛。后续 Windows 实现与已完成检查见[交付记录](./plugin-delivery-2026-10-04.md)；干净机器浏览器验收和上游收录仍待交付。拟采用与审核代码绑定的固定运行包版本和校验值；首次下载运行组件及后续更新机制须在提交中说明，并按[商城准入规则](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins/catalog-submission)接受审核，不把通用下载器当作已获准的发行机制。
 
 ## 目标
 

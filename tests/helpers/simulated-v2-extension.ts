@@ -298,7 +298,7 @@ export async function connectAgent(port: number, token: string, session: string)
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
     requestInit: {
       headers: {
-        'x-octopus-contract-version': '2', Authorization: `Bearer ${token}`,
+        'x-octopus-contract-version': '5', Authorization: `Bearer ${token}`,
         'x-octopus-runtime': 'codex',
         'x-octopus-runtime-session': session
       }

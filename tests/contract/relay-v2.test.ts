@@ -28,7 +28,7 @@ const tab = { tabId: 19, tabGeneration: 4, windowId: 5, windowGeneration: 2 };
 describe('relay protocol version 2', () => {
   it('publishes the complete transport-neutral message catalog', () => {
     expect(RELAY_PROTOCOL_V2).toBe(2);
-    expect(RELAY_V2_MESSAGE_TYPES).toHaveLength(21);
+    expect(RELAY_V2_MESSAGE_TYPES).toHaveLength(22);
     expect(Object.keys(relayV2PayloadSchemas)).toEqual([...RELAY_V2_MESSAGE_TYPES]);
   });
 
