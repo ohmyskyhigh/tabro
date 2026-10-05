@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "tabro",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Local Chromium browser profiles (Chrome, Chromium or Edge), session-owned workspaces and authenticated HTTP(S)/SOCKS5 proxies. Windows x64; set TABRO_BROWSER_PATH to a compatible browser executable before installation.",
   "author": { "name": "Runkun Miao", "url": "https://github.com/ohmyskyhigh" },
   "homepage": "https://github.com/ohmyskyhigh/tabro",

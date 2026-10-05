@@ -78,6 +78,56 @@ describe('extension WebSocket gateway', () => {
     store.close();
   });
 
+  it.each([
+    'https://example.com',
+    'http://127.0.0.1',
+    'null',
+    '',
+    'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'chrome-extension://caekiojlchhifdomfghejkbfpmaklafe.evil.example',
+    'chrome-extension://caekiojlchhifdomfghejkbfpmaklafe/',
+    ['chrome-extension://caekiojlchhifdomfghejkbfpmaklafe', 'https://example.com']
+  ].map(origin => ({ origin })))('rejects an untrusted Origin before upgrading or pairing: $origin', async ({ origin }) => {
+    const pairing = vi.spyOn(broker, 'autoPairExtension');
+    await gateway.start();
+    const { port } = gateway.address();
+    socket = new WebSocket(`ws://127.0.0.1:${port}/relay`, { headers: { Origin: origin } });
+    socket.on('error', () => {});
+    const status = await new Promise<number | undefined>((resolve) => {
+      socket!.once('open', () => resolve(101));
+      socket!.once('unexpected-response', (_request, response) => {
+        response.resume();
+        socket!.terminate();
+        resolve(response.statusCode);
+      });
+    });
+    expect(status).toBe(403);
+    expect(pairing).not.toHaveBeenCalled();
+    const health = await fetch(`http://127.0.0.1:${port}/health`).then(response => response.json());
+    expect(health).toMatchObject({ connectedTargets: 0, connectedEndpoints: 0,
+      websocketUpgrades: { attempts: 1, accepted: 0, rejected: 1, lastResult: 'rejected-origin' } });
+  });
+
+  it.each([undefined, 'chrome-extension://caekiojlchhifdomfghejkbfpmaklafe'])(
+    'allows native-host or Tabro extension Origin to auto-pair: %s', async (origin) => {
+      const pairing = vi.spyOn(broker, 'autoPairExtension');
+      const keys = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+      await gateway.start();
+      const { port } = gateway.address();
+      socket = new WebSocket(`ws://127.0.0.1:${port}/relay`, { headers: origin === undefined ? {} : { Origin: origin } });
+      await new Promise<void>((resolve, reject) => { socket!.once('open', resolve); socket!.once('error', reject); });
+      const paired = nextV2Message(socket);
+      socket.send(JSON.stringify(createRelayV2Envelope('HELLO', {
+        publicKeyJwk: keys.publicKey.export({ format: 'jwk' }) as RelayV2PayloadByType['HELLO']['publicKeyJwk'],
+        pairingCode: 'CALM-REEF', proposedNickname: 'calmreef', extensionVersion: '0.4.2-test',
+        browser: { product: 'Chrome', version: '153.0.0.0', userAgent: null },
+        supportedProtocolVersions: [2], capabilityManifestIds: ['octopus-extension-baseline-v1'],
+        maxEnvelopeBytes: MAX_RELAY_V2_ENVELOPE_BYTES
+      })));
+      expect((await paired).type).toBe('PAIRED');
+      expect(pairing).toHaveBeenCalledOnce();
+    });
+
   it('pairs, authenticates, delivers, and correlates a command', async () => {
     const admin = store.createAgent('admin', ['broker:admin', 'browser:read', 'browser:write', 'sessions:write']);
     const pairing = broker.createPairingCode(admin.principal, 'profile-a', 60_000);

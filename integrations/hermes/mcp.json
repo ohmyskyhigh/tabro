@@ -5,7 +5,10 @@
       "type": "stdio",
       "command": "powershell.exe",
       "args": ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", "${PLUGIN_ROOT}/launch.ps1"],
-      "env": { "TABRO_RUNTIME": "hermes" }
+      "env": {
+        "TABRO_RUNTIME": "hermes",
+        "TABRO_INSTALL_ROOT": "${TABRO_INSTALL_ROOT}"
+      }
     }
   }
 }

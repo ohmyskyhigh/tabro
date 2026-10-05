@@ -1,5 +1,5 @@
 {
-  "version": "0.4.1",
+  "version": "0.4.2",
   "sourceHashEncoding": "utf8-lf",
   "packageLockSha256": "dbe5d6e79354294e518c39ee5cdc807a79490fc815cd0b44d398d8af94a0e7a9",
   "sources": [
@@ -69,7 +69,7 @@
     },
     {
       "path": "apps/broker/src/extension-relay/websocket-server.ts",
-      "sha256": "939076b716c8d79a73f5c0236fcba4b4c1a5cb8053944eb6e2b6caaed186a3d4"
+      "sha256": "0901665a8c184afff0f70e1333913a933a8165522bd64805aab2eb601990732d"
     },
     {
       "path": "apps/broker/src/mcp/auth.ts",
@@ -261,7 +261,7 @@
     },
     {
       "path": "apps/shared/protocol/src/version.ts",
-      "sha256": "38c5f1fae253a34f0039628f8384cb74b16c7997459fc18890f74bbacecfddb8"
+      "sha256": "930e5a8e1acf0e20de13cfa52f5f0d7379ebc2066b35309f1faf3bd2c5b68f60"
     },
     {
       "path": "doc/03-User-Interface/MCP-Contract.schema.json",

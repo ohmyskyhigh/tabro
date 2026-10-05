@@ -27,6 +27,7 @@ The source package version is recorded in `package.json`. Repository publication
 
 ## Delivery records
 
+- [Hermes review fixes](./99-Changelog/2026-10-05-hermes-review-fixes.md) records the relay Origin boundary, default/custom install-root qualification and corrected setup disclosures.
 - [Chromium compatibility and Hermes host admission](./99-Changelog/2026-10-04-chromium-browser-compatibility.md) records the selected-browser dependency declaration, compatible-version policy and real Chrome/Edge proxy checks.
 
 - [Hermes plugin package](./99-Changelog/2026-10-04-hermes-plugin-package.md) records the Windows implementation and isolated multi-profile checks. Catalog admission and fresh-machine browser qualification remain pending.

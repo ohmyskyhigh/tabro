@@ -127,7 +127,7 @@ Applied migrations are history and are not rewritten when later behavior changes
 
 | Path | Current responsibility | Verification |
 | --- | --- | --- |
-| `apps/broker/src/extension-relay/websocket-server.ts` | Loopback WebSocket upgrade, relay-v2 automatic extension registration, authenticated alias changes, retained relay-v1 one-time pairing, connection generations, inventory, correlated browser operations, event forwarding, detach, timeout, and disconnect handling | `tests/integration/websocket-gateway.test.ts` |
+| `apps/broker/src/extension-relay/websocket-server.ts` | Loopback WebSocket upgrade with exact browser Origin admission and an absent-Origin Native Host path, relay-v2 automatic extension registration, authenticated alias changes, retained relay-v1 one-time pairing, connection generations, inventory, correlated browser operations, event forwarding, detach, timeout, and disconnect handling | `tests/integration/websocket-gateway.test.ts` |
 | `apps/broker/src/extension-relay/connection-registry.ts` | Live legacy target and canonical endpoint connection registries | `tests/integration/websocket-gateway.test.ts` |
 | `apps/broker/src/extension-relay/index.ts` | Exports the extension gateway | Typecheck and Broker Runtime composition |
 
@@ -352,6 +352,8 @@ These paths do not become canonical documentation and must not be committed with
 ### The Hermes package ships pinned runtime bytes and profile-aware launch scripts
 
 Under Setup and Qualification, `integrations/hermes/plugin.json`, `mcp.json` and `skills/tabro-browser/SKILL.md` own the portable entry. `setup.ps1`, `common.ps1`, `broker-service.mjs`, `launch.ps1`, `stop.ps1` and `proxy-credential.ps1` own installation, shared startup, stdio transport, guarded shutdown and local credentials. `tools/stage-hermes-plugin.ts` builds the committed `runtime/` and `runtime-manifest.json`; `.gitattributes` preserves exact payload bytes. `tests/real-world/hermes-plugin-installation.test.ts` and `hermes-profile-plugin-probe.py` qualify isolated installations and real Hermes plugin loading. Package instructions and platform limits live in `integrations/hermes/README.md`.
+
+The MCP declaration forwards `TABRO_INSTALL_ROOT` explicitly. `common.ps1` recognizes Hermes's unresolved placeholder as unset while retaining absolute-path validation. The installation probe uses Hermes's real environment interpolation and filtered stdio launch environment, without reinjecting the parent environment; default and custom roots are separate qualification modes.
 
 ### Each source area stays inside its confirmed Component boundary
 

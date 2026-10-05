@@ -24,6 +24,8 @@ The extension connects to its native companion through Chrome Native Messaging. 
 
 An in-process or loopback extension transport may exist only as an automated-test or developer fixture. Transport framing, chunking, and reconnection are replaceable; endpoint identity, tickets, workspaces, cursors, and recovery remain broker-owned.
 
+The loopback `/relay` upgrade rejects a present browser Origin unless it exactly equals `chrome-extension://caekiojlchhifdomfghejkbfpmaklafe`, before automatic endpoint registration. Missing Origin remains allowed for the WinHTTP Native Host. This browser-origin boundary does not authenticate arbitrary local processes or replace relay identity checks. The [October 5 review decision](../90-Proposals/hermes-review-fixes-2026-10-05.md) records the approved transport refinement.
+
 ## Runtime topology
 
 ### One broker connects many agent sessions to many profile-local extension endpoints

@@ -14,6 +14,7 @@ const plugin = resolve('integrations/hermes');
 const base = resolve('artifacts/hermes-plugin-tests');
 const hermesSource = process.env.TABRO_TEST_HERMES_SOURCE;
 const hermesPython = process.env.TABRO_TEST_HERMES_PYTHON;
+const customRoot = process.env.TABRO_TEST_HERMES_CUSTOM_ROOT === '1';
 let install = '';
 let fixture = '';
 let record: { processId: number; instanceRef: string; mcpUrl: string };
@@ -32,7 +33,7 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
     mkdirSync(base, { recursive: true });
     fixture = mkdtempSync(resolve(base, 'multi profile-'));
     const localAppData = resolve(fixture, 'Local AppData');
-    install = resolve(localAppData, 'Tabro');
+    install = customRoot ? resolve(fixture, 'Custom runtime 测试') : resolve(localAppData, 'Tabro');
     for (const label of ['tabro-one', 'research-two']) {
       const home = resolve(fixture, 'Hermes homes 测试', label);
       const directory = resolve(home, 'plugins/tabro');
@@ -41,7 +42,7 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
       mkdirSync(data, { recursive: true });
       writeFileSync(resolve(home, 'config.yaml'), `# ${label}: existing profile configuration\nplugins:\n  enabled: [tabro]\n`);
       hermesProfiles.push({ home, plugin: directory, configHash: digest(resolve(home, 'config.yaml')),
-        env: { LOCALAPPDATA: localAppData, TABRO_INSTALL_ROOT: '', TABRO_BROWSER_PATH: process.env.TABRO_BROWSER_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', HERMES_HOME: home, HERMES_PROFILE: label,
+        env: { LOCALAPPDATA: localAppData, TABRO_INSTALL_ROOT: customRoot ? install : '', TABRO_TEST_PRIVATE_SENTINEL: 'must-not-reach-mcp', TABRO_BROWSER_PATH: process.env.TABRO_BROWSER_PATH ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', HERMES_HOME: home, HERMES_PROFILE: label,
           HERMES_SESSION_ID: `plugin-test-${label}`, PLUGIN_ROOT: directory, PLUGIN_DATA: data } });
     }
     // No default Hermes home and no explicit InstallRoot: both setups must
@@ -76,6 +77,8 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
       });
       profile.server = JSON.parse(result.stdout) as McpLaunch;
       expect(profile.server.env.PLUGIN_ROOT).toBe(profile.plugin);
+      expect(profile.server.env.TABRO_INSTALL_ROOT).toBe(customRoot ? install : '${TABRO_INSTALL_ROOT}');
+      expect(profile.server.env.TABRO_TEST_PRIVATE_SENTINEL).toBeUndefined();
       expect(profile.server.env.PLUGIN_DATA?.startsWith(resolve(profile.home, 'plugin-data') + '\\')).toBe(true);
     }
     expect(hermesProfiles[0]!.server!.env.PLUGIN_DATA).not.toBe(hermesProfiles[1]!.server!.env.PLUGIN_DATA);
@@ -86,7 +89,7 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
       const server = profile.server ?? { command: 'powershell.exe',
         args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', resolve(profile.plugin, 'launch.ps1')], cwd: profile.plugin, env: {} };
       const transport = new StdioClientTransport({ ...server,
-        env: { ...getDefaultEnvironment(), ...profile.env, ...server.env }, stderr: 'pipe' });
+        env: profile.server ? server.env : { ...getDefaultEnvironment(), ...profile.env }, stderr: 'pipe' });
       let errors = '';
       transport.stderr?.on('data', chunk => { errors += String(chunk); });
       const client = new Client({ name: `plugin-${index}`, version: 'test' }, { versionNegotiation: { mode: 'auto' } });
@@ -139,7 +142,7 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
     cpSync(plugin, copied, { recursive: true });
     const manifestFile = resolve(copied, 'runtime-manifest.json');
     const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
-    manifest.version = '0.4.1';
+    manifest.version = '99.0.0-test';
     writeFileSync(manifestFile, JSON.stringify(manifest));
     await expect(run('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', resolve(copied, 'launch.ps1')], {
       windowsHide: true, timeout: 15000, env: { ...process.env, ...hermesProfiles[1]!.env }

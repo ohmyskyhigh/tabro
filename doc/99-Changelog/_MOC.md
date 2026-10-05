@@ -4,6 +4,7 @@ This directory records applied changes to vault structure and canonical document
 
 ## Entries
 
+- [Hermes review fixes](./2026-10-05-hermes-review-fixes.md) records relay Origin admission, custom-root environment forwarding and corrected disclosures.
 - [Chromium browser compatibility](./2026-10-04-chromium-browser-compatibility.md) records Chrome/Edge qualification and the Hermes selected-browser install gate.
 
 - [Hermes plugin package](./2026-10-04-hermes-plugin-package.md) records Windows delivery and multiple-Hermes-profile installation evidence; catalog admission remains pending.

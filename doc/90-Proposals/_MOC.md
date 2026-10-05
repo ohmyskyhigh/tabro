@@ -10,6 +10,7 @@ Proposals request changes to the vault. A proposal is non-canonical until the us
 
 ## Accepted proposals
 
+- [Hermes October 5 review decision](./hermes-review-fixes-2026-10-05.md) — user-approved transport admission and installation corrections for the catalog re-review.
 - [`Open-Source-Hermes-Distribution.md`](./Open-Source-Hermes-Distribution.md) — accepted on 2026-10-04; full open-source scope, Broker installation during first-time Hermes setup, and proxy-inclusive distribution; delivery pending.
 
 - [`Profile-Proxy.md`](./Profile-Proxy.md) — accepted and implemented on 2026-10-03; authenticated Profile proxies, protected credentials and MCP contract 5.

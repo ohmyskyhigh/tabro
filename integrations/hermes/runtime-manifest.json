@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "0.4.1",
+  "version": "0.4.2",
   "contractVersion": "5",
   "platform": "windows-x64",
-  "nativeHostEntry": "native-host/relay-native-host-0.4.1.exe",
+  "nativeHostEntry": "native-host/relay-native-host-0.4.2.exe",
   "minimumBrowserVersion": "153.0.0.0",
   "node": {
     "version": "22.22.3",
@@ -15,12 +15,12 @@
     {
       "path": "adapter/main.js",
       "bytes": 1454054,
-      "sha256": "b70257ad90143100f97d714a9062f3fe8719d7907c73525762208a489696da05"
+      "sha256": "2fcee3c9000c7fa9b7c9473366d5c4e5ec2c2d86863c809514116b818d203d29"
     },
     {
       "path": "broker/main.js",
-      "bytes": 2076959,
-      "sha256": "0957925c813e991e375c8c43b8e408a76a98226611b5ee59122346e29fb0548c"
+      "bytes": 2077279,
+      "sha256": "6dfda9ccbb883eb62b5038a7eec4fc78290a4ebed259cade2e1ec6c1387e6269"
     },
     {
       "path": "broker/migrations/001-initial.sql",
@@ -69,8 +69,8 @@
     },
     {
       "path": "browser-extension/manifest.json",
-      "bytes": 1137,
-      "sha256": "6ef8c0ff78303d35368aeef83f54bb9cef556d71bcdb6168be78e800c7fc168d"
+      "bytes": 1104,
+      "sha256": "aecc6775a321f9e25de716bfa3f6e6ec12dab2bc10aa57ab5348ab8f540a59c7"
     },
     {
       "path": "browser-extension/options.html",
@@ -90,7 +90,7 @@
     {
       "path": "build-inputs.json",
       "bytes": 10780,
-      "sha256": "96c5c8cdf2bd64ce9af761da77421854115b0d08beb24c570df0c0fbff31b18a"
+      "sha256": "bbbe82087c07213041480e07de5d8d28b82c4ec3d86a0a61943c451422ccc90f"
     },
     {
       "path": "helpers/browser-runtime.ps1",
@@ -258,14 +258,14 @@
       "sha256": "3f1189b28e3866e0d979968d466b78f813f76827cfdca1fbb124cc0a5c8841f8"
     },
     {
-      "path": "native-host/relay-native-host-0.4.1.exe",
+      "path": "native-host/relay-native-host-0.4.2.exe",
       "bytes": 294400,
       "sha256": "4ec5cfb4aaefe8c5632125d5d3b2dbb23f28ab3112eaaabb5538ea26286430c1"
     },
     {
       "path": "package.json",
       "bytes": 118,
-      "sha256": "9dc14b5f8f9379a35af1c11f60599bee2687fc99d74f1f2b4ffde3572279e427"
+      "sha256": "1e35bb9fb3be51a4c82283f3ceabb2c76828023dbb28fcc55c10f47e58fda3b8"
     },
     {
       "path": "validators/mcp-client.js",

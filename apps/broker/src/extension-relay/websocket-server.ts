@@ -36,6 +36,7 @@ import {
 import type { RelayRepositories, StoredTarget } from '../storage/index.js';
 import { ConnectionRegistry, type LiveExtensionConnection } from './connection-registry.js';
 import type { BootstrapGrants, ManagedConnectionClaim } from '../profiles/bootstrap-grants.js';
+import { MANAGED_EXTENSION_ID } from '../profiles/runtime-config.js';
 
 interface BrowserHelloFacts {
   product: string;
@@ -113,7 +114,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
   private upgradeAccepted = 0;
   private upgradeRejected = 0;
   private lastUpgradeAt: string | null = null;
-  private lastUpgradeResult: 'accepted' | 'rejected-path' | 'rejected-host' | null = null;
+  private lastUpgradeResult: 'accepted' | 'rejected-path' | 'rejected-host' | 'rejected-origin' | null = null;
   private lastUpgradeHostKind: 'loopback-ip' | 'localhost' | 'other' | 'missing' | null = null;
   private lastUpgradePath: string | null = null;
 
@@ -167,6 +168,15 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       if (!this.allowedHost(request.headers.host)) {
         this.upgradeRejected += 1;
         this.lastUpgradeResult = 'rejected-host';
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      // Browser pages send Origin; the WinHTTP Native Host does not. Reject
+      // other origins before HELLO can reach automatic extension registration.
+      if (request.headers.origin !== undefined && request.headers.origin !== `chrome-extension://${MANAGED_EXTENSION_ID}`) {
+        this.upgradeRejected += 1;
+        this.lastUpgradeResult = 'rejected-origin';
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;

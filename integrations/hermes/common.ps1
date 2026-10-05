@@ -3,7 +3,8 @@ $env:PSModulePath = (Join-Path $PSHOME 'Modules') + [IO.Path]::PathSeparator + $
 $TabroPluginRoot = $PSScriptRoot
 
 function Get-TabroRoot([string]$Requested) {
-  if (-not $Requested) { $Requested = $env:TABRO_INSTALL_ROOT }
+  # Hermes leaves an unset MCP env placeholder literal; use the default root.
+  if (-not $Requested -and $env:TABRO_INSTALL_ROOT -ne '${TABRO_INSTALL_ROOT}') { $Requested = $env:TABRO_INSTALL_ROOT }
   if (-not $Requested) { $Requested = Join-Path $env:LOCALAPPDATA 'Tabro' }
   if ($Requested -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+(?:[\\/]|$))') { throw 'Tabro InstallRoot must be absolute so every Hermes Profile resolves the same installation.' }
   $root = [IO.Path]::GetFullPath($Requested)

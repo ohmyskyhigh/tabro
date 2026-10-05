@@ -38489,7 +38489,7 @@ function createRelayEnvelope(type, payload) {
 }
 
 // apps/shared/protocol/src/version.ts
-var TABRO_VERSION = "0.4.1";
+var TABRO_VERSION = "0.4.2";
 var OCTOPUS_VERSION = TABRO_VERSION;
 
 // apps/shared/protocol/src/schemas.ts
@@ -41974,7 +41974,7 @@ var ConnectionRegistry = class {
 
 // apps/broker/src/extension-relay/websocket-server.ts
 import {
-  createHash as createHash4,
+  createHash as createHash5,
   createPublicKey,
   randomBytes as randomBytes2,
   randomUUID as randomUUID6,
@@ -41992,6 +41992,46 @@ var import_subprotocol = __toESM(require_subprotocol(), 1);
 var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
+
+// apps/broker/src/profiles/runtime-config.ts
+import { createHash as createHash4 } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve as resolve2, sep } from "node:path";
+var MANAGED_EXTENSION_ID = "caekiojlchhifdomfghejkbfpmaklafe";
+function containedPath(root, ...parts) {
+  const base = resolve2(root);
+  const target = resolve2(base, ...parts);
+  const rel = relative(base, target);
+  if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) throw new ProfileError("PROFILE_PATH_INVALID");
+  let current = resolve2(base).split(sep)[0] + sep;
+  for (const part of target.slice(current.length).split(sep).filter(Boolean)) {
+    current = resolve2(current, part);
+    if (existsSync(current) && lstatSync(current).isSymbolicLink()) throw new ProfileError("PROFILE_PATH_INVALID");
+  }
+  if (existsSync(target)) {
+    const physical = relative(realpathSync(base), realpathSync(target));
+    if (isAbsolute(physical) || physical === ".." || physical.startsWith(`..${sep}`)) throw new ProfileError("PROFILE_PATH_INVALID");
+  }
+  return target;
+}
+function profileLayout(root, key) {
+  if (!/^[0-9a-f]{8}-[0-9a-f-]{27}$/u.test(key)) throw new ProfileError("PROFILE_PATH_INVALID");
+  mkdirSync(root, { recursive: true });
+  const directory = containedPath(root, "profiles", key);
+  return { directory, dataDir: containedPath(root, "profiles", key, "user-data"), extensionDir: containedPath(root, "profiles", key, "extension") };
+}
+function extensionDigest(directory) {
+  const hash2 = createHash4("sha256");
+  for (const file2 of ["manifest.json", "service-worker.js", "options.js", "options.html"]) hash2.update(file2).update(readFileSync(resolve2(directory, file2)));
+  return hash2.digest("hex");
+}
+function validateRuntime(config3) {
+  if (process.platform !== "win32") throw new ProfileError("PROFILE_RUNTIME_UNSUPPORTED");
+  const url2 = new URL(config3.relayUrl);
+  if (url2.protocol !== "ws:" || url2.hostname !== "127.0.0.1" || url2.pathname !== "/relay" || url2.username || url2.password) throw new ProfileError("PROFILE_RUNTIME_INVALID");
+  if (!isAbsolute(config3.executablePath) || !existsSync(config3.executablePath)) throw new ProfileError("PROFILE_RUNTIME_MISSING");
+  if (extensionDigest(config3.extensionSource) !== config3.expectedExtensionDigest) throw new ProfileError("PROFILE_EXTENSION_MISMATCH");
+}
 
 // apps/broker/src/extension-relay/websocket-server.ts
 var InventoryRejectedBeforeDispatch = class extends Error {
@@ -42046,6 +42086,13 @@ var ExtensionGateway = class {
       if (!this.allowedHost(request.headers.host)) {
         this.upgradeRejected += 1;
         this.lastUpgradeResult = "rejected-host";
+        socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      if (request.headers.origin !== void 0 && request.headers.origin !== `chrome-extension://${MANAGED_EXTENSION_ID}`) {
+        this.upgradeRejected += 1;
+        this.lastUpgradeResult = "rejected-origin";
         socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
         socket.destroy();
         return;
@@ -42633,7 +42680,7 @@ var ExtensionGateway = class {
     void socket;
   }
   canonicalizeTarget(target, publicKeyJwk) {
-    const fingerprint = createHash4("sha256").update(JSON.stringify({
+    const fingerprint = createHash5("sha256").update(JSON.stringify({
       kty: publicKeyJwk.kty,
       crv: publicKeyJwk.crv,
       x: publicKeyJwk.x,
@@ -51935,9 +51982,9 @@ var McpGateway = class {
 };
 
 // apps/broker/src/storage/sqlite/database.ts
-import { createHash as createHash5, randomBytes as randomBytes3, randomUUID as randomUUID8 } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, resolve as resolve2 } from "node:path";
+import { createHash as createHash6, randomBytes as randomBytes3, randomUUID as randomUUID8 } from "node:crypto";
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2 } from "node:fs";
+import { dirname, resolve as resolve3 } from "node:path";
 
 // apps/broker/src/storage/sqlite/shared.ts
 var nowIso = () => (/* @__PURE__ */ new Date()).toISOString();
@@ -53278,7 +53325,7 @@ var NodeSqliteDatabase = class {
 };
 
 // apps/broker/src/storage/sqlite/database.ts
-var hashSecret = (value) => createHash5("sha256").update(value).digest("hex");
+var hashSecret = (value) => createHash6("sha256").update(value).digest("hex");
 var nowIso2 = () => (/* @__PURE__ */ new Date()).toISOString();
 var jwkIdentity = (value) => JSON.stringify({
   kty: value.kty,
@@ -53366,8 +53413,8 @@ var SqliteRelayStore = class {
   profiles;
   proxies;
   constructor(databasePath) {
-    const existingDatabase = databasePath !== ":memory:" && existsSync(databasePath);
-    if (databasePath !== ":memory:") mkdirSync(dirname(resolve2(databasePath)), { recursive: true });
+    const existingDatabase = databasePath !== ":memory:" && existsSync2(databasePath);
+    if (databasePath !== ":memory:") mkdirSync2(dirname(resolve3(databasePath)), { recursive: true });
     this.db = new NodeSqliteDatabase(databasePath);
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("journal_mode = WAL");
@@ -53394,18 +53441,18 @@ var SqliteRelayStore = class {
   }
   migrate(backupSource) {
     const migrations = [
-      { version: 1, sql: readFileSync(new URL("./migrations/001-initial.sql", import.meta.url), "utf8") },
-      { version: 2, sql: readFileSync(new URL("./migrations/002-real-world-trace.sql", import.meta.url), "utf8") },
-      { version: 3, sql: readFileSync(new URL("./migrations/003-agent-target-bindings.sql", import.meta.url), "utf8") },
-      { version: 4, sql: readFileSync(new URL("./migrations/004-workspaces-requests.sql", import.meta.url), "utf8") },
-      { version: 5, sql: readFileSync(new URL("./migrations/005-window-focus-history.sql", import.meta.url), "utf8") },
-      { version: 6, sql: readFileSync(new URL("./migrations/006-managed-profiles.sql", import.meta.url), "utf8") },
-      { version: 7, sql: readFileSync(new URL("./migrations/007-profile-alias-only.sql", import.meta.url), "utf8") },
-      { version: 8, sql: readFileSync(new URL("./migrations/008-profile-proxy.sql", import.meta.url), "utf8") }
+      { version: 1, sql: readFileSync2(new URL("./migrations/001-initial.sql", import.meta.url), "utf8") },
+      { version: 2, sql: readFileSync2(new URL("./migrations/002-real-world-trace.sql", import.meta.url), "utf8") },
+      { version: 3, sql: readFileSync2(new URL("./migrations/003-agent-target-bindings.sql", import.meta.url), "utf8") },
+      { version: 4, sql: readFileSync2(new URL("./migrations/004-workspaces-requests.sql", import.meta.url), "utf8") },
+      { version: 5, sql: readFileSync2(new URL("./migrations/005-window-focus-history.sql", import.meta.url), "utf8") },
+      { version: 6, sql: readFileSync2(new URL("./migrations/006-managed-profiles.sql", import.meta.url), "utf8") },
+      { version: 7, sql: readFileSync2(new URL("./migrations/007-profile-alias-only.sql", import.meta.url), "utf8") },
+      { version: 8, sql: readFileSync2(new URL("./migrations/008-profile-proxy.sql", import.meta.url), "utf8") }
     ];
     this.db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
     if (backupSource && !this.db.prepare("SELECT 1 FROM schema_migrations WHERE version=6").get()) {
-      this.db.prepare("VACUUM INTO ?").run(`${resolve2(backupSource)}.before-profiles-${randomUUID8()}.sqlite`);
+      this.db.prepare("VACUUM INTO ?").run(`${resolve3(backupSource)}.before-profiles-${randomUUID8()}.sqlite`);
     }
     for (const migration of migrations) {
       const applied = this.db.prepare("SELECT 1 FROM schema_migrations WHERE version = ?").get(migration.version);
@@ -53868,46 +53915,6 @@ function assertCompatibleBrowser(version2) {
   const agent = typeof version2.userAgent === "string" ? version2.userAgent : "";
   const match = /\b(?:Chrome|Chromium|HeadlessChrome)\/(\d+)\./u.exec(agent) ?? /^(?:Chrome|Chromium|HeadlessChrome|Edg)\/(\d+)\./u.exec(product);
   if (!match || Number(match[1]) < MINIMUM_BROWSER_MAJOR) throw new ProfileError("PROFILE_RUNTIME_UNSUPPORTED");
-}
-
-// apps/broker/src/profiles/runtime-config.ts
-import { createHash as createHash6 } from "node:crypto";
-import { existsSync as existsSync2, lstatSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, realpathSync } from "node:fs";
-import { isAbsolute, relative, resolve as resolve3, sep } from "node:path";
-var MANAGED_EXTENSION_ID = "caekiojlchhifdomfghejkbfpmaklafe";
-function containedPath(root, ...parts) {
-  const base = resolve3(root);
-  const target = resolve3(base, ...parts);
-  const rel = relative(base, target);
-  if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) throw new ProfileError("PROFILE_PATH_INVALID");
-  let current = resolve3(base).split(sep)[0] + sep;
-  for (const part of target.slice(current.length).split(sep).filter(Boolean)) {
-    current = resolve3(current, part);
-    if (existsSync2(current) && lstatSync(current).isSymbolicLink()) throw new ProfileError("PROFILE_PATH_INVALID");
-  }
-  if (existsSync2(target)) {
-    const physical = relative(realpathSync(base), realpathSync(target));
-    if (isAbsolute(physical) || physical === ".." || physical.startsWith(`..${sep}`)) throw new ProfileError("PROFILE_PATH_INVALID");
-  }
-  return target;
-}
-function profileLayout(root, key) {
-  if (!/^[0-9a-f]{8}-[0-9a-f-]{27}$/u.test(key)) throw new ProfileError("PROFILE_PATH_INVALID");
-  mkdirSync2(root, { recursive: true });
-  const directory = containedPath(root, "profiles", key);
-  return { directory, dataDir: containedPath(root, "profiles", key, "user-data"), extensionDir: containedPath(root, "profiles", key, "extension") };
-}
-function extensionDigest(directory) {
-  const hash2 = createHash6("sha256");
-  for (const file2 of ["manifest.json", "service-worker.js", "options.js", "options.html"]) hash2.update(file2).update(readFileSync2(resolve3(directory, file2)));
-  return hash2.digest("hex");
-}
-function validateRuntime(config3) {
-  if (process.platform !== "win32") throw new ProfileError("PROFILE_RUNTIME_UNSUPPORTED");
-  const url2 = new URL(config3.relayUrl);
-  if (url2.protocol !== "ws:" || url2.hostname !== "127.0.0.1" || url2.pathname !== "/relay" || url2.username || url2.password) throw new ProfileError("PROFILE_RUNTIME_INVALID");
-  if (!isAbsolute(config3.executablePath) || !existsSync2(config3.executablePath)) throw new ProfileError("PROFILE_RUNTIME_MISSING");
-  if (extensionDigest(config3.extensionSource) !== config3.expectedExtensionDigest) throw new ProfileError("PROFILE_EXTENSION_MISMATCH");
 }
 
 // apps/broker/src/profiles/chrome-launcher.ts

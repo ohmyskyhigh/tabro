@@ -150,6 +150,8 @@ Read-model queries implement bounded context and ticket-discovery pages with que
 
 ### Extension Gateway registers first connections and authenticates later generations
 
+The gateway checks the relay path, loopback Host and browser Origin before WebSocket upgrade. A present Origin must exactly match the Tabro extension origin defined by System; a missing Origin remains valid for the Native Host. Rejection occurs before HELLO handling and automatic registration, with a `rejected-origin` health counter result.
+
 For an unpaired relay-v2 extension, the gateway validates the two-word code format, proposed nickname, profile public key, and negotiated capability manifest, then asks the broker to register the endpoint automatically. The readable code supports human correlation and does not grant authority. A duplicate nickname belonging to another profile key returns `ENDPOINT_NICKNAME_CONFLICT` so the extension can preserve the requested label and wait for operator correction.
 
 After registration, the gateway validates the persisted endpoint identity through challenge authentication, applies any requested alias change only after that proof, negotiates relay-protocol and capability versions, and registers one current connection generation. A replacement connection fences the older generation before it can return results. Relay-v1 broker-generated one-time codes remain migration-only behavior and are not part of the current installation journey.
