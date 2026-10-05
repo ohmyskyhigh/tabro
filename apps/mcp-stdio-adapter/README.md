@@ -1,10 +1,12 @@
 # Tabro stdio MCP adapter
 
+For installation and client configuration, start with [Getting started](../../GETTING_STARTED.md#other-agents).
+
 ## Purpose
 
 ### One adapter process gives one Codex or Hermes session private caller evidence
 
-The adapter publishes the canonical eighteen Tabro tools over stdio and forwards every call to the loopback HTTP broker. It injects runtime and session headers outside tool arguments, so the agent never generates or sees caller identity fields. It requires MCP contract v2, checks Broker health before connecting and sends the contract version header.
+The adapter publishes the canonical twenty-two Tabro tools over stdio and forwards every call to the loopback HTTP broker. It injects runtime and session headers outside tool arguments, so the agent never generates or sees caller identity fields. It requires MCP contract v5, checks Broker health before connecting and sends the contract version header.
 
 ### Runtime session evidence prefers host IDs and otherwise lasts for one process
 
@@ -32,7 +34,7 @@ The pre-existing URL, token, runtime/session, adapter-version and Demo-trace set
 
 The adapter validates the discovery record, loopback addresses and process liveness. It then requires matching MCP contract version and health instance UUID before connection. Each new tool call rereads discovery; an instance change reconnects the HTTP client while preserving the adapter's caller identity. Invalid or missing configured discovery fails rather than falling back to a fixed URL. A call already dispatched is never automatically retried.
 
-The discovery format's version `1` is independent of MCP contract version `2`, relay version `2`, and the package version. The runtime file contains no bearer credential.
+The discovery format's version `1` is independent of MCP contract version `5`, relay version `2`, and the package version. The runtime file contains no bearer credential.
 
 ## Delivery boundary
 

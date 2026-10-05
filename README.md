@@ -4,12 +4,14 @@
 
 Open-source Chromium browser automation for AI agents: one shared Broker, separate task workspaces, and per-profile proxies through MCP.
 
+**[Get started →](./GETTING_STARTED.md)** Set up Hermes, Codex or another MCP agent, then connect a new managed browser or an existing Chrome, Edge or AdsPower SunBrowser profile.
+
 Tabro was previously named Octopus Browser Relay. New MCP registrations use `tabro`; existing profile data, extension identity, Native Messaging registration, and legacy environment variables remain compatible. The repository is now [ohmyskyhigh/tabro](https://github.com/ohmyskyhigh/tabro); the previous repository address redirects to it, and historical release asset filenames remain valid.
 
 Tabro connects a local MCP gateway to one extension instance in each browser profile. An agent asks for browser capacity, receives broker-issued workspace and tab references, submits extension-supported Chrome DevTools Protocol (CDP) commands, and polls durable request tickets. The extension relays those commands through `chrome.debugger`; Chrome does not need a public remote-debugging port.
 
 > [!IMPORTANT]
-> The `0.4.1` tree implements the canonical twenty-two-tool runtime, authenticated HTTP(S)/SOCKS5 profile proxies, relay-v2, Native Messaging and extension-backed CDP. The [Hermes plugin package](./integrations/hermes/README.md) includes the Windows runtime and first-time setup; catalog admission requires a separate upstream review. The existing `v0.3.0` release uses the previous Octopus name and fourteen-tool contract; use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime) for current Tabro features and automatic managed Profile lifecycle. Automated verification and physical Chrome, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
+> The `0.4.2` tree implements the canonical twenty-two-tool runtime, authenticated HTTP(S)/SOCKS5 profile proxies, relay-v2, Native Messaging and extension-backed CDP. The [0.4.2 preview package](https://github.com/ohmyskyhigh/tabro/releases/tag/hermes-v0.4.2) includes the Windows runtime and first-time setup; Hermes catalog admission requires a separate upstream review. The existing `v0.3.0` standalone release uses the previous Octopus name and fourteen-tool contract. Follow [Getting started](./GETTING_STARTED.md) for the current package, or use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime). Automated verification and physical Chrome, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
 
 ## Features
 
@@ -35,9 +37,9 @@ Configure HTTP, HTTPS, or SOCKS5 proxies with username/password authentication t
 
 ## Quick start
 
-For Hermes, start with the [plugin installation guide](./integrations/hermes/README.md). Named Hermes profiles enable their own plugin connections and share one local Broker. The source-build path below remains available for development and other MCP clients.
+Start with [Getting started](./GETTING_STARTED.md) for Hermes, Codex and other MCP agents, including automatic and manual browser connection. Named Hermes profiles enable their own plugin connections and share one local Broker. The source-build path below remains available for development.
 
-The current source updater requires a release declaring shared runtime discovery support; it rejects older packages before stopping an existing installation. The published `v0.3.0` installer retains its older contract. Use the source installer below for the shared dynamic runtime until a qualified package is published.
+The current source updater requires a release declaring shared runtime discovery support; it rejects older packages before stopping an existing installation. The published `v0.3.0` installer retains its older contract. The getting-started guide uses the separate 0.4.2 preview package and its setup script.
 
 ### The source installer prepares the current twenty-two-tool shared runtime
 
@@ -251,14 +253,18 @@ The adapter forwards these facts to the HTTP broker as `x-octopus-runtime`, `x-o
 
 ## MCP tools
 
-### Eighteen tools cover profile lifecycle, browser work, monitoring, recovery, and control
+### Twenty-two tools cover profiles, proxies, browser work, monitoring and control
 
 | Execution | Tool | Purpose |
 | --- | --- | --- |
-| Read | `list_browser_profiles` | List owned persistent Profiles, including stopped browsers and their observed readiness. |
-| Async | `create_browser_profile` | Create an owned persistent Profile, launch Chrome, and connect its extension. |
-| Async | `open_browser_profile` | Open an existing Profile or reuse its running instance. |
-| Async | `stop_browser_profile` | Normally close an owned Profile after its active work ends. |
+| Read | `list_browser_profiles` | List registered broker-owned and user-owned Profiles, including offline identities and observed readiness. |
+| Async | `create_browser_profile` | Create a broker-owned persistent Profile, launch the configured browser, and connect its extension. |
+| Async | `open_browser_profile` | Open a broker-owned Profile or reuse its running instance. |
+| Async | `stop_browser_profile` | Normally close a broker-owned Profile after its active work ends. |
+| Read | `get_browser_proxy` | Read saved routing, application status and the last exit-IP observation for a broker-owned Profile. |
+| Async | `set_browser_proxy` | Save proxy routing for a closed broker-owned Profile, to apply on its next explicit open. |
+| Async | `clear_browser_proxy` | Clear Tabro proxy routing for a closed broker-owned Profile. |
+| Async | `check_browser_proxy` | Check routing and observe the exit IP of a connected broker-owned Profile. |
 | Read | `get_browser_context` | Read one narrow, paginated broker, endpoint, window, capability, workspace, tab, or request-summary view. |
 | Async | `request_browser_workspace` | Request an exact number of workspaces on distinct eligible profile endpoints. |
 | Async | `create_browser_tab` | Create one managed tab in an owned workspace. |

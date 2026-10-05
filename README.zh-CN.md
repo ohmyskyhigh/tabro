@@ -6,10 +6,12 @@
 
 Tabro 是面向 AI Agent 的开源 Chromium 浏览器自动化工具：通过 MCP，共用一个 Broker、为不同任务创建独立工作区，并为每个浏览器 Profile 配置代理。
 
+**[开始使用（英文）→](./GETTING_STARTED.md)** 配置 Hermes、Codex 或其他 MCP Agent，然后通过 MCP 创建浏览器，或在已有 Chrome、Edge、AdsPower SunBrowser Profile 中加载扩展。
+
 每个浏览器配置文件安装一个扩展实例。Agent 向本地 Broker 申请工作区，获得 Broker 签发的 `workspace_ref`、`tab_ref` 和请求票据，再通过扩展支持的 Chrome DevTools Protocol（CDP）子集执行浏览器操作。扩展使用 `chrome.debugger`，无需公开暴露 Chrome 远程调试端口；受管启动内部使用 loopback 管理连接。
 
 > [!IMPORTANT]
-> `0.4.1` 版本实现 22 个 MCP 工具、HTTP(S)/SOCKS5 账号密码代理、relay-v2、Native Messaging、扩展 CDP 适配器及受管 Profile 生命周期。[Hermes 插件](./integrations/hermes/README.md)包含 Windows 运行组件和首次 setup；商城收录仍需上游审核。已有 `v0.3.0` Release 使用旧 Octopus 名称和 14 工具协议；使用当前 Tabro 功能和自动管理 Profile 时，请按下方“源码安装”构建。自动化检查与本机演示分别验证；不同机器仍需完成自己的预检和真实浏览器测试。
+> `0.4.2` 版本实现 22 个 MCP 工具、HTTP(S)/SOCKS5 账号密码代理、relay-v2、Native Messaging、扩展 CDP 适配器及受管 Profile 生命周期。[0.4.2 预览包](https://github.com/ohmyskyhigh/tabro/releases/tag/hermes-v0.4.2)包含 Windows 运行组件和首次 setup；Hermes 商城收录仍需上游审核。已有 `v0.3.0` 独立 Release 使用旧 Octopus 名称和 14 工具协议；当前包的安装请看[开始使用](./GETTING_STARTED.md)，开发者也可按下方“源码安装”构建。自动化检查与本机演示分别验证；不同机器仍需完成自己的预检和真实浏览器测试。
 
 ## 功能展示
 
@@ -35,9 +37,9 @@ Agent 可以为不同任务创建独立的标签组工作区。Broker 记录工�
 
 ## 快速开始
 
-Hermes 用户请先阅读[插件安装指南](./integrations/hermes/README.md)。多个 Hermes profile 分别启用插件，共用一个本地 Broker。下方源码安装适用于开发和其他 MCP 客户端。
+请先阅读[开始使用（英文）](./GETTING_STARTED.md)，了解 Hermes、Codex、其他 MCP Agent 的配置，以及通过 MCP 或手动加载扩展连接浏览器。多个 Hermes profile 分别启用插件，共用一个本地 Broker。下方保留开发者源码安装步骤。
 
-### 当前二十二工具与共享运行时通过源码安装使用
+### 开发者可从源码安装二十二工具的共享运行时
 
 1. 准备下方“环境要求”中的 Windows 构建工具，克隆仓库并进入根目录。
 2. 运行 `pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker`；启用受管 Chrome 时另加 `-EnableManagedProfiles`。
