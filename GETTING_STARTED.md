@@ -12,49 +12,37 @@ Choose your agent: [Hermes](#hermes) · [Codex and other MCP agents](#other-agen
 
 Setup installs the Broker, MCP adapter, Native Messaging companion and extension, and can download the required Node runtime. You do not need to build Tabro or install Hermes to use another MCP agent. Existing AdsPower **SunBrowser** profiles can connect through the extension; their browser build must support the extension's Native Messaging, debugger and tab-group APIs. AdsPower is optional.
 
-This guide uses the [0.4.2 Windows preview](https://github.com/ohmyskyhigh/tabro/releases/tag/hermes-v0.4.2). Its runtime is pinned to commit `6b0b7e526cb6d85dc3fb3d0eae63d051b5be127a`.
-
 ## Hermes
 
-### Install the plugin into the Hermes profile you want to use
+### Install and enable Tabro through the Hermes plugin catalog
 
-In PowerShell, select your browser before installing or enabling the plugin. Use its actual executable path; this example selects Chrome:
-
-```powershell
-$env:TABRO_BROWSER_PATH = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-[Environment]::SetEnvironmentVariable('TABRO_BROWSER_PATH', $env:TABRO_BROWSER_PATH, 'User')
-```
-
-For Edge, a common path is `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`. Restart an already-open Hermes app so it inherits the variable.
-
-While [catalog admission](https://github.com/NousResearch/hermes-agent/pull/132619) is pending, install the pinned plugin directly:
+Once Tabro is available in the Hermes plugin catalog, use the normal install and enable commands:
 
 ```powershell
-hermes plugins install "ohmyskyhigh/tabro#integrations/hermes" --ref 6b0b7e526cb6d85dc3fb3d0eae63d051b5be127a --no-enable
-hermes plugins list
-```
-
-For an existing named Hermes profile, add `-p <profile-name>` immediately after `hermes` in each command, including install, list and enable. For example, `hermes -p tabro-1 plugins list`. Repeat installation and enablement for every participating Hermes profile. See [Hermes's plugin documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins/) for its installation and enablement controls.
-
-### Run setup once and enable the plugin in each participating profile
-
-Set `$TabroPackage` to the plugin directory reported by `hermes plugins list`, then run:
-
-```powershell
-$TabroPackage = 'C:\path\to\installed\tabro'
-powershell.exe -NoProfile -File "$TabroPackage\setup.ps1" -DownloadNode
+hermes plugins install tabro
 hermes plugins enable tabro
 ```
 
-Setup starts the Broker and prints `status: INSTALLED`, `nativeRegistered: true` and an `extensionPath`. Keep that extension path for the manual browser connection below. Reload Hermes MCP or start a new agent session after setup.
+Follow the [plugin setup guide](./integrations/hermes/README.md#installation) for browser prerequisites and first-time Broker setup, then reload Hermes MCP or start a new agent session. See [Hermes's plugin documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins/) for its standard installation controls.
 
-All participating Hermes profiles share `%LOCALAPPDATA%\Tabro` and have separate MCP sessions. Setup from another profile reuses that installation. Keep their plugin versions aligned. For a custom location, follow the [custom-root instructions](./integrations/hermes/README.md#named-hermes-profiles-share-the-daemon-and-enable-their-own-plugin-connections).
+### Each named Hermes profile enables its own Tabro connection
+
+For an existing named profile, add `-p <profile-name>` after `hermes`:
+
+```powershell
+hermes -p tabro-1 plugins install tabro
+hermes -p tabro-1 plugins enable tabro
+```
+
+Repeat for each participating profile. They share one local Broker while keeping separate MCP sessions and task workspaces. Keep their plugin versions aligned.
+
+### Connect a browser after plugin setup is complete
 
 Ask Hermes:
 
 > Use Tabro to list my browser profiles.
 
-An empty list on a fresh installation is normal: [connect a browser](#browser-connection) next. Once Tabro is admitted to the catalog, `hermes plugins install tabro` can replace the direct repository install command above.
+An empty list on a fresh installation is normal. Continue to [Browser connection](#browser-connection) to create a profile through MCP or connect an existing browser with the extension.
 
 ## Other agents
 
