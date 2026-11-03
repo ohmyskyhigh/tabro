@@ -19,6 +19,10 @@ If a different Tabro Native Host is registered, preserve its running work. Expla
 
 ## Browser work
 
+### LinkedIn feed posts use a separate approval and verification workflow
+
+For preparing or publishing LinkedIn text/image feed posts, use the sibling [tabro-linkedin-post skill](../tabro-linkedin-post/SKILL.md). It retains this skill's workspace ownership and asynchronous ticket rules, adds composer/upload instructions, and requires exact post readback. It does not authorize publication or automatic reposting.
+
 ### Profile launch ownership is separate from workspace ownership
 
 Discover Profiles and use their returned aliases and opaque references. `ownership=broker` allows authorized MCP create/open/stop; `ownership=user` requires the human to launch Chrome before its extension connects. Both use session-owned workspaces. Acquire your own workspace and use its `workspace_ref` and `tab_ref`. Do not invent identifiers or operate another session's tab group.

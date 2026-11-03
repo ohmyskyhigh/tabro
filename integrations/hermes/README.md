@@ -70,6 +70,10 @@ An existing `mcp_servers.tabro` configuration wins over the plugin's MCP server.
 
 ## Browser automation
 
+### LinkedIn feed publishing has a dedicated approval and readback workflow
+
+The companion [tabro-linkedin-post skill](skills/tabro-linkedin-post/SKILL.md) covers text and image feed posts: selecting the signed-in identity, acquiring an owned workspace, filling the composer, uploading images through CDP, publishing only an approved payload, and verifying the exact permalink/body/media. It includes [MCP and DOM examples](skills/tabro-linkedin-post/references/cdp-workflow.md), duplicate prevention and uncertain-result recovery. It does not publish by itself, install into other agent profiles, or require a particular CRM. The skill ships alongside `tabro-browser`; agents using other hosts can load the same Markdown and adapt tool-name prefixes to their MCP client.
+
 ### Twenty-two MCP tools preserve profile and workspace ownership
 
 The plugin supplies the `tabro` MCP server and the `tabro-browser` workflow skill. Discover Profiles, create or open a broker-owned Profile, acquire a session workspace and use returned tab references for CDP commands. Poll asynchronous request tickets. Separate agents can share a browser through their own tab groups. Commands, events, screenshots and mouse input use the extension's managed-tab CDP scope.
