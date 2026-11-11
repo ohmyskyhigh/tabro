@@ -168,7 +168,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
   }
   try {
     installation = setup();
-    if (windows) expect(installation.mcp.env?.TABRO_INSTALL_ROOT).toBe(install);
+    if (windows) expect(realpathSync(installation.mcp.env!.TABRO_INSTALL_ROOT!).toLowerCase()).toBe(realpathSync(install).toLowerCase());
     const rulesPath = resolve(install, 'data/browser-rules.json');
     let savedRules = JSON.stringify({ schemaVersion: 1, rules: [
       { id: 'preserved', domain: 'preserved.example', mode: 'input_only' },

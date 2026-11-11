@@ -192,7 +192,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   try {
     await startBroker(); await connect('codex');
     browser = spawn(browserPath, [`--user-data-dir=${userData}`, '--no-first-run', '--no-default-browser-check', '--disable-background-mode',
-      '--headless=new', '--no-proxy-server', '--host-resolver-rules=MAP *.test 127.0.0.1', '--remote-debugging-address=127.0.0.1',
+      '--headless=new', '--window-size=1280,900', '--no-proxy-server', '--host-resolver-rules=MAP *.test 127.0.0.1', '--remote-debugging-address=127.0.0.1',
       '--remote-debugging-port=0', '--enable-unsafe-extension-debugging', 'about:blank'], { stdio: 'ignore' });
     const portFile = join(userData, 'DevToolsActivePort');
     await expect.poll(() => existsSync(portFile), { timeout: 15000 }).toBe(true);
@@ -295,6 +295,8 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   } catch (error) {
     report.status = 'failed'; report.error = error instanceof Error ? error.stack : String(error);
     if (control && workerSession) {
+      try { report.extensionStatus = await worker("chrome.storage.local.get(['connectionStatus', 'lastError', 'transportKind'])"); }
+      catch (statusError) { report.extensionStatusError = String(statusError); }
       try {
         const screenshot = await worker('(async()=>{const tabs=await chrome.tabs.query({});const tab=tabs.find(t=>t.url?.includes(".test:"));return tab?await chrome.debugger.sendCommand({tabId:tab.id},"Page.captureScreenshot",{}):null})()');
         if (screenshot && typeof object(screenshot).data === 'string') {
