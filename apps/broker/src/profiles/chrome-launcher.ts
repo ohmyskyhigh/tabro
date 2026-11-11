@@ -1,4 +1,5 @@
 import { execFile, execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -95,6 +96,10 @@ export class ChromeLauncher {
     // A manifest marker survives a missing bootstrap file and prevents unmanaged fallback.
     const manifest = JSON.parse(readFileSync(resolve(paths.extensionDir, 'manifest.json'), 'utf8')) as Record<string, unknown>;
     manifest.description = `${String(manifest.description ?? '')} [octopus-managed]`;
+    // Chrome can reuse a stopped profile's cached worker when its script URL is unchanged.
+    const worker = `service-worker.${createHash('sha256').update(readFileSync(resolve(paths.extensionDir, 'service-worker.js'))).digest('hex')}.js`;
+    copyFileSync(resolve(paths.extensionDir, 'service-worker.js'), resolve(paths.extensionDir, worker));
+    manifest.background = { ...(manifest.background as Record<string, unknown>), service_worker: worker };
     writeFileSync(resolve(paths.extensionDir, 'manifest.json'), JSON.stringify(manifest));
     this.writeBootstrap(profile, bootstrap);
   }

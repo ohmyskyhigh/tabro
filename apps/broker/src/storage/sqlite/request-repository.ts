@@ -59,10 +59,10 @@ export class SqliteRequestRepository implements RequestRepository {
   inputStates(): ReturnType<RequestRepository['inputStates']> {
     return (this.db.prepare('SELECT state_json FROM browser_input_states').all() as Row[]).map(row => parseJson(row.state_json));
   }
-  saveInputState(windowRef: string, state: Parameters<RequestRepository['saveInputState']>[1]): void {
-    if (state === null) { this.db.prepare('DELETE FROM browser_input_states WHERE window_ref=?').run(windowRef); return; }
-    this.db.prepare('INSERT INTO browser_input_states VALUES(?,?) ON CONFLICT(window_ref) DO UPDATE SET state_json=excluded.state_json')
-      .run(windowRef, JSON.stringify(state));
+  saveInputState(tabRef: string, state: Parameters<RequestRepository['saveInputState']>[1]): void {
+    if (state === null) { this.db.prepare('DELETE FROM browser_input_states WHERE tab_ref=?').run(tabRef); return; }
+    this.db.prepare('INSERT INTO browser_input_states(tab_ref,state_json) VALUES(?,?) ON CONFLICT(tab_ref) DO UPDATE SET state_json=excluded.state_json')
+      .run(tabRef, JSON.stringify(state));
   }
 
   private insertTransition(request: StoredRequestTicket, reasonCode: string | null, at: string): void {

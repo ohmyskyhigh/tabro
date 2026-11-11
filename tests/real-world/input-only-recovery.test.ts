@@ -1,7 +1,7 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -10,6 +10,9 @@ import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotoc
 import WebSocket, { WebSocketServer } from 'ws';
 import { expect, it } from 'vitest';
 import { ChromeManagementConnection } from '../../apps/broker/src/profiles/management-connection.js';
+import { ChromeLauncher } from '../../apps/broker/src/profiles/chrome-launcher.js';
+import { extensionDigest, profileLayout } from '../../apps/broker/src/profiles/runtime-config.js';
+import type { ManagedProfile } from '../../apps/broker/src/profiles/types.js';
 import { MCP_CONTRACT_VERSION } from '../../apps/shared/protocol/src/mcp/tool-catalog.js';
 
 type Json = Record<string, unknown>;
@@ -52,6 +55,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   let workspace = '';
   let tab = '';
   let lostNextType: string | null = null;
+  let inventoriesReceived = 0;
   const attempts = new Map<string, Json>();
   const sockets = new Set<WebSocket>();
   let logs = '';
@@ -100,6 +104,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     upstream.on('open', () => { for (const message of waiting.splice(0)) upstream.send(message); });
     socket.on('message', data => {
       const message = object(JSON.parse(data.toString()));
+      if (message.type === 'INVENTORY_SNAPSHOT') inventoriesReceived++;
       const payload = object(message.payload);
       const command = attempts.get(String(payload.attemptId));
       if (message.type === 'OPERATION_RESULT' && command && lostNextType === object(command.params).type) {
@@ -215,8 +220,22 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     const allocated = await execute('request_browser_workspace', { required_workspace_count: 1, designated_endpoints: [{ endpoint_nickname: nickname }] });
     const resolved = (object(object(allocated.result).facts).resolved as Json[])[0]!;
     workspace = String(object(resolved.workspace).workspace_ref); tab = String((resolved.tabs as Json[])[0]!.tab_ref);
-    await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/` }); await cdp('Page.bringToFront', {});
+    await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/` });
     await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro input fixture');
+    const backgroundTab = (await worker('chrome.tabs.query({})') as Json[]).find(item => String(item.url).includes('fixture.test'))!;
+    expect(backgroundTab.active).toBe(false);
+    const backgroundPoint = await center('#text');
+    await mouse('mouseMoved', backgroundPoint); await mouse('mousePressed', backgroundPoint);
+    const previousInventoryCount = inventoriesReceived;
+    // A harmless tab update publishes inventory without changing the gesture's focus.
+    await worker(`chrome.tabs.update(${Number(backgroundTab.id)},{muted:true})`);
+    await expect.poll(() => inventoriesReceived).toBeGreaterThan(previousInventoryCount);
+    expect(object((await context()).input_recovery)).toMatchObject({ status: 'held', pause_reason: null });
+    await mouse('mouseReleased', backgroundPoint);
+    expect((await context()).input_recovery).toBeNull();
+    expect(await read('document.activeElement.id')).toBe('text');
+    pass('background click survives unchanged inventory between press and release');
+    await cdp('Page.bringToFront', {});
     for (const expression of [
       'document.querySelector("#button").click()', 'document.querySelector("#text").focus()',
       'document.querySelector("#text").value="forbidden"', 'document.querySelector("#scroll").scrollTop=50',
@@ -258,9 +277,38 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     expect((await call('send_cdp_command', { workspace_ref: workspace, target: { kind: 'tab', tab_ref: tab }, method: 'Input.insertText', params: { text: 'blocked' } })).disposition).toBe('rejected');
     await raw('DOM.getDocument', {});
     expect(trace.slice(beforeCrash).some(row => String(row.method).startsWith('Input.'))).toBe(false);
+    const pausedWorkspace = workspace;
+    const pausedTab = tab;
+    const pausedBrowserTabId = object(trace[beforeCrash - 1]!.tab).tabId;
+    for (const separateWorkspace of [false, true]) {
+      if (separateWorkspace) {
+        const allocation = await execute('request_browser_workspace', { required_workspace_count: 1,
+          designated_endpoints: [{ endpoint_nickname: nickname, window_ref: object(resolved.workspace).window_ref }] });
+        const next = (object(object(allocation.result).facts).resolved as Json[])[0]!;
+        expect(object(next.workspace).window_ref).toBe(object(resolved.workspace).window_ref);
+        workspace = String(object(next.workspace).workspace_ref);
+        tab = String((next.tabs as Json[])[0]!.tab_ref);
+      } else {
+        const created = await execute('create_browser_tab', { workspace_ref: workspace });
+        tab = String(object(object(object(created.result).facts).tab).tab_ref);
+      }
+      await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/independent-${separateWorkspace}` });
+      await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro input fixture');
+      expect((await context()).input_recovery).toBeNull();
+      await click('#button'); expect(await read('fixture.clicks')).toBe(1);
+      await click('#text'); await cdp('Input.insertText', { text: 'new tab works' });
+      expect(await read('document.querySelector("#text").value')).toBe('new tab works');
+      if (separateWorkspace) await execute('terminate_workspace', { workspace_ref: workspace });
+      workspace = pausedWorkspace; tab = pausedTab;
+      expect((await context()).input_recovery).toEqual(recovery);
+      expect((await call('send_cdp_command', { workspace_ref: workspace, target: { kind: 'tab', tab_ref: tab },
+        method: 'Input.insertText', params: { text: 'still blocked' } })).disposition).toBe('rejected');
+    }
+    expect(trace.slice(beforeCrash).filter(row => object(row.tab).tabId === pausedBrowserTabId && String(row.method).startsWith('Input.'))).toHaveLength(0);
+    pass('paused tab stays locked while new tabs in its workspace and another workspace in the same window can click and type');
     // Labeled simulated user intervention, outside the action path under test.
     const tabs = await worker('chrome.tabs.query({})') as Json[];
-    const testTab = tabs.find(item => String(item.url).includes('fixture.test'))!;
+    const testTab = tabs.find(item => item.id === pausedBrowserTabId)!;
     await worker(`chrome.debugger.sendCommand({tabId:${Number(testTab.id)}},'Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',x:700,y:500})`);
     await execute('resume_workspace_automation', { workspace_ref: workspace, input_recovery: { recovery_ref: recovery.recovery_ref, user_confirmed_released: true } });
     await click('#button'); expect(await read('fixture.clicks')).toBe(2);
@@ -323,3 +371,63 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     rmSync(root, { recursive: true, force: true, maxRetries: 15, retryDelay: 200 });
   }
 }, 240000);
+
+it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('loads changed managed extension bytes after a same-version upgrade without losing identity', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'tabro-worker-upgrade-')));
+  const source = join(root, 'source'); mkdirSync(source);
+  const nativeManifest = join(root, 'native.json'); writeFileSync(nativeManifest, '{}');
+  const browserPath = process.env.TABRO_QUALIFY_CHROME ?? (process.platform === 'darwin'
+    ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : process.platform === 'win32'
+      ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '/opt/google/chrome/chrome');
+  const packageRoot = resolve(process.env.TABRO_QUALIFY_PACKAGE!);
+  const manifest = JSON.parse(readFileSync(join(packageRoot, 'runtime/browser-extension/manifest.json'), 'utf8')) as Json;
+  const profile = { dataDirKey: crypto.randomUUID() } as ManagedProfile;
+  const { dataDir, extensionDir } = profileLayout(root, profile.dataDirKey);
+  const config = { root, executablePath: browserPath, extensionSource: source, expectedBrowserVersion: '',
+    expectedExtensionDigest: '', relayUrl: 'ws://127.0.0.1:1/relay', nativeHostManifest: nativeManifest };
+  let browser: ChildProcess | null = null;
+  let control: ChromeManagementConnection | null = null;
+  try {
+    for (const build of ['first', 'second']) {
+      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ manifest_version: 3, name: 'Tabro upgrade fixture',
+        version: '0.5.0', key: manifest.key, permissions: ['storage'], background: { service_worker: 'service-worker.js', type: 'module' } }));
+      writeFileSync(join(source, 'service-worker.js'), `globalThis.fixtureBuild=${JSON.stringify(build)};chrome.runtime.onInstalled.addListener(()=>{});`);
+      writeFileSync(join(source, 'options.js'), ''); writeFileSync(join(source, 'options.html'), '<title>Fixture</title>');
+      config.expectedExtensionDigest = extensionDigest(source);
+      new ChromeLauncher(config).prepare(profile, {});
+      if (build === 'first') {
+        // Seed the unchanged script URL used by installations predating this fix.
+        const installed = JSON.parse(readFileSync(join(extensionDir, 'manifest.json'), 'utf8')) as Json;
+        object(installed.background).service_worker = 'service-worker.js';
+        writeFileSync(join(extensionDir, 'manifest.json'), JSON.stringify(installed));
+      }
+      const portFile = join(dataDir, 'DevToolsActivePort'); rmSync(portFile, { force: true });
+      browser = spawn(browserPath, [`--user-data-dir=${dataDir}`, '--headless=new', '--no-first-run', '--no-default-browser-check',
+        '--remote-debugging-port=0', '--enable-unsafe-extension-debugging', 'about:blank'], { stdio: 'ignore' });
+      await expect.poll(() => existsSync(portFile), { timeout: 15000 }).toBe(true);
+      const [port, path] = readFileSync(portFile, 'utf8').trim().split(/\r?\n/u);
+      control = await ChromeManagementConnection.connect(`ws://127.0.0.1:${port}${path}`);
+      const { id } = await control.send('Extensions.loadUnpacked', { path: extensionDir });
+      let session = '';
+      await expect.poll(async () => {
+        const targets = (await control!.send('Target.getTargets')).targetInfos as Json[];
+        const worker = targets.find(item => item.type === 'service_worker' && String(item.url).startsWith(`chrome-extension://${id}/`));
+        if (!worker) return false;
+        session = String((await control!.send('Target.attachToTarget', { targetId: worker.targetId, flatten: true })).sessionId);
+        return true;
+      }, { timeout: 15000 }).toBe(true);
+      await expect.poll(async () => object((await control!.send('Runtime.evaluate', {
+        expression: 'globalThis.fixtureBuild', returnByValue: true
+      }, session)).result).value, { timeout: 5000 }).toBe(build);
+      const storage = await control.send('Runtime.evaluate', { expression: build === 'first'
+        ? 'chrome.storage.local.set({identity:"preserved"})' : 'chrome.storage.local.get("identity")', awaitPromise: true, returnByValue: true }, session);
+      if (build === 'second') expect(object(storage.result).value).toEqual({ identity: 'preserved' });
+      const exited = once(browser, 'exit'); await control.send('Browser.close'); await exited;
+      await control.disconnect(); control = null; browser = null;
+    }
+  } finally {
+    if (control) { await control.send('Browser.close').catch(() => {}); await control.disconnect(); }
+    if (browser && browser.exitCode === null && browser.signalCode === null) { const exited = once(browser, 'exit'); browser.kill(); await exited; }
+    rmSync(root, { recursive: true, force: true, maxRetries: 15, retryDelay: 200 });
+  }
+}, 60000);

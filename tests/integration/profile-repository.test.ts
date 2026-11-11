@@ -68,7 +68,7 @@ describe('managed Profile persistence', () => {
     legacy.close();
 
     store = new SqliteRelayStore(join(root, 'relay.sqlite'));
-    expect(store.sqliteDiagnostics().migrationVersion).toBe(9);
+    expect(store.sqliteDiagnostics().migrationVersion).toBe(10);
     expect(store.profiles.get(reserved.profile.profileRef)).toEqual(savedProfile);
     expect(store.profiles.currentInstance(reserved.profile.profileRef)).toEqual(instance);
     expect(store.canonical.logical.getEndpoint('ep_legacy')?.nickname).toBe('mapleglen');
@@ -182,7 +182,7 @@ describe('managed Profile persistence', () => {
     for (const table of ['browser_input_states', 'browser_rules_initialization', 'profile_proxy_requests', 'profile_proxies', 'profile_list_cursors', 'managed_bootstrap_grants', 'profile_operation_locks', 'profile_create_keys', 'profile_requests', 'managed_browser_instances', 'managed_profiles']) raw.exec(`DROP TABLE ${table}`);
     raw.exec('DELETE FROM schema_migrations WHERE version>=6'); raw.close();
     store = new SqliteRelayStore(join(root, 'relay.sqlite'));
-    expect(store.sqliteDiagnostics().migrationVersion).toBe(9);
+    expect(store.sqliteDiagnostics().migrationVersion).toBe(10);
     expect(store.canonical.requests.getRequest('req_old')).toEqual(before);
     expect(store.canonical.logical.getWorkspace('wrk_old')?.ownerSessionRef).toBe('ses_test');
     expect(store.authenticateAgent('original-token')?.principalId).toBe(principal);
@@ -204,7 +204,7 @@ describe('managed Profile persistence', () => {
     expect(inspect.prepare("SELECT 1 FROM sqlite_master WHERE name='managed_profiles'").get()).toBeUndefined();
     expect(inspect.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(5);
     inspect.exec('DROP INDEX managed_profiles_owner'); inspect.close();
-    const recovered = new SqliteRelayStore(path); expect(recovered.sqliteDiagnostics().migrationVersion).toBe(9); recovered.close();
+    const recovered = new SqliteRelayStore(path); expect(recovered.sqliteDiagnostics().migrationVersion).toBe(10); recovered.close();
   });
   it('serializes same-key reservations and rejects duplicate directory keys and read-only writes', async () => {
     const input = { principalId: principal, key: 'concurrent-key', bodyHash: 'same', runtimeRef: 'chrome' };

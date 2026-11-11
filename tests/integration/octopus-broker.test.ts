@@ -19,12 +19,14 @@ const observed = {
 
 class FakeExtensionPort implements OctopusExtensionPort {
   browserInputPolicy = true;
+  tabActive = true;
   readonly inputTrace: Array<RelayV2PayloadByType['SEND_CDP']> = [];
   readonly createTrace: Array<RelayV2PayloadByType['CREATE_TAB']> = [];
   private lostCdpResult: 'cached' | 'missing' | null = null;
   loseNextCdpResult(cache: boolean): void { this.lostCdpResult = cache ? 'cached' : 'missing'; }
   private sink: ExtensionEventSink | null = null;
   private nextTabId = 10;
+  private nextGroupId = 20;
   private createFailuresRemaining = 0;
   private readonly endpointCreateFailures = new Map<string, number>();
   private lostCreateResultsRemaining = 0;
@@ -108,7 +110,7 @@ class FakeExtensionPort implements OctopusExtensionPort {
         tabs: tabs.filter((tab) => tab.windowId === window.windowId).map((tab) => ({
           ...tab,
           openerTabId: null,
-          active: true,
+          active: this.tabActive,
           pinned: false,
           discarded: false,
           status: 'complete' as const,
@@ -179,7 +181,7 @@ class FakeExtensionPort implements OctopusExtensionPort {
       }
     } else if (type === 'GROUP_TABS') {
       const groupInput = payload as RelayV2PayloadByType['GROUP_TABS'];
-      const groupId = groupInput.group?.tabGroupId ?? 20;
+      const groupId = groupInput.group?.tabGroupId ?? this.nextGroupId++;
       const endpointGroups = this.groups.get(endpointRef) ?? new Map();
       endpointGroups.set(groupId, { tabGroupId: groupId, groupGeneration: 1, windowId: 1, title: '' });
       this.groups.set(endpointRef, endpointGroups);
@@ -292,16 +294,16 @@ describe('canonical Tabro broker', () => {
     const resolved = (result.facts as { ticket: { result: { facts: { resolved: Array<{ workspace: { workspace_ref: string }; tabs: Array<{ tab_ref: string }> }> } } } }).ticket.result.facts.resolved[0]!;
     return { workspace_ref: resolved.workspace.workspace_ref, target: { kind: 'tab', tab_ref: resolved.tabs[0]!.tab_ref } };
   }
-  function accept(tool: 'send_cdp_command' | 'resume_workspace_automation' | 'resolve_browser_request' | 'request_browser_workspace' | 'stop_workspace_automation' | 'terminate_workspace', args: Record<string, unknown>) {
-    const response = broker.submit(tool, args, caller);
+  function accept(tool: 'send_cdp_command' | 'resume_workspace_automation' | 'resolve_browser_request' | 'request_browser_workspace' | 'create_browser_tab' | 'stop_workspace_automation' | 'terminate_workspace', args: Record<string, unknown>, who = caller) {
+    const response = broker.submit(tool, args, who);
     expect(response.disposition, JSON.stringify(response)).toBe('accepted');
     parseMcpToolOutput(tool, response);
     const ref = (response.facts as { ticket: { request_ref: string } }).ticket.request_ref;
     broker.confirmAcknowledgement(ref, true);
     return ref;
   }
-  async function terminal(ref: string) {
-    const result = await eventually(() => broker.getBrowserRequest({ request_ref: ref }, caller));
+  async function terminal(ref: string, who = caller) {
+    const result = await eventually(() => broker.getBrowserRequest({ request_ref: ref }, who));
     parseMcpToolOutput('get_browser_request', result);
     return (result.facts as { ticket: { state: string; failure: { problem: { code: string } } | null } }).ticket;
   }
@@ -353,14 +355,70 @@ describe('canonical Tabro broker', () => {
     expect((await terminal(fresh)).state).toBe('succeeded');
   });
 
-  it('refuses a new workspace in a window with held input before creating any tab', async () => {
+  it.each(['held', 'paused', 'uncertain'])('allows new tabs and another session workspace in the same window with %s input', async status => {
     const scope = await recoveryWorkspace();
-    await terminal(accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', button: 'left', x: 20, y: 20 } }));
-    const before = extension.createTabCallCount();
-    const allocation = accept('request_browser_workspace', { required_workspace_count: 1, designated_endpoints: [{ endpoint_nickname: 'profile-a' }] });
-    expect((await terminal(allocation)).failure?.problem.code).toBe('INPUT_RECOVERY_REQUIRED');
-    expect(extension.createTabCallCount()).toBe(before);
-    expect(store.canonical.requests.inputStates()[0]).toMatchObject({ held: ['mouse:left'] });
+    if (status === 'uncertain') extension.loseNextCdpResult(false);
+    const press = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', button: 'left', x: 20, y: 20 } });
+    if (status === 'uncertain') await eventuallyMatching(() => broker.getBrowserRequest({ request_ref: press }, caller),
+      value => (value.facts as { ticket: { pause_condition: { reason: string } | null } }).ticket.pause_condition?.reason === 'user_confirmation_required', 'uncertain press');
+    else await terminal(press);
+    if (status === 'paused') {
+      extension.setInventoryWindows([{ windowId: 1, windowGeneration: 1, focused: false }]);
+      const endpointRef = store.canonical.logical.getEndpointByNickname('profile-a')!.endpointRef;
+      broker.onInventory(endpointRef, await extension.requestInventory(endpointRef));
+    }
+    const original = store.canonical.requests.inputStates().find(state => state.tabRef === scope.target.tab_ref)!;
+    expect(original).toMatchObject({ held: ['mouse:left'], uncertain: status === 'uncertain' });
+    expect((await terminal(accept('create_browser_tab', { workspace_ref: scope.workspace_ref }))).state).toBe('succeeded');
+    const sibling = store.canonical.logical.listWorkspaceTabs(scope.workspace_ref).find(tab => tab.tabRef !== scope.target.tab_ref)!;
+    const siblingScope = { workspace_ref: scope.workspace_ref, target: { kind: 'tab', tab_ref: sibling.tabRef } };
+    for (const type of ['keyDown', 'keyUp']) expect((await terminal(accept('send_cdp_command', {
+      ...siblingScope, method: 'Input.dispatchKeyEvent', params: { type, code: 'KeyA' }
+    }))).state).toBe('succeeded');
+    expect(broker.getBrowserContext({ view: { kind: 'tab', workspace_ref: scope.workspace_ref, tab_ref: sibling.tabRef } }, caller))
+      .toMatchObject({ facts: { input_recovery: null } });
+    const other = { runtimeName: 'Codex', runtimeSessionKey: 'other-session' };
+    expect((await terminal(accept('request_browser_workspace', { required_workspace_count: 1,
+      designated_endpoints: [{ endpoint_nickname: 'profile-a' }] }, other), other)).state).toBe('succeeded');
+    const next = store.canonical.logical.listActiveWorkspaces({}).find(workspace => workspace.workspaceRef !== scope.workspace_ref)!;
+    expect(next.windowRef).toBe(sibling.windowRef);
+    const nextTab = store.canonical.logical.listWorkspaceTabs(next.workspaceRef)[0]!;
+    expect((await terminal(accept('send_cdp_command', { workspace_ref: next.workspaceRef, target: { kind: 'tab', tab_ref: nextTab.tabRef },
+      method: 'Input.insertText', params: { text: 'independent' } }, other), other)).state).toBe('succeeded');
+    expect((await terminal(accept('resume_workspace_automation', { workspace_ref: next.workspaceRef,
+      input_recovery: { recovery_ref: original.recoveryRef, user_confirmed_released: true } }, other), other)).failure?.problem.code).toBe('INPUT_RECOVERY_REQUIRED');
+    expect((await terminal(accept('terminate_workspace', { workspace_ref: next.workspaceRef }, other), other)).state).toBe('succeeded');
+    expect(store.canonical.requests.inputStates()).toEqual([original]);
+    if (status !== 'held') expect(broker.submit('send_cdp_command', { ...scope, method: 'Input.insertText', params: { text: 'still blocked' } }, caller))
+      .toMatchObject({ disposition: 'rejected', problem: { code: status === 'uncertain' ? 'INPUT_STATE_UNCERTAIN' : 'INPUT_RECOVERY_REQUIRED' } });
+    expect(extension.inputTrace.filter(item => item.method === 'Input.dispatchMouseEvent')).toHaveLength(1);
+  });
+
+  it('resumes one tab while another tab in the workspace still has an uncertain effect', async () => {
+    const scope = await recoveryWorkspace();
+    await terminal(accept('create_browser_tab', { workspace_ref: scope.workspace_ref }));
+    const tabs = store.canonical.logical.listWorkspaceTabs(scope.workspace_ref);
+    for (const [index, tab] of tabs.entries()) {
+      if (index === 0) extension.loseNextCdpResult(false);
+      const press = accept('send_cdp_command', { workspace_ref: scope.workspace_ref,
+        target: { kind: 'tab', tab_ref: tab.tabRef }, method: 'Input.dispatchKeyEvent', params: { type: 'keyDown', code: 'ShiftLeft' } });
+      if (index === 0) await eventuallyMatching(() => broker.getBrowserRequest({ request_ref: press }, caller),
+        value => (value.facts as { ticket: { pause_condition: { reason: string } | null } }).ticket.pause_condition?.reason === 'user_confirmation_required', 'uncertain press');
+      else await terminal(press);
+    }
+    const endpointRef = tabs[0]!.endpointRef;
+    extension.setInventoryWindows([{ windowId: 1, windowGeneration: 1, focused: false }]);
+    broker.onInventory(endpointRef, await extension.requestInventory(endpointRef));
+    const [first, second] = store.canonical.requests.inputStates();
+    expect(first).toMatchObject({ pauseReason: 'input_confirmation_lost', uncertain: true });
+    expect(second).toMatchObject({ pauseReason: 'input_focus_or_target_changed' });
+    expect((await terminal(accept('resume_workspace_automation', { workspace_ref: scope.workspace_ref,
+      input_recovery: { recovery_ref: second!.recoveryRef, user_confirmed_released: true } }))).state).toBe('succeeded');
+    expect(store.canonical.requests.inputStates()).toEqual([first]);
+    expect((await terminal(accept('send_cdp_command', { workspace_ref: scope.workspace_ref,
+      target: { kind: 'tab', tab_ref: second!.tabRef }, method: 'Input.insertText', params: { text: 'resumed tab' } }))).state).toBe('succeeded');
+    expect((await terminal(accept('resume_workspace_automation', { workspace_ref: scope.workspace_ref }))).failure?.problem.code).toBe('INPUT_RECOVERY_REQUIRED');
+    expect(store.canonical.requests.inputStates()).toEqual([first]);
   });
 
   it('terminates stopped uncertain input only after release acknowledgement, preserving possible effects without replay', async () => {
@@ -399,6 +457,52 @@ describe('canonical Tabro broker', () => {
     expect(profiles).toMatchObject({ facts: { profiles: [{ automation_paused: true }] } });
     expect(extension.inputTrace).toHaveLength(1);
   });
+
+  it.each([
+    { focused: false, active: false },
+    { focused: false, active: true },
+    { focused: true, active: false },
+    { focused: true, active: true }
+  ])('completes a click with unchanged window focus=$focused and tab active=$active', async ({ focused, active }) => {
+    const scope = await recoveryWorkspace();
+    extension.tabActive = active;
+    extension.setInventoryWindows([{ windowId: 1, windowGeneration: 1, focused }]);
+    const endpoint = store.canonical.logical.getEndpointByNickname('profile-a')!;
+    const before = await extension.requestInventory(endpoint.endpointRef);
+    before.windows[0]!.focused = focused;
+    before.windows[0]!.tabs[0]!.active = active;
+    broker.onInventory(endpoint.endpointRef, before);
+    await terminal(accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', button: 'left', x: 20, y: 20 } }));
+    broker.onInventory(endpoint.endpointRef, structuredClone(before));
+    expect(store.canonical.requests.inputStates()[0]).toMatchObject({ held: ['mouse:left'], pauseReason: null });
+    expect((await terminal(accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', button: 'left', x: 20, y: 20 } }))).state).toBe('succeeded');
+    expect(store.canonical.requests.inputStates()).toEqual([]);
+    expect(extension.inputTrace.map(item => item.params.type)).toEqual(['mousePressed', 'mouseReleased']);
+  });
+
+  it.each(['focus', 'active-tab', 'closed-tab', 'moved-tab', 'navigation'] as const)(
+    'still pauses a background gesture after a real %s change', async change => {
+      const scope = await recoveryWorkspace();
+      extension.tabActive = false;
+      extension.setInventoryWindows([{ windowId: 1, windowGeneration: 1, focused: false }]);
+      const endpoint = store.canonical.logical.getEndpointByNickname('profile-a')!;
+      const before = await extension.requestInventory(endpoint.endpointRef);
+      before.windows[0]!.focused = false;
+      before.windows[0]!.tabs[0]!.active = false;
+      broker.onInventory(endpoint.endpointRef, before);
+      await terminal(accept('send_cdp_command', { ...scope, method: 'Input.dispatchKeyEvent', params: { type: 'keyDown', code: 'ShiftLeft' } }));
+      const after = structuredClone(before);
+      if (change === 'focus') after.windows[0]!.focused = true;
+      if (change === 'active-tab') after.windows[0]!.tabs[0]!.active = true;
+      if (change === 'closed-tab') after.windows[0]!.tabs = [];
+      if (change === 'moved-tab') { after.windows[0]!.windowId = 2; after.windows[0]!.tabs[0]!.windowId = 2; }
+      if (change === 'navigation') after.windows[0]!.tabs[0]!.url = 'https://example.test/next';
+      broker.onInventory(endpoint.endpointRef, after);
+      expect(store.canonical.requests.inputStates()[0]).toMatchObject({ held: ['key:ShiftLeft'],
+        pauseReason: change === 'navigation' ? 'input_target_navigated' : 'input_focus_or_target_changed' });
+      expect(broker.submit('send_cdp_command', { ...scope, method: 'Input.dispatchKeyEvent', params: { type: 'keyUp', code: 'ShiftLeft' } }, caller)).toMatchObject({ disposition: 'rejected', problem: { code: change === 'closed-tab' ? 'TAB_CLOSED' : 'INPUT_RECOVERY_REQUIRED' } });
+      expect(extension.inputTrace).toHaveLength(1);
+    });
 
   it('requires explicit extension policy support and sends the accepted revision with the command', async () => {
     const scope = await recoveryWorkspace();

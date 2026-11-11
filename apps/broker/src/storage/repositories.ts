@@ -546,7 +546,7 @@ export interface RequestRepository {
   browserRulesInitialized(): boolean;
   markBrowserRulesInitialized(): void;
   inputStates(): JsonRecord[];
-  saveInputState(windowRef: string, state: JsonRecord | null): void;
+  saveInputState(tabRef: string, state: JsonRecord | null): void;
   acceptRequest(input: {
     requestRef: string;
     toolName: string;

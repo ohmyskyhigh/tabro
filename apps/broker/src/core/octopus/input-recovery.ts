@@ -20,24 +20,25 @@ export interface InputState {
 export class InputRecovery {
   constructor(private readonly requests: RequestRepository, private readonly now = Date.now) {}
   all(): InputState[] { return this.requests.inputStates() as unknown as InputState[]; }
-  get(windowRef: string): InputState | null { return this.all().find(state => state.windowRef === windowRef) ?? null; }
-  private save(state: InputState): void { this.requests.saveInputState(state.windowRef, state as unknown as JsonRecord); }
+  get(tabRef: string): InputState | null { return this.all().find(state => state.tabRef === tabRef) ?? null; }
+  forWorkspace(workspaceRef: string): InputState[] { return this.all().filter(state => state.workspaceRef === workspaceRef); }
+  private save(state: InputState): void { this.requests.saveInputState(state.tabRef, state as unknown as JsonRecord); }
 
-  assertAvailable(windowRef: string, sessionRef: string, tabRef: string): void {
-    const state = this.get(windowRef);
+  assertAvailable(tabRef: string, sessionRef: string): void {
+    const state = this.get(tabRef);
     if (!state) return;
     if (state.pauseReason) throw new OctopusBrokerError(problem(state.uncertain ? 'INPUT_STATE_UNCERTAIN' : 'INPUT_RECOVERY_REQUIRED',
       `${state.pauseReason}. Last confirmed input: ${state.lastConfirmedStep ?? 'none'}. Possibly held: ${state.held.join(', ') || 'none'}. Observe the page; do not replay or send a cleanup release. After the user finishes or cancels the gesture, acknowledge its recovery_ref with resume_workspace_automation and resolve any uncertain request separately.`, false,
       { workspace_ref: state.workspaceRef, tab_ref: state.tabRef }));
-    if (state.pending || state.ownerSessionRef !== sessionRef || state.tabRef !== tabRef) {
-      throw new OctopusBrokerError(problem('INPUT_BUSY', 'Held input reserves this window for its initiating session and tab.', true, { workspace_ref: state.workspaceRef, tab_ref: state.tabRef }));
+    if (state.pending || state.ownerSessionRef !== sessionRef) {
+      throw new OctopusBrokerError(problem('INPUT_BUSY', 'Held input reserves this tab for its initiating session.', true, { workspace_ref: state.workspaceRef, tab_ref: state.tabRef }));
     }
   }
 
   prepare(scope: Pick<InputState, 'windowRef' | 'endpointRef' | 'workspaceRef' | 'tabRef' | 'ownerSessionRef'>,
     attemptRef: string, requestRef: string, method: string, params: Record<string, unknown>): void {
-    this.assertAvailable(scope.windowRef, scope.ownerSessionRef, scope.tabRef);
-    const previous = this.get(scope.windowRef);
+    this.assertAvailable(scope.tabRef, scope.ownerSessionRef);
+    const previous = this.get(scope.tabRef);
     const before = previous?.held ?? [];
     const after = new Set(before);
     const type = String(params.type ?? 'insertText');
@@ -66,36 +67,40 @@ export class InputRecovery {
     if (succeeded) { state.lastConfirmedStep = state.pending.step; state.lastActivity = this.now(); }
     state.pending = null;
     state.uncertain = false;
-    if (!state.held.length && !state.pauseReason) this.requests.saveInputState(state.windowRef, null);
+    if (!state.held.length && !state.pauseReason) this.clear(state.tabRef);
     else this.save(state);
   }
 
-  pause(windowRef: string, reason: string): void {
-    const state = this.get(windowRef);
+  pause(tabRef: string, reason: string): void {
+    const state = this.get(tabRef);
     if (!state || state.pauseReason) return;
     state.pauseReason = reason;
     state.recoveryRef = randomUUID();
     this.save(state);
   }
   pauseEndpoint(endpointRef: string, reason: string): void {
-    for (const state of this.all().filter(item => item.endpointRef === endpointRef)) this.pause(state.windowRef, reason);
+    for (const state of this.all().filter(item => item.endpointRef === endpointRef)) this.pause(state.tabRef, reason);
+  }
+  pauseWorkspace(workspaceRef: string, reason: string): void {
+    for (const state of this.forWorkspace(workspaceRef)) this.pause(state.tabRef, reason);
   }
   sweep(): void {
-    for (const state of this.all()) if (this.now() - state.lastActivity >= 30_000) this.pause(state.windowRef, 'held_input_inactivity');
+    for (const state of this.all()) if (this.now() - state.lastActivity >= 30_000) this.pause(state.tabRef, 'held_input_inactivity');
   }
-  recover(): void { for (const state of this.all()) this.pause(state.windowRef, 'broker_restarted'); }
+  recover(): void { for (const state of this.all()) this.pause(state.tabRef, 'broker_restarted'); }
 
   transferOwner(workspaceRef: string, sessionRef: string): void {
-    const state = this.all().find(item => item.workspaceRef === workspaceRef);
-    if (!state || state.ownerSessionRef === sessionRef) return;
-    state.ownerSessionRef = sessionRef;
-    state.pauseReason ??= 'workspace_owner_changed';
-    state.recoveryRef = randomUUID();
-    this.save(state);
+    for (const state of this.forWorkspace(workspaceRef)) {
+      if (state.ownerSessionRef === sessionRef) continue;
+      state.ownerSessionRef = sessionRef;
+      state.pauseReason ??= 'workspace_owner_changed';
+      state.recoveryRef = randomUUID();
+      this.save(state);
+    }
   }
 
-  acknowledge(windowRef: string, workspaceRef: string, sessionRef: string, recoveryRef: unknown): void {
-    const state = this.get(windowRef);
+  acknowledge(tabRef: string, workspaceRef: string, sessionRef: string, recoveryRef: unknown): void {
+    const state = this.get(tabRef);
     if (!state) return;
     if (state.workspaceRef !== workspaceRef || state.ownerSessionRef !== sessionRef) throw new OctopusBrokerError(problem('INPUT_BUSY', 'Input recovery belongs to the initiating session and workspace.'));
     if ((state.held.length || state.uncertain) && recoveryRef !== state.recoveryRef) {
@@ -109,10 +114,10 @@ export class InputRecovery {
     this.save(state);
   }
 
-  clear(windowRef: string): void { this.requests.saveInputState(windowRef, null); }
+  clear(tabRef: string): void { this.requests.saveInputState(tabRef, null); }
 
-  facts(windowRef: string): JsonRecord | null {
-    const state = this.get(windowRef);
+  facts(tabRef: string): JsonRecord | null {
+    const state = this.get(tabRef);
     return state ? { recovery_ref: state.recoveryRef, workspace_ref: state.workspaceRef, tab_ref: state.tabRef,
       owner_session_ref: state.ownerSessionRef, status: state.pauseReason ? (state.uncertain ? 'uncertain' : 'paused') : 'held',
       pause_reason: state.pauseReason, held_inputs: state.held, last_confirmed_step: state.lastConfirmedStep,

@@ -160,7 +160,8 @@ export class SqliteRelayStore implements RelayRepositories {
       { version: 6, sql: readFileSync(new URL('./migrations/006-managed-profiles.sql', import.meta.url), 'utf8') },
       { version: 7, sql: readFileSync(new URL('./migrations/007-profile-alias-only.sql', import.meta.url), 'utf8') },
       { version: 8, sql: readFileSync(new URL('./migrations/008-profile-proxy.sql', import.meta.url), 'utf8') },
-      { version: 9, sql: readFileSync(new URL('./migrations/009-browser-input-policy.sql', import.meta.url), 'utf8') }
+      { version: 9, sql: readFileSync(new URL('./migrations/009-browser-input-policy.sql', import.meta.url), 'utf8') },
+      { version: 10, sql: readFileSync(new URL('./migrations/010-tab-input-recovery.sql', import.meta.url), 'utf8') }
     ];
     this.db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
     if (backupSource && !this.db.prepare('SELECT 1 FROM schema_migrations WHERE version=6').get()) {
