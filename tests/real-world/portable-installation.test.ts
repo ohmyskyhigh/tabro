@@ -66,6 +66,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
   let profile: Profile | undefined;
   let workspace: Workspace | undefined;
   let userBrowser: ChildProcess | undefined;
+  let browserLog = '';
   let control: ChromeManagementConnection | undefined;
   let installation: Setup | undefined;
   let proxy: Awaited<ReturnType<typeof httpProxyFixture>> | undefined;
@@ -167,6 +168,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
   }
   try {
     installation = setup();
+    if (windows) expect(installation.mcp.env?.TABRO_INSTALL_ROOT).toBe(install);
     const rulesPath = resolve(install, 'data/browser-rules.json');
     let savedRules = JSON.stringify({ schemaVersion: 1, rules: [
       { id: 'preserved', domain: 'preserved.example', mode: 'input_only' },
@@ -188,7 +190,9 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
 
     userBrowser = spawn(browser, [`--user-data-dir=${userData}`, '--no-first-run', '--no-default-browser-check', '--disable-background-mode',
       ...(liveDashboard ? ['--host-resolver-rules=MAP *.test 127.0.0.1', '--no-proxy-server'] : []),
-      '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', '--enable-unsafe-extension-debugging', fixture.url], { stdio: 'ignore' });
+      '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', '--enable-unsafe-extension-debugging', '--enable-logging=stderr', fixture.url],
+    { stdio: ['ignore', 'ignore', 'pipe'] });
+    userBrowser.stderr?.on('data', (chunk: Buffer) => { browserLog = (browserLog + chunk.toString('utf8')).slice(-16_384); });
     const portFile = resolve(userData, 'DevToolsActivePort');
     await expect.poll(() => existsSync(portFile) && readFileSync(portFile, 'utf8').includes('/devtools/browser/'), { timeout: 25_000 }).toBe(true);
     const [port, path] = readFileSync(portFile, 'utf8').trim().split(/\r?\n/u);
@@ -255,6 +259,18 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     report.status = 'passed';
   } catch (error) {
     report.status = 'failed'; report.error = error instanceof Error ? error.stack : String(error);
+    report.browserLog = browserLog;
+    if (control) {
+      try {
+        const { targetId } = await control.send('Target.createTarget', { url: `chrome-extension://${MANAGED_EXTENSION_ID}/options.html` });
+        try {
+          const { sessionId } = await control.send('Target.attachToTarget', { targetId, flatten: true });
+          report.extensionStatus = await control.send('Runtime.evaluate', {
+            expression: "chrome.storage.local.get(['connectionStatus', 'lastError', 'transportKind'])", awaitPromise: true, returnByValue: true
+          }, String(sessionId));
+        } finally { await control.send('Target.closeTarget', { targetId }); }
+      } catch (diagnosticError) { report.extensionStatusError = String(diagnosticError); }
+    }
     if (workspace) {
       try {
         const capture = await request<{ command: { result: { data: string } } }>('send_cdp_command', {

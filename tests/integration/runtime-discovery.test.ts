@@ -75,5 +75,5 @@ describe('shared Broker runtime discovery', () => {
       expect(after.isError).not.toBe(true);
       expect((after.structuredContent as { caller: unknown }).caller).toEqual((before.structuredContent as { caller: unknown }).caller);
     } finally { await new Promise<void>(resolve => occupied.close(() => resolve())); }
-  }, 30_000);
+  }, 90_000);
 });

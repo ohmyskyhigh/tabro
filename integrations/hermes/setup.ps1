@@ -7,6 +7,7 @@ param(
   [switch]$SkipNativeRegistration,
   [switch]$ReplaceNativeRegistration
 )
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 . (Join-Path $PSScriptRoot 'common.ps1')
 if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { throw 'This Tabro package supports Windows x64.' }
 $install = Get-TabroRoot $InstallRoot
