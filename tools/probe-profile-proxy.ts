@@ -50,7 +50,7 @@ let control: ChromeProbeControl | null = null; let browser: ChildProcess | null 
 async function connectClient(session: string) {
   const next = new Client({ name: 'profile-proxy-qualification', version: '1' }, { versionNegotiation: { mode: 'auto' } });
   await next.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${config.mcpPort}/mcp`), { requestInit: { headers: {
-    'x-octopus-contract-version': '5', Authorization: `Bearer ${config.adminToken}`, 'x-octopus-runtime': 'proxy-probe', 'x-octopus-runtime-session': session
+    'x-octopus-contract-version': '6', Authorization: `Bearer ${config.adminToken}`, 'x-octopus-runtime': 'proxy-probe', 'x-octopus-runtime-session': session
   } } })); return next;
 }
 async function call(tool: string, args: Json, using = client!): Promise<Json> {

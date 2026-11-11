@@ -36,7 +36,7 @@ async function start(entry: string, managed: boolean) {
 }
 async function connect() {
   client = new Client({ name: 'isolated-upgrade-probe', version: '1' }, { versionNegotiation: { mode: 'auto' } });
-  await client.connect(new StreamableHTTPClientTransport(new URL('http://127.0.0.1:17431/mcp'), { requestInit: { headers: { Authorization: `Bearer ${token}`, 'x-octopus-contract-version': '5', 'x-octopus-runtime': 'probe', 'x-octopus-runtime-session': 'upgrade-probe' } } }));
+  await client.connect(new StreamableHTTPClientTransport(new URL('http://127.0.0.1:17431/mcp'), { requestInit: { headers: { Authorization: `Bearer ${token}`, 'x-octopus-contract-version': '6', 'x-octopus-runtime': 'probe', 'x-octopus-runtime-session': 'upgrade-probe' } } }));
 }
 async function call(tool: string, args: Record<string, unknown>) {
   const result = await client!.callTool({ name: tool, arguments: args });

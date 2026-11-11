@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SqliteRelayStore } from '../../apps/broker/src/storage/index.js';
+import { InputRecovery } from '../../apps/broker/src/core/octopus/input-recovery.js';
 
 const roots: string[] = [];
 
@@ -54,6 +55,65 @@ function seed(store: SqliteRelayStore) {
 }
 
 describe('canonical SQLite workspace store', () => {
+  it('recovers held input from disk, preserves uncertainty and never lets a late outcome clear a newer gesture', () => {
+    const path = databasePath();
+    let store = new SqliteRelayStore(path);
+    let time = 0;
+    let input = new InputRecovery(store.canonical.requests, () => time);
+    const scope = { windowRef: 'win_a', workspaceRef: 'ws_a', tabRef: 'tab_a', endpointRef: 'ep_a', ownerSessionRef: 'ses_a' };
+    input.prepare(scope, 'press', 'req_press', 'Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left' });
+    input.complete('press', true);
+    time = 29999; input.sweep(); expect(input.get('win_a')?.pauseReason).toBeNull();
+    time = 30000; input.sweep(); expect(input.get('win_a')?.pauseReason).toBe('held_input_inactivity');
+    expect(() => input.assertAvailable('win_a', 'ses_a', 'tab_a')).toThrow(/Do not replay|do not replay/u);
+    store.canonical.requests.markBrowserRulesInitialized();
+    store.close(); store = new SqliteRelayStore(path);
+    expect(store.canonical.requests.browserRulesInitialized()).toBe(true);
+    input = new InputRecovery(store.canonical.requests, () => time); input.recover();
+    expect(input.get('win_a')?.held).toEqual(['mouse:left']);
+    expect(() => input.acknowledge('win_a', 'ws_a', 'ses_a', 'old-reference')).toThrow();
+    input.acknowledge('win_a', 'ws_a', 'ses_a', input.get('win_a')!.recoveryRef);
+    expect(input.get('win_a')?.pauseReason).toBe('input_released_awaiting_resume');
+    input.clear('win_a');
+    input.prepare(scope, 'new-press', 'req_new', 'Input.dispatchKeyEvent', { type: 'keyDown', code: 'ShiftLeft' });
+    input.complete('press', true);
+    expect(input.get('win_a')?.pending?.attemptRef).toBe('new-press');
+    store.close();
+  });
+
+  it('tracks several keys independently and reconciles an acknowledged release exactly once', () => {
+    const store = new SqliteRelayStore(':memory:');
+    const input = new InputRecovery(store.canonical.requests);
+    const scope = { windowRef: 'win', workspaceRef: 'ws', tabRef: 'tab', endpointRef: 'ep', ownerSessionRef: 'session' };
+    for (const code of ['ShiftLeft', 'KeyA']) {
+      input.prepare(scope, code, code, 'Input.dispatchKeyEvent', { type: 'keyDown', code }); input.complete(code, true);
+    }
+    expect(() => input.assertAvailable('win', 'other-session', 'tab')).toThrow(/reserves/u);
+    expect(() => input.assertAvailable('independent-window', 'other-session', 'other-tab')).not.toThrow();
+    input.prepare(scope, 'release-a', 'release-a', 'Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyA' });
+    input.pause('win', 'response_lost');
+    expect(input.get('win')?.uncertain).toBe(true);
+    input.complete('release-a', true); input.complete('release-a', true);
+    expect(input.get('win')).toMatchObject({ held: ['key:ShiftLeft'], uncertain: false, pauseReason: 'response_lost' });
+    store.close();
+  });
+
+  it('transfers recovery responsibility after authorized takeover without clearing held input', () => {
+    const store = new SqliteRelayStore(':memory:');
+    const input = new InputRecovery(store.canonical.requests);
+    input.prepare({ windowRef: 'win', workspaceRef: 'ws', tabRef: 'tab', endpointRef: 'ep', ownerSessionRef: 'old' },
+      'press', 'request', 'Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left' });
+    input.complete('press', true);
+    const previousRef = input.get('win')!.recoveryRef;
+    input.transferOwner('ws', 'new');
+    expect(input.get('win')).toMatchObject({ held: ['mouse:left'], ownerSessionRef: 'new', pauseReason: 'workspace_owner_changed' });
+    expect(input.get('win')!.recoveryRef).not.toBe(previousRef);
+    expect(() => input.acknowledge('win', 'ws', 'old', input.get('win')!.recoveryRef)).toThrow();
+    input.acknowledge('win', 'ws', 'new', input.get('win')!.recoveryRef);
+    expect(input.get('win')).toMatchObject({ held: [], pauseReason: 'input_released_awaiting_resume' });
+    store.close();
+  });
+
   it('upgrades an existing version-three database without deleting legacy rows', () => {
     const path = databasePath();
     const raw = new DatabaseSync(path);
@@ -72,7 +132,7 @@ describe('canonical SQLite workspace store', () => {
     const migrated = store.canonical.logical.getEndpointByNickname('legacy-profile');
     expect(migrated?.legacyTargetId).toBe(store.listTargets()[0]?.targetId);
     expect(migrated?.credential).toEqual({});
-    expect(store.sqliteDiagnostics()).toEqual({ journalMode: 'wal', foreignKeys: true, migrationVersion: 8 });
+    expect(store.sqliteDiagnostics()).toEqual({ journalMode: 'wal', foreignKeys: true, migrationVersion: 9 });
     store.close();
   });
 

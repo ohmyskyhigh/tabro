@@ -74,15 +74,15 @@ Agents may poll less often. Polling never advances, releases, or reorders a brow
 
 ### Oversized raw CDP values fail explicitly instead of being truncated
 
-Raw CDP parameters, results, errors, and event pages remain inline in contract version `5`. When a value exceeds the active inline or message limit, Tabro returns `PAYLOAD_TOO_LARGE` with the applicable limit and never silently truncates JSON.
+Raw CDP parameters, results, errors, and event pages remain inline in contract version `6`. When a value exceeds the active inline or message limit, Tabro returns `PAYLOAD_TOO_LARGE` with the applicable limit and never silently truncates JSON.
 
 Numeric inline, page, and retention limits are broker configuration published through capability facts. Broker-issued resource retrieval can be added in a later contract version after Codex and Hermes prove equivalent support.
 
 ## Compatibility
 
-### Contract version three uses exact schemas and explicit launch ownership
+### Contract version five uses exact schemas and explicit launch ownership
 
-The current public wire contract is version `5`, incorporating the [approved alias-only naming decision](../90-Proposals/Profile-Alias-Only.md) and the [extension registration and launch ownership decision](../90-Proposals/Extension-Profile-Ownership.md). Inputs and structured outputs are closed against unknown fields. A compatible implementation may tune documented numeric limits and polling hints; adding, removing, or changing a required public field, discriminator, tool name, state, or ownership rule requires a new contract version and a vault proposal.
+The current public wire contract is version `6`, incorporating the [approved alias-only naming decision](../90-Proposals/Profile-Alias-Only.md) and the [domain input-only decision](../90-Proposals/domain-input-only-rules-2026-11-10.md), alongside [extension registration and launch ownership](../90-Proposals/Extension-Profile-Ownership.md). Inputs and structured outputs are closed against unknown fields. A compatible implementation may tune documented numeric limits and polling hints; adding, removing, or changing a required public field, discriminator, tool name, state, or ownership rule requires a new contract version and a vault proposal.
 
 Codex and Hermes must load the same tool definitions and produce equivalent structured results. Runtime quirks are handled in adapters and conformance profiles rather than by changing browser semantics for one agent.
 
@@ -92,6 +92,18 @@ Parent: [`User Experience MOC`](./_MOC.md).
 
 ### Lifecycle operations have bounded waits without changing raw CDP recovery semantics
 
-Managed launch supports compatible Chromium browsers on Windows; the current browser version floor is 153, with required capabilities checked during launch. Hermes installation checks the operator-selected executable before admitting the plugin; setup and Profile readiness remain separate steps. Exact tested builds belong in verification records. Profiles are owned by the authenticated principal and require profiles:read or profiles:manage; workspace authority remains session-based. Default page size is 50 (maximum 100), create keys contain 8–128 characters, and the pending lifecycle queue is bounded at 32 with three active operations. Queue and extension-ready waits are 120 seconds; launch and normal-close waits are 30 seconds. Bootstrap grants expire after five minutes. Request and Profile leases are renewed during long operations.
+The standalone installers enable managed launch for compatible Chromium browsers on Windows, macOS and Linux. The current browser version floor is 153, with required capabilities checked during launch. The Windows Hermes catalog checks the operator-selected executable before admission. Setup and Profile readiness are separate steps. The [qualification record](../06-Files/Real-World-Runbook.md#packaged-installation) tracks exact tested targets.
+
+Profiles belong to the authenticated principal and require `profiles:read` or `profiles:manage`. Workspace authority remains session-based. Default page size is 50 (maximum 100), create keys contain 8–128 characters, and the pending lifecycle queue is bounded at 32 with three active operations. Queue and extension-ready waits are 120 seconds. Launch and normal-close waits are 30 seconds. Bootstrap grants expire after five minutes. Request and Profile leases are renewed during long operations.
 
 The directory reports process and extension observations separately from ready and automation_paused. State is reconciled on Broker startup and every ten seconds. Unverified ownership remains unknown. Disabling launchesEnabled in the managed configuration rejects create/open while preserving authorized list/stop. Stop retains Profile data and refuses active browser work.
+
+## Domain interaction
+
+### Rules initialize empty and invalid edits preserve the last valid policy
+
+The Broker creates `browser-rules.json` beside its SQLite database with `schemaVersion: 1` and an empty `rules` array, then durably records initialization. Rules contain unique `id`, normalized `domain`, and `mode: input_only`. Schemes, paths, IP addresses, wildcards and duplicate domains are rejected. Valid revisions apply atomically. Invalid live edits retain the last valid revision and expose diagnostics; a missing or malformed file after initialization blocks browser dispatch on restart until repaired. An explicitly saved empty array removes domain restrictions.
+
+### Thirty seconds of held-input inactivity pauses manipulation without releasing input
+
+Confirmed owner input resets the inactivity interval; observations and polling do not. A disconnect, Broker restart, debugger detach, cancellation or focus/target change also pauses held input. No automatic release or gesture replay occurs. Guarded JavaScript observations are bounded, and conservative guard refusals recommend DOM/accessibility alternatives. Unsupported file-picker, clipboard and composition interactions use user handoff.

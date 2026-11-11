@@ -21,3 +21,4 @@ await build({
 
 cpSync('apps/browser-extension/manifest.json', `${outdir}/manifest.json`);
 cpSync('apps/browser-extension/options.html', `${outdir}/options.html`);
+cpSync('apps/browser-extension/options.css', `${outdir}/options.css`);

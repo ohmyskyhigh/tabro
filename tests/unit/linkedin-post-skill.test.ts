@@ -57,11 +57,14 @@ describe('packaged LinkedIn publishing skill', () => {
     for (const script of scripts) {
       expect(() => new Script(script)).not.toThrow();
       expect(script).not.toContain('.click(');
+      expect(script).not.toContain('.focus(');
+      expect(script).not.toContain('selection.addRange');
     }
     expect(reference).toContain('Input.insertText');
     expect(reference).toContain('DOM.setFileInputFiles');
     expect(reference).toContain('returnByValue: false');
     expect(reference).toContain('No positional fallback');
+    expect(reference).toContain('DOM.setFileInputFiles is prohibited in that mode');
   });
 
   it('defines supplied-copy text-only and image publishing paths', () => {

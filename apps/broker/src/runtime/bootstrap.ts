@@ -12,6 +12,8 @@ import type { RelayConfig } from './config.js';
 import { ChromeLauncher } from '../profiles/chrome-launcher.js';
 import { ProfileManager } from '../profiles/profile-manager.js';
 import { MCP_CONTRACT_VERSION } from '../../../shared/protocol/src/mcp/tool-catalog.js';
+import { BrowserRulesFile } from './browser-rules.js';
+import { DashboardService } from './dashboard.js';
 
 const SERVICE_VERSION = OCTOPUS_VERSION;
 const RELAY_PROTOCOL_VERSION = '2';
@@ -61,7 +63,9 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
     store.updateAgentScopes(admin.principalId, [...admin.scopes, 'profiles:read', 'profiles:network:manage', ...(config.profiles ? ['profiles:manage'] : [])]);
   }
 
-  const broker = new OctopusBroker(store.canonical);
+  const browserRules = new BrowserRulesFile(config.browserRulesPath ?? resolve(dirname(config.dbPath), 'browser-rules.json'),
+    store.canonical.requests.browserRulesInitialized(), () => store.canonical.requests.markBrowserRulesInitialized());
+  const broker = new OctopusBroker(store.canonical, { browserRules });
   const launcher = config.profiles ? new ChromeLauncher(config.profiles) : null;
   const profileManager: ProfileManager | null = config.profiles ? new ProfileManager(store, launcher!, endpointRef => extensionGateway.connection(endpointRef), 120_000, config.profiles.launchesEnabled !== false) : null;
   if (profileManager) broker.setProfileManager(profileManager);
@@ -77,6 +81,8 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
     profileManager?.grants
   );
   legacyBroker.setTransport(extensionGateway);
+  const dashboard = new DashboardService(broker, store, browserRules);
+  extensionGateway.setDashboardHandler((endpointRef, command) => dashboard.handle(endpointRef, command));
   const credentials = new ProxyCredentialStore(resolve(dirname(config.dbPath), 'proxy-credentials'));
   const network = new ProfileNetworkService(store, () => extensionGateway, credentials, profileManager);
   broker.setNetworkService(network);

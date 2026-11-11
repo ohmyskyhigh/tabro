@@ -1,4 +1,4 @@
-export const MCP_CONTRACT_VERSION = '5' as const;
+export const MCP_CONTRACT_VERSION = '6' as const;
 
 export const MCP_ASYNC_TOOL_NAMES = [
   'set_browser_proxy',
@@ -79,17 +79,17 @@ const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
   open_browser_profile: 'Ensure one broker-owned Profile is running and its authenticated extension is ready. User-owned Profiles must be opened manually, then accessed through a workspace.',
   stop_browser_profile: 'Normally close a broker-owned Profile after checking active work, retaining its browser data and identity. Does not close user-owned Chrome.',
   get_browser_context: 'Read one narrow, paginated broker, endpoint, window, capability, workspace, tab, or request-summary view.',
-  request_browser_workspace: 'Acquire an exact number of logical workspaces on distinct eligible browser-profile endpoints.',
-  create_browser_tab: 'Create and register one managed tab in an owned workspace.',
-  send_cdp_command: 'Submit one extension-supported raw CDP command to one managed tab.',
+  request_browser_workspace: 'Acquire an exact number of logical workspaces on distinct eligible browser-profile endpoints. Initial tabs open in the background; prefer reusing the workspace. Explicit Page.bringToFront remains available when the website needs foreground activation.',
+  create_browser_tab: 'Create and register one managed tab in an owned workspace without selecting it. Background work is preferred; use Page.bringToFront explicitly when needed.',
+  send_cdp_command: 'Submit one supported CDP command to a managed tab. Prefer background work; explicitly use Page.bringToFront when the website needs activation or foreground input, avoiding repeated activation or automatic focus restoration. On configured input-only domains, observe using guarded JavaScript, DOM, accessibility or screenshots; manipulate with Input.dispatchMouseEvent, Input.dispatchKeyEvent or Input.insertText. INPUT_ONLY_REQUIRED supplies alternatives. During input recovery, only guarded observations proceed; never replay an uncertain gesture or automatically release held input.',
   read_cdp_events: 'Read retained raw CDP events from a required broker-issued tab cursor.',
   get_browser_request: 'Read one authority-visible request ticket by its broker-issued reference.',
   take_over_workspace: 'Transfer one exactly identified workspace and its owner-governed public tickets.',
-  terminate_workspace: 'Fence new work, reconcile dispatched work, archive the tab group, and end workspace control.',
+  terminate_workspace: 'Fence new work, reconcile dispatched work, archive the tab group, and end workspace control. After confirmed input release, uncertain commands waiting for confirmation may be abandoned with possible effects recorded; cleanup never replays them.',
   resolve_browser_request: 'Resolve one owner-visible request paused for user confirmation.',
   close_browser_request: 'Remove one terminal ticket from public discovery while retaining audit history.',
   stop_workspace_automation: 'Add the manual-stop pause cause to one workspace.',
-  resume_workspace_automation: 'Reconcile one workspace and clear only its manual-stop pause cause.',
+  resume_workspace_automation: 'Reconcile a workspace and clear its manual stop. After user intervention, input_recovery acknowledges the current recovery_ref and released input; uncertain website effects still require resolve_browser_request. Never invent user acknowledgement.',
   kill_browser_endpoint: 'Pause every active workspace on one entirely owned browser-profile endpoint.',
   resume_browser_endpoint: 'Reconcile one entirely owned endpoint and clear only its endpoint-kill pause cause.'
 };

@@ -9,6 +9,7 @@ import {
   type RelayV2PayloadByType
 } from '../../../shared/protocol/src/relay/v2-messages.js';
 import { detectBrowserDescriptor } from '../browser/browser-descriptor.js';
+import { DASHBOARD_CAPABILITY_ID, DashboardCommandSchema, type DashboardCommand } from '../../../shared/protocol/src/dashboard.js';
 import { initializeManagedBootstrap, rememberManagedAuthentication } from '../identity/managed-bootstrap.js';
 import { BrowserInventory } from '../browser/inventory.js';
 import { TabGroupOperations } from '../browser/tab-groups.js';
@@ -46,6 +47,38 @@ const checkedPublicJwk = (value: JsonWebKey): RelayV2PayloadByType['HELLO']['pub
 };
 
 export class RelayClient {
+  private dashboardReady = false;
+  private dashboardSupported = false;
+  private readonly dashboardRequests = new Map<string, {
+    generation: number; timer: ReturnType<typeof setTimeout>; resolve(value: unknown): void; reject(error: Error): void;
+  }>();
+
+  async dashboard(command: DashboardCommand): Promise<unknown> {
+    const parsed = DashboardCommandSchema.parse(command);
+    if (!this.dashboardReady || !this.connectionGeneration) throw new Error('Connect this extension to the Broker before managing it.');
+    if (!this.dashboardSupported) throw new Error('This Broker does not support the dashboard. Update the Broker and extension together; your browser connection is still available.');
+    if (this.dashboardRequests.size >= 8) throw new Error('Another dashboard action is still in progress.');
+    const requestId = crypto.randomUUID();
+    const generation = this.connectionGeneration;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.dashboardRequests.delete(requestId);
+        reject(new Error('The Broker did not respond. Refresh to check whether your change was saved. If this continues, update the Broker and extension together.'));
+      }, 15000);
+      this.dashboardRequests.set(requestId, { generation, timer, resolve, reject });
+      try { this.sendEnvelope(createRelayV2Envelope('DASHBOARD_REQUEST', { requestId, connectionGeneration: generation, command: parsed })); }
+      catch (error) { clearTimeout(timer); this.dashboardRequests.delete(requestId); reject(error); }
+    });
+  }
+
+  private clearDashboardRequests(): void {
+    this.dashboardReady = false;
+    this.dashboardSupported = false;
+    for (const request of this.dashboardRequests.values()) {
+      clearTimeout(request.timer); request.reject(new Error('Connection lost. Reconnect and refresh to check the latest state before retrying.'));
+    }
+    this.dashboardRequests.clear();
+  }
   private managedClaim: RelayV2PayloadByType['HELLO']['managedClaim'];
   private socket: RelayTransport | null = null;
   private connecting = false;
@@ -84,6 +117,7 @@ export class RelayClient {
     const schedule = (): void => this.scheduleInventoryPublish();
     chrome.tabs.onCreated.addListener(schedule);
     chrome.tabs.onUpdated.addListener(schedule);
+    chrome.tabs.onActivated.addListener(schedule);
     chrome.tabs.onRemoved.addListener(schedule);
     chrome.tabs.onMoved.addListener(schedule);
     chrome.tabs.onAttached.addListener(schedule);
@@ -146,6 +180,7 @@ export class RelayClient {
   }
 
   disconnect(): void {
+    this.clearDashboardRequests();
     this.stopped = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
@@ -168,7 +203,13 @@ export class RelayClient {
       const parsed = JSON.parse(raw) as unknown;
       const compatible = normalizeLegacyReadyEnvelope(parsed, chrome.runtime.getManifest().version);
       const envelope = parseRelayV2Envelope(compatible, this.negotiatedMaxEnvelopeBytes);
-      if (envelope.type === 'CHALLENGE') {
+      if (envelope.type === 'DASHBOARD_RESULT') {
+        const payload = (envelope as RelayV2Envelope<'DASHBOARD_RESULT'>).payload;
+        const pending = this.dashboardRequests.get(payload.requestId);
+        if (!pending || pending.generation !== payload.connectionGeneration || pending.generation !== this.connectionGeneration) return;
+        clearTimeout(pending.timer); this.dashboardRequests.delete(payload.requestId);
+        if (payload.error) pending.reject(new Error(payload.error.message)); else pending.resolve(payload.result);
+      } else if (envelope.type === 'CHALLENGE') {
         await this.onChallenge(envelope as RelayV2Envelope<'CHALLENGE'>);
       } else if (envelope.type === 'PAIRED') {
         await this.onPaired(envelope as RelayV2Envelope<'PAIRED'>);
@@ -271,6 +312,8 @@ export class RelayClient {
     await chrome.storage.local.remove('extensionReloadAttemptedForVersion');
     this.endpointId = payload.endpointId;
     this.connectionGeneration = payload.connectionGeneration;
+    this.dashboardReady = true;
+    this.dashboardSupported = payload.dashboardVersion === 1;
     await chrome.storage.local.set({
       connectionStatus: 'connected',
       endpointNickname: payload.nickname,
@@ -359,6 +402,7 @@ export class RelayClient {
     }
     this.sendEnvelope(createRelayV2Envelope('HELLO', {
       profileProxy: 1,
+      browserInputPolicy: 1,
       ...(this.managedClaim ? { managedClaim: this.managedClaim } : {}),
       ...(identity.endpointId ? { endpointId: identity.endpointId } : {}),
       ...(identity.pairingCode ? { pairingCode: identity.pairingCode } : {}),
@@ -367,13 +411,14 @@ export class RelayClient {
       extensionVersion: chrome.runtime.getManifest().version,
       browser: this.browser,
       supportedProtocolVersions: [RELAY_PROTOCOL_V2],
-      capabilityManifestIds: [CAPABILITY_MANIFEST_ID],
+      capabilityManifestIds: [CAPABILITY_MANIFEST_ID, DASHBOARD_CAPABILITY_ID],
       maxEnvelopeBytes: MAX_RELAY_V2_ENVELOPE_BYTES
     }));
   }
 
   private onClose(transport: RelayTransport, event: RelayTransportClose): void {
     if (this.socket !== transport) return;
+    this.clearDashboardRequests();
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = null;
     this.connectionGeneration = null;

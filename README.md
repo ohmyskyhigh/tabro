@@ -6,12 +6,19 @@ Open-source Chromium browser automation for AI agents: one shared Broker, separa
 
 **[Get started →](./GETTING_STARTED.md)** Set up Hermes, Codex or another MCP agent, then connect a new managed browser or an existing Chrome, Edge or AdsPower SunBrowser profile.
 
+> [!TIP]
+> **Copy this prompt to your agent**
+>
+> Follow the [Getting Started guide](./GETTING_STARTED.md) in `ohmyskyhigh/tabro`. Download the available installer for my OS and CPU and verify its SHA-256. Run setup on the desktop host under the same OS account as Chrome, outside the agent sandbox. Keep Chrome’s own security sandbox enabled.
+>
+> Register the local stdio MCP server and help me load the unpacked extension into my chosen Chrome profile. Confirm that the profile appears in MCP, then use a Tabro workspace to read the title of `https://example.com`. If you lack host or browser access, give me the steps to run on that host.
+
 Tabro was previously named Octopus Browser Relay. New MCP registrations use `tabro`; existing profile data, extension identity, Native Messaging registration, and legacy environment variables remain compatible. The repository is now [ohmyskyhigh/tabro](https://github.com/ohmyskyhigh/tabro); the previous repository address redirects to it, and historical release asset filenames remain valid.
 
 Tabro connects a local MCP gateway to one extension instance in each browser profile. An agent asks for browser capacity, receives broker-issued workspace and tab references, submits extension-supported Chrome DevTools Protocol (CDP) commands, and polls durable request tickets. The extension relays those commands through `chrome.debugger`; Chrome does not need a public remote-debugging port.
 
 > [!IMPORTANT]
-> The `0.4.2` tree implements the canonical twenty-two-tool runtime, authenticated HTTP(S)/SOCKS5 profile proxies, relay-v2, Native Messaging and extension-backed CDP. The [0.4.2 preview package](https://github.com/ohmyskyhigh/tabro/releases/tag/hermes-v0.4.2) includes the Windows runtime and first-time setup; Hermes catalog admission requires a separate upstream review. The existing `v0.3.0` standalone release uses the previous Octopus name and fourteen-tool contract. Follow [Getting started](./GETTING_STARTED.md) for the current package, or use the [source installer](#the-installer-builds-registers-and-prepares-the-local-runtime). Automated verification and physical Chrome, Codex, and Hermes qualification are separate gates; see [Current limits](#current-limits) and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md).
+> The `0.5.0` source tree implements the twenty-two-tool runtime, authenticated HTTP(S)/SOCKS5 profile proxies, relay-v2, Native Messaging and extension-backed CDP. The published [0.4.2 Windows preview](https://github.com/ohmyskyhigh/tabro/releases/tag/hermes-v0.4.2) remains available while the new installers are qualified and [Hermes relisting](https://github.com/ohmyskyhigh/tabro/issues/2) is pending. The `v0.3.0` standalone release uses the previous Octopus name and fourteen-tool contract. See [Getting Started](./GETTING_STARTED.md) for setup and the [real-world runbook](./doc/06-Files/Real-World-Runbook.md) for platform qualification.
 
 ## Features
 
@@ -37,9 +44,9 @@ Configure HTTP, HTTPS, or SOCKS5 proxies with username/password authentication t
 
 ## Quick start
 
-Start with [Getting started](./GETTING_STARTED.md) for Hermes, Codex and other MCP agents, including automatic and manual browser connection. Named Hermes profiles enable their own plugin connections and share one local Broker. The source-build path below remains available for development.
+Start with [Getting started](./GETTING_STARTED.md) for standalone installers, local MCP registration and Chrome pairing. The release workflow stages Windows x64, macOS arm64 and x64, and Linux x64 packages and requires a real Chrome check for each. The Windows Hermes catalog and source-build paths remain available separately.
 
-The current source updater requires a release declaring shared runtime discovery support; it rejects older packages before stopping an existing installation. The published `v0.3.0` installer retains its older contract. The getting-started guide uses the separate 0.4.2 preview package and its setup script.
+The current Windows source updater requires a release declaring shared runtime discovery support. The published `v0.3.0` installer retains its older contract. The getting-started guide also covers the separate Windows 0.4.2 preview package.
 
 ### The source installer prepares the current twenty-two-tool shared runtime
 
@@ -77,7 +84,7 @@ flowchart LR
   M --> B["Local broker\nrouting, status, tickets, controls, logs"]
   B <--> D["SQLite durable state"]
   B <--> G["Extension gateway\nrelay protocol v2"]
-  G <--> N["Windows Native Messaging companion"]
+  G <--> N["Native Messaging companion"]
   N <--> E1["Profile A extension"]
   N <--> E2["Profile B extension"]
   E1 <--> P1["Chrome profile A\nchrome.debugger"]
@@ -90,13 +97,13 @@ Read the canonical [Product definition](./doc/01-Product/Product-Definition.md),
 
 ## Requirements
 
-- Windows with PowerShell, current-user Native Messaging registry access, and WinHTTP WebSocket support for the checked-in native host and installer;
+Use [Getting Started](./GETTING_STARTED.md#standalone-installers) for the standalone packages. The Windows source installation below uses these requirements.
+
+- Windows with PowerShell, current-user Native Messaging registry access, and WinHTTP WebSocket support;
 - Node.js `22.12.0` or newer;
 - pnpm `11.19.0` or another compatible pnpm 11 release;
 - A compatible Chrome, Chromium or Microsoft Edge browser; managed profiles and the Hermes plugin require version `153` or newer; and
 - Visual Studio C++ Build Tools with an x64 compiler and Windows SDK when rebuilding the native companion.
-
-The TypeScript broker is not intrinsically tied to Windows, but the current native companion uses WinHTTP and the current registration script writes Windows registry keys.
 
 ## Installation
 
@@ -143,13 +150,13 @@ The handoff validator still expects a literal broker URL in generated registrati
 
 ### GitHub Releases provide verified installation and updates
 
-The release workflow produces a portable Windows ZIP, checksum and standalone updater. Repository publication records describe the older `v0.3.0` package with fourteen tools; this download procedure does not provide the current source features. The current updater rejects packages lacking `runtimeDiscoveryVersion: 1` before shutdown. For the historical published-package path, download and run its updater:
+Use [Getting Started](./GETTING_STARTED.md#standalone-installers) for the standalone installers. The Windows legacy updater uses its own ZIP and checksum and requires `runtimeDiscoveryVersion: 1` for the current source runtime. The historical `v0.3.0` package exposes fourteen tools. Reproduce that exact release with its versioned updater.
 
 ```powershell
 Invoke-WebRequest `
-  https://github.com/ohmyskyhigh/tabro/releases/latest/download/octopus-browser-relay-update.ps1 `
+  https://github.com/ohmyskyhigh/tabro/releases/download/v0.3.0/octopus-browser-relay-update.ps1 `
   -OutFile .\octopus-browser-relay-update.ps1
-pwsh -NoProfile -File .\octopus-browser-relay-update.ps1
+pwsh -NoProfile -File .\octopus-browser-relay-update.ps1 -Repository ohmyskyhigh/tabro -Version v0.3.0
 ```
 
 The updater installs under `%LOCALAPPDATA%\Octopus Browser Relay`, preserves durable data under its `data` directory, registers the versioned native host, starts the broker, and prints the stable extension directory. It also writes these handoff files under `%LOCALAPPDATA%\Octopus Browser Relay\bootstrap`:
@@ -301,6 +308,8 @@ Poll the returned `request_ref` with `get_browser_request` until completion. Sup
 
 ## Local endpoints and state
 
+The table shows the Windows source layout. Standalone installations keep the runtime record, database, token, PID and logs under `data/` in the reported install root. Windows publishes an additional relay record beside the native executable. macOS and Linux share `data/runtime.json` between the Native Host and stdio adapter.
+
 | Purpose | Default |
 | --- | --- |
 | MCP and MCP health | Dynamic loopback HTTP port; read `mcpUrl` in `.relay-data/runtime.json` and replace `/mcp` with `/health` |
@@ -329,7 +338,7 @@ pnpm test:e2e
 pnpm build
 ```
 
-`pnpm verify` runs those checks as one gate. `pnpm build` also compiles the Windows native companion and therefore needs the C++ toolchain. Use the [real-world runbook](./doc/06-Files/Real-World-Runbook.md) for physical profiles and agent runtimes.
+`pnpm verify` runs those checks as one gate. On Windows, `pnpm build` uses the C++ toolchain for the Native Messaging companion. On macOS, it uses Clang for the process and Keychain helper. The [release workflow](./.github/workflows/release.yml) packages the runtime and qualifies each installer against Chrome.
 
 ## Troubleshooting
 
@@ -338,7 +347,7 @@ pnpm build
 1. Read `relayUrl` from the runtime record, change `ws:` to `http:` and `/relay` to `/health`, and confirm it responds.
 2. Confirm the extension ID is `caekiojlchhifdomfghejkbfpmaklafe` and **Native companion** is selected.
 3. Confirm the extension directory still exists at the path reported by the updater.
-4. Open `%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\INSTALLATION.md` and verify the installed paths.
+4. Check the setup output and the native registration for your browser. The legacy Windows updater writes its handoff to `%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\INSTALLATION.md`.
 5. Reload the unpacked extension after updating its files. If it reports a required-version mismatch, update and restart the broker to remove the old version gate, then reconnect the extension.
 
 For a source checkout, run `pwsh -NoProfile -File .\tools\real-world-preflight.ps1`. For a GitHub Release install, check both health endpoints and the generated handoff files directly.
@@ -359,9 +368,9 @@ Both ports default to `0`; clients use the actual addresses in the discovery rec
 
 ## Current limits
 
-- The Native Messaging host and registration installer are Windows-specific.
-- The installer registers current-user Native Messaging host manifests. A browser build that reads a different registry location needs its actual root passed through `-NativeRegistryRoots`.
-- The installer generates a Codex stdio handoff without modifying Codex configuration and a Hermes command that registers every profile installed when it runs. It does not install either runtime, and a later Hermes profile requires rerunning that command.
+- The legacy updater and checked-in Hermes catalog package target Windows x64. The [qualification record](./doc/06-Files/Real-World-Runbook.md#packaged-installation) tracks standalone evidence by OS and architecture.
+- The Windows source installer accepts `-NativeRegistryRoots` for browser-specific registry locations. macOS and Linux setup accepts `--browser-data-dir` for a custom browser user-data directory.
+- The Windows source installer and legacy updater generate the Codex fragment and the all-profile Hermes command. Standalone packages print a local stdio MCP handoff for the operator to register.
 - Independent sessions remain distinct when the host launches one adapter process per session or supplies a supported runtime session environment value. A host that deliberately reuses one adapter process across unidentified sessions also reuses that adapter identity.
 - The HTTP broker confirms an accepted ticket after handing it to the stdio adapter. MCP has no transaction spanning that HTTP handoff and the adapter's later stdout write, so an adapter crash in that narrow interval can dispatch work whose ticket the agent runtime did not receive.
 - The extension executes only methods published by `octopus-extension-baseline-v1`; flattened child CDP sessions are disabled.
@@ -377,7 +386,7 @@ doc/                    Top-down knowledge vault and change governance
 apps/broker/            Broker runtime, core, MCP, relay, and storage source
 apps/browser-extension/ Manifest V3 extension source
 apps/mcp-stdio-adapter/ Session-owned stdio bridge for Codex and Hermes
-apps/native-host/       Windows Native Messaging companion source
+apps/native-host/       Platform Native Messaging companions and macOS helper
 apps/shared/protocol/   MCP schemas, relay schemas, domain facts, and capabilities
 tools/                  Build, install, pairing, preflight, and test automation
 tests/                  Contract, unit, integration, fault, E2E, and physical tests
@@ -401,3 +410,17 @@ Tabro is available under the [MIT License](./LICENSE).
 The development implementation includes list_browser_profiles, create_browser_profile, open_browser_profile and stop_browser_profile under MCP contract v5. The pairing alias (`endpoint_nickname`) is each Profile's only public name; creation requires only an idempotency key. Managed launch supports compatible Chrome, Chromium and Edge 153+ on Windows with one-time Native Messaging installation. The exact Chrome build lock has been replaced by version and runtime capability checks. New Profiles automatically load the extension; normal stop retains cookies, website storage and identity. The Hermes package includes this implementation; see its installation guide for the selected-browser prerequisite.
 
 Use `tools/install-local.ps1 -Install -EnableManagedProfiles` for local setup, or `-EnableManagedProfiles` with a package built from this source. Broker and adapter must upgrade together. Read the [single-Agent Demo runbook](./tests/demo/RUNBOOK.md) for the two verified three-Profile runs and reproduction steps.
+
+## Domain rules
+
+### Selected domains can require input actions while preserving observation
+
+The contract-6 source implementation supports a persistent `data/browser-rules.json` list shared by Codex and Hermes. Add a domain to require mouse/keyboard input for manipulation while permitting guarded JavaScript, DOM, accessibility and screenshots for observation. Domains include nested subdomains and all paths. See [rule configuration](./GETTING_STARTED.md#domain-rules) for the format, validation and recovery behavior. Native release qualification is tracked in the [implementation plan](./doc/80-Plans/domain-input-only-rules-2026-11-10/README.md); this source update does not publish a new package.
+
+## Extension dashboard
+
+### Open the extension to see connection details, profiles and website rules
+
+Click the **Tabro toolbar icon** or open its **Extension options**. The **Connection** tab shows the pairing code, profile alias and live connection status, with reconnect and pairing settings. **Broker management** lists profiles and their status, and lets you add, edit or remove input-only domain rules. Profile management is read-only in this version. Rules use the same persistent file across Codex and Hermes; conflicting edits require a refresh before saving. See [dashboard setup](./GETTING_STARTED.md#extension-dashboard). The dashboard is included in source builds; upgrade the Broker and extension together when a matching package is released.
+
+Profile rows show **Connection** and **Automation** separately: connected automation can be paused, and connection failures show their error. New tabs open in the background by default. Agents may explicitly bring a tab forward when a website needs it to start or receive input; background operation is a soft preference, while input-only rules still apply.

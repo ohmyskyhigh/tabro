@@ -1,8 +1,22 @@
 # Tabro 的 Hermes Provider 与一键安装方案
 
-日期：2026-10-01；更新：2026-10-04。状态：Windows Portable Plugin 已实现并通过隔离安装检查，目录提交正在准备；其余平台和上游菜单仍待交付。证据见 [October 4 交付记录](./plugin-delivery-2026-10-04.md)。
+日期：2026-10-01；更新：2026-11-06。Windows Portable Plugin 的隔离安装证据见 [October 4 交付记录](./plugin-delivery-2026-10-04.md)。独立安装包与 Hermes 目录分发分别验收。
 
 父级：[开发计划](../_MOC.md)。下文十八工具与 0.3.1 是 October 1 计划基线；后续交付以[当前 MCP 契约](../../03-User-Interface/MCP-Contract.md)为准。October 4 的商城分发要求见下一节，优先于旧计划中仅复用本机运行环境的交付范围。
+
+## 独立安装包
+
+### 三个平台在同一次发布中交付相同的现有功能
+
+用户确认先实现 Windows、macOS 和 Linux 的现有功能对等，再处理关闭标签组和删除 Profile。独立发布打包同一 Broker、MCP Adapter 和扩展，分别安装各平台的 Native Messaging 组件，保留受管 Profile 生命周期和账号密码代理。Windows 使用 PowerShell，macOS 和 Linux 使用 Node 入口。用户和安装 Agent 在 Chrome 所在的桌面主机和账号执行同一流程。
+
+Windows x64、macOS arm64 和 x64、Linux x64 的打包与验收由[发布流程](../../../.github/workflows/release.yml)管理。Apple Silicon 已通过本机归档包验收，其他目标的实机结果见[验收手册](../../06-Files/Real-World-Runbook.md#packaged-installation)。Hermes 目录审核与上游 Provider 菜单仍为独立交付。
+
+Hermes 在 2026-10-11 因打包的 Windows Native Host 缺少可验证的构建来源证明而下架 Tabro。已安装的插件可以继续使用。重新收录的要求见[上游维护者说明](https://github.com/ohmyskyhigh/tabro/issues/2)。
+
+### Hermes 从官方发布下载并校验固定版本的 Native Host
+
+`0.5.0` 发布流程从 Windows 独立安装包提取相同的 Native Host 字节，发布为独立附件并生成构建证明。Hermes 目录包保留同一份运行时清单，由 setup 下载并校验固定版本的附件。Windows 发布任务在附件公开前使用待发布的原件验证全新安装、重复安装和从 `0.4.2` 升级。待发布任务通过后，按 [Hermes 插件指南](../../../integrations/hermes/README.md#development)核验公开附件、刷新目录包并提交通过实机验证的 Git SHA。
 
 ## 商城分发
 
@@ -30,7 +44,7 @@ Tabro [local · multi-profile] — Persistent Chrome identities and tab-group wo
 “进入默认工具列表”在本方案中指新用户可以发现和选择 Tabro；不解释为强制安装、默认启用，或替换所有人的默认浏览器。首次选择下载与配置运行环境，完成后 Agent 可以调用 Tabro。是否进入 Hermes 的预置发现列表仍需上游接受。
 
 - 本地先完成一个入口的安装、启动、注册和连接验收。
-- 安装包包含 Windows PowerShell、Linux Bash 和 macOS Bash 入口，共用安装状态与核心流程；每个平台单独通过运行验收。
+- 独立安装包使用 Windows PowerShell 和 macOS/Linux Node 入口，共用运行时和核心流程；每个发行目标单独通过运行验收。
 - 独立 Hermes 插件封装 MCP 入口、Skills 和接入说明；Tabro Broker 与扩展保持独立职责。
 - 受管 Chrome 继续在创建或打开 Profile 时自动加载扩展并连接。
 - 现有 Chrome Profile 仍支持手动加载扩展；安装器报告等待连接，不强行改变其数据目录。
@@ -61,7 +75,7 @@ Plugin 制作、安装与启用仍待执行；共享运行环境完成不等于 
 
 | 里程碑 | 交付 | 完成证据 |
 | --- | --- | --- |
-| A：本地安装 | Windows、Linux、macOS 各有一个入口完成运行环境和 Hermes 接入 | 各目标平台在隔离环境发现十八工具并完成双 Profile 任务 |
+| A：本地安装 | Windows、Linux、macOS 各有一个入口完成运行环境和本地 stdio MCP 接入 | 各目标平台在桌面 Chrome 中发现二十二工具，验证已有和受管 Profile 及代理 |
 | B：独立插件 | 可安装、启用、更新的 Hermes 插件包 | 插件发现 MCP、Skills，更新后登录和配对身份保留 |
 | C：菜单接入 | Tabro 出现在 Provider 选择中 | 上游接受通用接口；选中、安装、状态和工具路由均通过测试 |
 | D：默认发现 | 未安装 Tabro 的新用户也能看到选项 | 上游接受目录或预置发现政策；不是仅在本机改菜单 |

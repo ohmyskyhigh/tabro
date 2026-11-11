@@ -11,7 +11,7 @@ Tabro 是面向 AI Agent 的开源 Chromium 浏览器自动化工具：通过 MC
 每个浏览器配置文件安装一个扩展实例。Agent 向本地 Broker 申请工作区，获得 Broker 签发的 `workspace_ref`、`tab_ref` 和请求票据，再通过扩展支持的 Chrome DevTools Protocol（CDP）子集执行浏览器操作。扩展使用 `chrome.debugger`，无需公开暴露 Chrome 远程调试端口；受管启动内部使用 loopback 管理连接。
 
 > [!IMPORTANT]
-> `0.4.2` 版本实现 22 个 MCP 工具、HTTP(S)/SOCKS5 账号密码代理、relay-v2、Native Messaging、扩展 CDP 适配器及受管 Profile 生命周期。[0.4.2 预览包](https://github.com/ohmyskyhigh/tabro/releases/tag/hermes-v0.4.2)包含 Windows 运行组件和首次 setup；Hermes 商城收录仍需上游审核。已有 `v0.3.0` 独立 Release 使用旧 Octopus 名称和 14 工具协议；当前包的安装请看[开始使用](./GETTING_STARTED.md)，开发者也可按下方“源码安装”构建。自动化检查与本机演示分别验证；不同机器仍需完成自己的预检和真实浏览器测试。
+> `0.5.0` 源码实现 22 个 MCP 工具、HTTP(S)/SOCKS5 账号密码代理、relay-v2、Native Messaging、扩展 CDP 适配器及受管 Profile 生命周期。新版安装包验收和 [Hermes 重新收录](https://github.com/ohmyskyhigh/tabro/issues/2)期间，仍可使用已发布的 [0.4.2 Windows 预览包](https://github.com/ohmyskyhigh/tabro/releases/tag/hermes-v0.4.2)。`v0.3.0` 独立发布使用旧 Octopus 名称和 14 工具协议。安装请看[开始使用](./GETTING_STARTED.md)，各平台验收结果见[验收手册](./doc/06-Files/Real-World-Runbook.md)。
 
 ## 功能展示
 
@@ -37,7 +37,7 @@ Agent 可以为不同任务创建独立的标签组工作区。Broker 记录工�
 
 ## 快速开始
 
-请先阅读[开始使用（英文）](./GETTING_STARTED.md)，了解 Hermes、Codex、其他 MCP Agent 的配置，以及通过 MCP 或手动加载扩展连接浏览器。多个 Hermes profile 分别启用插件，共用一个本地 Broker。下方保留开发者源码安装步骤。
+请先阅读[开始使用（英文）](./GETTING_STARTED.md)，按系统选择独立安装包，然后注册本地 MCP 并连接 Chrome。发布流程对 Windows x64、macOS arm64 和 x64、Linux x64 分别运行真实浏览器验收。下方为 Windows 源码安装路径。
 
 ### 开发者可从源码安装二十二工具的共享运行时
 
@@ -106,9 +106,9 @@ flowchart LR
 
 ```powershell
 Invoke-WebRequest `
-  https://github.com/ohmyskyhigh/tabro/releases/latest/download/octopus-browser-relay-update.ps1 `
+  https://github.com/ohmyskyhigh/tabro/releases/download/v0.3.0/octopus-browser-relay-update.ps1 `
   -OutFile .\octopus-browser-relay-update.ps1
-pwsh -NoProfile -File .\octopus-browser-relay-update.ps1
+pwsh -NoProfile -File .\octopus-browser-relay-update.ps1 -Repository ohmyskyhigh/tabro -Version v0.3.0
 ```
 
 更新器会：
@@ -311,7 +311,7 @@ pwsh -NoProfile -File .\tools\stop-local-broker.ps1
 - Release 安装不会安装 Codex、Hermes 或 Chrome。
 - 扩展只执行 `octopus-extension-baseline-v1` 允许的方法。
 - relay-v2 扩展消息上限为 1 MiB。
-- relay-v1 兼容桥仍保留用于迁移，但公开 MCP 只暴露 18 个正式工具。
+- relay-v1 兼容桥用于迁移，公开 MCP 契约 v5 提供 22 个工具。
 - 当前有 PID 校验的停止命令，但还没有完整卸载命令。
 
 ## 仓库结构
@@ -349,3 +349,17 @@ dist/                   生成的构建输出
 本开发版本新增 list_browser_profiles、create_browser_profile、open_browser_profile、stop_browser_profile，使用 MCP contract v5。Windows 受管启动支持兼容的 Chrome、Chromium 和 Edge 153+，通过版本及运行能力检查，不再锁定一个 Chrome 构建号；Native Messaging 只需一次性安装，新 Profile 自动加载扩展。停止保留 Cookie、网站存储和扩展身份。Hermes 插件已包含此实现；安装前须按插件指南设置浏览器路径。
 
 本地安装使用 `tools/install-local.ps1 -Install -EnableManagedProfiles`；从本分支构建的发布包也可通过 `-EnableManagedProfiles` 启用。Broker 与 adapter 必须一起升级。详细操作与两轮真实结果见 [单 Agent Demo 运行手册](./tests/demo/RUNBOOK.md)。
+
+## 域名规则
+
+### 指定域名可要求输入操作并保留页面观察能力
+
+契约 6 的源码实现支持持久化 `data/browser-rules.json`，由 Codex 和 Hermes 共用。域名自动覆盖子域名和全部路径；页面操作使用鼠标和键盘输入，观察可使用受保护的 JavaScript、DOM、辅助功能树和截图。配置格式见 [设置说明](./GETTING_STARTED.md#domain-rules)，发布验收状态见 [实施计划](./doc/80-Plans/domain-input-only-rules-2026-11-10/README.md)。
+
+## 扩展控制面板
+
+### 从扩展查看连接信息、Profile 状态和网站规则
+
+点击 **Tabro 工具栏图标**或打开**扩展选项**即可进入控制面板。**Connection** 显示配对码、Profile 别名和实时连接状态，可修改连接设置并重连。**Broker management** 只读展示 Profile 列表和状态，并支持新增、编辑、删除 input-only 域名规则。规则与 Codex、Hermes 共用同一持久化文件；发生编辑冲突时，须刷新后再保存。操作见[控制面板设置](./GETTING_STARTED.md#extension-dashboard)。此功能已加入源码构建；对应安装包发布后须一起升级 Broker 和扩展。
+
+Profile 列表分别显示 **Connection** 和 **Automation**：连接正常时自动化仍可能暂停，连接失败会显示错误。新标签页默认在后台打开；网站需要前台才能启动或接收输入时，Agent 可显式激活标签页。后台运行是软性偏好，input-only 规则仍然生效。

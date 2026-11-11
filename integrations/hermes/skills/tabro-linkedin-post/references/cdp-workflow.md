@@ -32,7 +32,7 @@ Use that personal-profile entry only after verifying the selected author. Compan
 
 ### Scope every editor lookup to the visible composer
 
-Send the following expression with `Runtime.evaluate` and `returnByValue: true`. This is a probe/focus operation, not a publish action. If the probe throws, inspect the live DOM rather than broadening blindly to an arbitrary page textbox.
+Send the following expression with `Runtime.evaluate` and `returnByValue: true`. This is a read-only observation. If the side-effect guard refuses geometry inspection, use DOM.getDocument, DOM.querySelector and DOM.getBoxModel instead. If the probe throws, inspect the live DOM rather than broadening blindly to an arbitrary page textbox.
 
 ```javascript
 (() => {
@@ -42,13 +42,12 @@ Send the following expression with `Runtime.evaluate` and `returnByValue: true`.
     .filter(x => x.editors.length === 1);
   if (candidates.length !== 1) throw new Error('Composer is missing or ambiguous');
   const editor = candidates[0].editors[0];
-  editor.focus();
-  const range = document.createRange(); range.selectNodeContents(editor); range.collapse(false);
-  const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
   return {text: editor.innerText, buttons: [...candidates[0].dialog.querySelectorAll('button,[role="button"]')]
     .filter(visible).map(e => ({text: e.innerText, label: e.getAttribute('aria-label'), disabled: e.disabled === true}))};
 })()
 ```
+
+Focus the uniquely observed editor using Input.dispatchMouseEvent (move, press, release) or keyboard navigation. Position the caret through keyboard input, releasing each key and modifier. Re-observe after any layout change. Do not call DOM.focus, editor.focus(), or modify DOM selection from JavaScript on an input-only domain.
 
 Do not append approved text to unexpected existing text. If populated, stop and compare/ask about replacement. Send the entire approved body separately, as the `text` string in this call; the placeholder is not sample publishable copy:
 
@@ -58,9 +57,11 @@ Do not append approved text to unexpected existing text. If populated, stop and 
 
 Read back the full editor body and compare normalized whitespace. Count alone cannot detect wrong text. Screenshots establish visual paragraph/media layout. Do not use an automatic length heuristic to shorten approved text.
 
-### Image upload needs a remote object and a return to the composer
+### Input-only sites require the user to complete the visible file picker
 
-Inspect and click the uniquely identified visible photo control through supported Input methods. The photo control can be a div with role=button rather than a button. Once the media dialog exists, obtain its file input as a remote object using `Runtime.evaluate` with **returnByValue: false**; the actual JSON parameter is `"returnByValue": false`. Do not look for an object ID inside a serialized element value.
+Inspect the current tab policy first. On an input-only domain, click the uniquely identified photo control through Input methods, hand the visible file picker to the user, and then observe the selected files and previews. DOM.setFileInputFiles is prohibited in that mode; never remove the domain rule to permit upload.
+
+For a standard-mode domain, the remote-object attachment flow below remains available. Inspect and click the uniquely identified visible photo control through supported Input methods. The photo control can be a div with role=button rather than a button. Once the media dialog exists, obtain its file input as a remote object using `Runtime.evaluate` with **returnByValue: false**; the actual JSON parameter is `"returnByValue": false`. Do not look for an object ID inside a serialized element value.
 
 ```javascript
 (() => {

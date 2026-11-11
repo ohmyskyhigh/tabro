@@ -162,7 +162,7 @@ Connection presence is a fact sent to Broker Core. Gateway never derives `usable
 
 The native host frames stdin/stdout Native Messaging records and forwards them to the local gateway. Chrome and AdsPower installed profiles use this path so the extension never requires browser permission to open a loopback socket.
 
-Native Host owns adjacent `relay-runtime.json` lookup and its relay URL/process checks. A missing file permits the legacy URL; an invalid present record fails. Relay authentication and browser identity remain Extension Gateway and Broker Core responsibilities.
+The Windows host owns adjacent `relay-runtime.json` lookup and the legacy fallback for installations without discovery. The macOS and Linux host requires the data-directory `runtime.json` provided by its launcher. Each validates its local relay target and process liveness. Relay authentication and browser identity remain Extension Gateway and Broker Core responsibilities.
 
 An in-process or loopback transport can exercise the same envelope, authentication, size limits, and connection-generation behavior in automated tests or developer diagnostics, but it is not an installed-profile fallback. No transport buffers replayable browser event history. Reconnect triggers broker reconciliation and a fresh stream baseline.
 
@@ -218,7 +218,7 @@ The manifest describes scope and support; Browser Extension executes. Broker Cor
 
 Under the [System installation contract](../04-System/System-Architecture.md#github-releases-install-immutable-runtimes-behind-stable-local-launch-and-extension-paths), Setup and Qualification owns the Hermes first-time setup flow, including Broker delivery and the current proxy capability. The Windows portable plugin installs its pinned runtime outside Hermes profile homes and supplies each enabled profile with a separate adapter. Setup and launch share an installation lock; failed setup restores prior configuration. Its [delivery record](../80-Plans/tabro-hermes-provider-2026-10-01/plugin-delivery-2026-10-04.md) records isolated verification and the remaining clean-machine browser gate.
 
-Setup scripts build artifacts, register the native host, generate MCP configuration for Codex, register MCP configuration separately in the default and every installed named Hermes profile, print extension load paths, verify broker health, and explain automatic extension pairing. The Hermes helper discovers the installed profile directories when it runs and must run again after another profile is created. The scripts do not issue or require a pairing code; optional profile-local customization happens in the extension options. Re-running them repairs matching configuration without deleting pairing or workspace state unless reset is explicitly requested.
+Standalone installers on Windows, macOS and Linux register the native host, print the stdio registration and extension directory, and confirm Broker health. The Windows source and legacy updater generate a Codex fragment and an all-profile Hermes registration command. The Hermes helper discovers installed profile directories at run time. Pairing and optional alias customization belong to each browser's extension instance. Re-running compatible setup preserves pairing and workspace state.
 
 Runtime-specific templates remain separate from agent-visible MCP schemas.
 
@@ -230,11 +230,11 @@ The local startup helper owns launch serialization and matching-instance reuse. 
 
 The Hermes migration CLI owns plans, backups, verified application and rollback of active-reference changes. The database merge CLI writes a separate output database and owns schema, identity and integrity conflict checks; the operator owns source-store backups and deployment switching. They do not redefine Profile or workspace authority or run automatically during ordinary startup. Operator qualification must supply discovered URLs to older diagnostic helpers that still default to fixed ports.
 
-### Release tooling owns package integrity while the gateway and extension own reload fencing
+### Release tooling verifies packages and operators reload the unpacked extension
 
-Setup and Qualification bundles portable broker and MCP adapter entries, builds the versioned native executable and unpacked extension, generates the per-file release manifest, publishes the archive checksum, and performs verified staged installation. It owns download, checksum and manifest validation, versioned release directories, stable launchers, Native Messaging registration, health confirmation, and rollback of a failed startup.
+Setup and Qualification bundles portable Broker and MCP adapter entries, platform companions and the unpacked extension. It owns archive and manifest integrity, versioned release directories, stable paths, Native Messaging registration, health confirmation, and rollback of a failed setup. Each published standalone archive passes the target-specific Chrome qualification first.
 
-Extension Gateway compares the connected extension version with the broker's required version and withholds Broker Core readiness when reload is required. Browser Extension owns the one-reload decision and repeated-mismatch guard. Neither component changes profile identity, pairing, workspace truth, or request truth during an update.
+Extension Gateway negotiates relay protocol and capabilities. Operators reload after replacing the unpacked extension files. The extension retains its profile-local pairing identity during reload and reconnects through the refreshed registration.
 
 ### Automated tests progress from pure invariants to real browsers
 
@@ -255,7 +255,7 @@ A failing test can fix an implementation defect directly when the canonical beha
 
 ### The Broker Profile Manager coordinates lifecycle operations before workspace allocation
 
-Broker Core lists authenticated extension identities directly, enriches them with broker/user launch ownership from the launch directory, and exposes the same ownership in endpoint and window facts. Discovery works without a configured launcher and uses the extension alias as the sole public Profile name. SQLite migration 007 removes the second Profile name from storage and Profile ticket history; the migration runner normalizes creation hashes in the same transaction. The Profile model and repository accept no extra name. The Profile Manager under `apps/broker/src/profiles` owns the persistent launch directory, launcher coordination, instance observations, ready predicate and stopping barrier. ProfileRequestService integrates principal-scoped lifecycle requests with durable admission, acknowledgement, worker claims and terminal facts. ChromeLauncher owns the Windows process check and private lifecycle connection. BootstrapGrants owns credential validation and atomic binding after signed AUTH. The existing extension relay remains the website execution owner.
+Broker Core lists authenticated extension identities directly, enriches them with broker/user launch ownership from the launch directory, and exposes the same ownership in endpoint and window facts. Discovery works without a configured launcher and uses the extension alias as the sole public Profile name. SQLite migration 007 removes the second Profile name from storage and Profile ticket history; the migration runner normalizes creation hashes in the same transaction. The Profile model and repository accept no extra name. The Profile Manager under `apps/broker/src/profiles` owns the persistent launch directory, launcher coordination, instance observations, ready predicate and stopping barrier. ProfileRequestService integrates principal-scoped lifecycle requests with durable admission, acknowledgement, worker claims and terminal facts. ChromeLauncher owns process identity checks and the private lifecycle connection. It uses CIM on Windows, the macOS process helper on macOS, and `/proc` on Linux. BootstrapGrants owns credential validation and atomic binding after signed AUTH. The extension relay owns website execution.
 
 ### Setup and the launcher share browser eligibility without an exact build lock
 
@@ -265,6 +265,22 @@ The shared PowerShell browser helper owns selection, common installation discove
 
 ### Network services separate configuration, credential custody and extension application
 
-ProfileNetworkService owns MCP authorization, broker-only proxy operations, durable tickets, revisions, closed-Profile admission and deferred reconciliation. ProxyRepository stores bindings, requests, observations and private listener reservations. ProxyCredentialStore protects credentials with Windows DPAPI CurrentUser. ProxyGatewayManager owns bounded loopback listeners and authenticated upstream connections. ExtensionProxyController applies and reads back Chrome settings and performs fixed-origin exit-IP probes. ProfileManager and ChromeLauncher verify process closure independently of extension connectivity and integrate next-launch readiness and startup routing. Network operations are explicit capability-advertised relay messages, not browser-wide CDP.
+ProfileNetworkService owns MCP authorization, broker-only proxy operations, durable tickets, revisions, closed-Profile admission and deferred reconciliation. ProxyRepository stores bindings, requests, observations and private listener reservations. ProxyCredentialStore uses Windows DPAPI CurrentUser, macOS Keychain or Linux Secret Service for the desktop user. ProxyGatewayManager owns bounded loopback listeners and authenticated upstream connections. ExtensionProxyController applies and reads back Chrome settings and performs fixed-origin exit-IP probes. ProfileManager and ChromeLauncher verify process closure independently of extension connectivity and integrate next-launch readiness and startup routing. Network operations use capability-advertised relay messages.
 
 Parent: [`Components MOC`](./_MOC.md).
+
+## Domain interaction
+
+### Policy and input recovery have explicit shared, Broker and extension owners
+
+The shared protocol owns normalized rules, method/parameter classification and relay schemas. Broker Runtime owns persistent-file initialization and reload diagnostics. Broker Core owns policy synchronization, input reservations, recovery reads and resume gates. The request repository stores initialization and durable input state with request/attempt transitions. The extension inventory provides the current tab URL; the CDP executor forces observation guards and maps side-effect refusals. The attempt cache and dispatcher preserve confirmed outcomes without converting a post-execution persistence failure into a known no-effect failure.
+
+## Extension dashboard
+
+### The options page presents state while the Broker owns management mutations
+
+The extension's profile-status presenter separates connection health from automation readiness/pause and explains known connection failures. Broker Core chooses inactive tab creation; extension tab operations also default to inactive. MCP descriptions and Hermes workflow instructions carry the soft background preference, while the input policy continues to allow explicit `Page.bringToFront`.
+
+Broker Core's termination fence accepts confirmed release for its own workspace/session and records abandoned confirmation-waiting commands with possible effects. Input Recovery retains its record through archival; cleanup emits no page input or replacement creation.
+
+The extension options UI owns accessible tabs, pairing controls, profile tables and the rule editor. Its service worker owns authenticated request correlation. The relay gateway rejects unauthenticated or stale-generation requests. The Broker dashboard service reads the profile registry and uses the validated rule-file writer, which owns revision conflict checks and persistence.

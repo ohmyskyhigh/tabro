@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { BrowserPolicySnapshotSchema } from '../browser-interaction-policy.js';
+import { DashboardCommandSchema } from '../dashboard.js';
 
 export const RELAY_PROTOCOL_V2 = 2 as const;
 export const MAX_RELAY_V2_ENVELOPE_BYTES = 1024 * 1024;
@@ -10,6 +12,9 @@ export const RELAY_V2_MESSAGE_TYPES = [
   'PAIRED',
   'READY',
   'HEARTBEAT',
+  'DASHBOARD_REQUEST',
+  'DASHBOARD_RESULT',
+  'SYNC_BROWSER_RULES',
   'PROFILE_PROXY',
   'INVENTORY_REQUEST',
   'INVENTORY_SNAPSHOT',
@@ -158,6 +163,7 @@ const OperationTypeSchema = z.enum([
   'ATTACH_DEBUGGER',
   'SEND_CDP',
   'DETACH_DEBUGGER',
+  'SYNC_BROWSER_RULES',
   'PROFILE_PROXY',
   'RECONCILE_ATTEMPT'
 ]);
@@ -172,6 +178,7 @@ const DebuggerErrorSchema = z.strictObject({
 export const relayV2PayloadSchemas = {
   HELLO: z.strictObject({
     profileProxy: z.literal(1).optional(),
+    browserInputPolicy: z.literal(1).optional(),
     managedClaim: z.strictObject({
       instanceRef: z.string().regex(/^ins_[0-9a-f-]{36}$/u),
       generation: PositiveGenerationSchema,
@@ -213,6 +220,7 @@ export const relayV2PayloadSchemas = {
     selectedCapabilityManifestId: z.string().min(1).max(128)
   }),
   READY: z.strictObject({
+    dashboardVersion: z.literal(1).optional(),
     endpointId: RelayV2EndpointIdentitySchema,
     nickname: z.string().min(1).max(64),
     connectionGeneration: PositiveGenerationSchema,
@@ -226,6 +234,12 @@ export const relayV2PayloadSchemas = {
     connectionGeneration: PositiveGenerationSchema,
     inventoryGeneration: GenerationSchema,
     activeAttemptIds: z.array(RelayV2AttemptIdSchema).max(64)
+  }),
+  DASHBOARD_REQUEST: z.strictObject({ requestId: UuidSchema, connectionGeneration: PositiveGenerationSchema, command: DashboardCommandSchema }),
+  DASHBOARD_RESULT: z.strictObject({ requestId: UuidSchema, connectionGeneration: PositiveGenerationSchema,
+    result: JsonObjectSchema.nullable(), error: z.strictObject({ code: z.string().max(128), message: z.string().max(4096) }).nullable() }),
+  SYNC_BROWSER_RULES: z.strictObject({
+    attemptId: RelayV2AttemptIdSchema, expected: ExpectedBaseSchema, policy: BrowserPolicySnapshotSchema
   }),
   PROFILE_PROXY: z.strictObject({
     attemptId: RelayV2AttemptIdSchema, expected: ExpectedBaseSchema,
@@ -281,6 +295,8 @@ export const relayV2PayloadSchemas = {
     debuggerProtocolVersion: z.string().min(1).max(32)
   }),
   SEND_CDP: z.strictObject({
+    policyRevision: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+    recoveryObservation: z.boolean().optional(),
     attemptId: RelayV2AttemptIdSchema,
     expected: ExpectedAttachmentSchema,
     tab: RelayV2TabLocatorSchema,

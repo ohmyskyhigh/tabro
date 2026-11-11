@@ -12,6 +12,8 @@ import {
   type DebuggerApi
 } from '../../apps/browser-extension/src/debugger/attachment-manager.js';
 import { CdpExecutor } from '../../apps/browser-extension/src/debugger/cdp-executor.js';
+import { TabGroupOperations, type BrowserMutationApi } from '../../apps/browser-extension/src/browser/tab-groups.js';
+import type { BrowserPolicySnapshot } from '../../apps/shared/protocol/src/browser-interaction-policy.js';
 import { CdpEventForwarder } from '../../apps/browser-extension/src/debugger/event-forwarder.js';
 import {
   RelayDispatcher,
@@ -93,6 +95,105 @@ const browserApi: BrowserInventoryApi = {
 };
 
 describe('extension CDP adapter', () => {
+  it('creates inactive tabs by default and preserves an explicit active request', async () => {
+    const inventory = new BrowserInventory(browserApi);
+    const snapshot = await inventory.snapshot();
+    const create = vi.fn(async () => ({ ...tab }));
+    const api: BrowserMutationApi = {
+      tabs: { create, get: async () => ({ ...tab }), group: vi.fn(), move: vi.fn() },
+      tabGroups: { get: vi.fn(), update: vi.fn() }
+    };
+    const operations = new TabGroupOperations(inventory, api);
+    await operations.createTab({ window: snapshot.windows[0]! });
+    expect(create).toHaveBeenLastCalledWith({ windowId: 1, url: 'about:blank', active: false });
+    await operations.createTab({ window: snapshot.windows[0]!, active: true });
+    expect(create).toHaveBeenLastCalledWith({ windowId: 1, url: 'about:blank', active: true });
+  });
+
+  const policy: BrowserPolicySnapshot = { revision: 'a'.repeat(64), generation: 1,
+    configuration: { schemaVersion: 1, rules: [{ id: 'protected', domain: 'example.test', mode: 'input_only' }] } };
+  async function policyFixture() {
+    let url = 'https://example.test/a';
+    const inventory = new BrowserInventory({ ...browserApi, tabs: { get: async () => ({ ...tab, url }) } });
+    const snapshot = await inventory.snapshot();
+    const privateTab = snapshot.tabs[0]!;
+    const api = new FakeDebugger();
+    const attachments = new DebuggerAttachmentManager(inventory, api);
+    const storage = new MemoryStorage();
+    const attempts = new RecentAttemptCache(storage);
+    const executor = new CdpExecutor(attachments, attempts);
+    const attachment = await attachments.attach(privateTab, null, '1.3');
+    executor.applyPolicy(policy, 1);
+    const input = { attemptId: crypto.randomUUID(), connectionGeneration: 1, inventoryGeneration: snapshot.inventoryGeneration,
+      privateTab, attachmentGeneration: attachment.attachmentGeneration, policyRevision: policy.revision };
+    return { api, storage, attempts, executor, input, navigate: (next: string) => { url = next; } };
+  }
+
+  it('uses the current top-level URL and enforces newly synchronized revisions', async () => {
+    const f = await policyFixture();
+    await expect(f.executor.execute({ ...f.input, method: 'DOM.focus', params: { nodeId: 1 } })).rejects.toMatchObject({ code: 'INPUT_ONLY_REQUIRED' });
+    expect(f.api.sendCommand).not.toHaveBeenCalled();
+    f.navigate('https://unlisted.test/');
+    await f.executor.execute({ ...f.input, attemptId: crypto.randomUUID(), method: 'DOM.focus', params: { nodeId: 1 } });
+    expect(f.api.sendCommand).toHaveBeenCalledTimes(1);
+    f.navigate('https://child.example.test/new');
+    await expect(f.executor.execute({ ...f.input, attemptId: crypto.randomUUID(), method: 'DOM.focus' })).rejects.toMatchObject({ code: 'INPUT_ONLY_REQUIRED' });
+    f.executor.applyPolicy({ ...policy, revision: 'b'.repeat(64), generation: 2 }, 1);
+    await expect(f.executor.execute({ ...f.input, method: 'DOM.getDocument' })).rejects.toMatchObject({ code: 'INPUT_POLICY_STALE' });
+  });
+
+  it('maps guarded JavaScript refusal into the same cached error and permits geometry fallback', async () => {
+    const f = await policyFixture();
+    f.api.sendCommand.mockResolvedValueOnce({ exceptionDetails: { exception: { description: 'EvalError: Possible side-effect in debug-evaluate' } } });
+    await expect(f.executor.execute({ ...f.input, method: 'Runtime.evaluate', params: { expression: 'document.body.click()' } })).rejects.toMatchObject({ code: 'INPUT_ONLY_REQUIRED' });
+    expect(f.api.sendCommand).toHaveBeenCalledWith({ tabId: 10 }, 'Runtime.evaluate', expect.objectContaining({ throwOnSideEffect: true, timeout: 1000 }));
+    expect(await f.attempts.getForReconciliation({ attemptId: f.input.attemptId })).toMatchObject({ ok: false, error: { code: 'INPUT_ONLY_REQUIRED' } });
+    await f.executor.execute({ ...f.input, attemptId: crypto.randomUUID(), method: 'DOM.getBoxModel', params: { nodeId: 1 } });
+    expect(f.api.sendCommand).toHaveBeenLastCalledWith({ tabId: 10 }, 'DOM.getBoxModel', { nodeId: 1 });
+  });
+
+  it('guards recovery observations even on an unlisted domain', async () => {
+    const f = await policyFixture(); f.navigate('https://unlisted.test/');
+    await f.executor.execute({ ...f.input, method: 'Runtime.callFunctionOn', recoveryObservation: true, params: { functionDeclaration: 'function(){return this.textContent}', objectId: 'node' } });
+    expect(f.api.sendCommand).toHaveBeenCalledWith({ tabId: 10 }, 'Runtime.callFunctionOn', expect.objectContaining({ throwOnSideEffect: true }));
+    await expect(f.executor.execute({ ...f.input, method: 'DOM.focus', recoveryObservation: true })).rejects.toMatchObject({ code: 'INPUT_RECOVERY_REQUIRED' });
+  });
+
+  it('does not turn a post-execution cache failure into a known failed input', async () => {
+    const f = await policyFixture();
+    vi.spyOn(f.storage, 'set').mockRejectedValue(new Error('storage unavailable'));
+    await expect(f.executor.execute({ ...f.input, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', button: 'left', x: 10, y: 10 } }))
+      .rejects.toMatchObject({ code: 'CDP_OUTCOME_UNCERTAIN' });
+    expect(f.api.sendCommand).toHaveBeenCalledTimes(1);
+    expect(await f.attempts.getForReconciliation({ attemptId: f.input.attemptId })).toBeNull();
+  });
+
+  it('preserves ordinary script exceptions instead of labelling them policy refusals', async () => {
+    const f = await policyFixture();
+    const rawResult = { exceptionDetails: { exception: { description: 'ReferenceError: missingName is not defined' } } };
+    f.api.sendCommand.mockResolvedValueOnce(rawResult);
+    expect(await f.executor.execute({ ...f.input, method: 'Runtime.evaluate', params: { expression: 'missingName' } })).toMatchObject({ rawResult });
+  });
+
+  it('bounds a guarded function observation without sending a mouse or key release', async () => {
+    const f = await policyFixture();
+    vi.useFakeTimers();
+    try {
+      let finishTermination!: (value: object) => void;
+      const termination = new Promise<object>(resolve => { finishTermination = resolve; });
+      f.api.sendCommand.mockImplementation(async (_target, method) => method === 'Runtime.callFunctionOn'
+        ? await new Promise<object>(() => {}) : await termination);
+      const pending = f.executor.execute({ ...f.input, method: 'Runtime.callFunctionOn', params: { functionDeclaration: 'function(){while(true){}}', objectId: 'node' } });
+      let settled = false;
+      void pending.then(() => { settled = true; }, () => { settled = true; });
+      const refusal = expect(pending).rejects.toMatchObject({ code: 'OBSERVATION_TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(settled).toBe(false);
+      finishTermination({}); await refusal;
+      expect(f.api.sendCommand.mock.calls.map(call => call[1])).toEqual(['Runtime.callFunctionOn', 'Runtime.terminateExecution']);
+    } finally { vi.useRealTimers(); }
+  });
+
   it.each([
     { nodeId: 42, files: ['C:\\uploads\\图片.png', 'C:\\uploads\\report.pdf'] },
     { backendNodeId: 42, files: ['C:\\uploads\\a file.txt'] },

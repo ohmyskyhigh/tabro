@@ -24,6 +24,7 @@ import type {
 } from '../executor/recent-command-cache.js';
 
 type MutationType =
+  | 'SYNC_BROWSER_RULES'
   | 'PROFILE_PROXY'
   | 'CREATE_TAB'
   | 'GROUP_TABS'
@@ -63,6 +64,7 @@ interface OperationObserved {
 }
 
 const mutationTypes = new Set<RelayV2MessageType>([
+  'SYNC_BROWSER_RULES',
   'PROFILE_PROXY',
   'CREATE_TAB',
   'GROUP_TABS',
@@ -191,11 +193,15 @@ export class RelayDispatcher {
         ok: true,
         output: result
       };
-      await this.dependencies.attempts.remember(outcome);
+      if (type !== 'SEND_CDP') await this.dependencies.attempts.remember(outcome);
       this.sendOperationResult(type, attemptId, expected, 'succeeded', result, null);
     } catch (error) {
       const normalized = this.normalizeError(error);
-      await this.dependencies.attempts.remember({
+      if (normalized.code === 'CDP_OUTCOME_UNCERTAIN') {
+        this.sendOperationResult(type, attemptId, expected, 'unknown', null, normalized);
+        return;
+      }
+      if (type !== 'SEND_CDP') await this.dependencies.attempts.remember({
         attemptId,
         connectionGeneration: expected.connectionGeneration,
         inventoryGeneration: this.dependencies.inventory.currentGeneration(),
@@ -213,6 +219,11 @@ export class RelayDispatcher {
 
   private async execute(type: MutationType, payload: RelayV2PayloadByType[MutationType]): Promise<JsonObject> {
     switch (type) {
+      case 'SYNC_BROWSER_RULES': {
+        const input = relayV2PayloadSchemas.SYNC_BROWSER_RULES.parse(payload);
+        this.dependencies.cdp.applyPolicy(input.policy, input.expected.connectionGeneration);
+        return { revision: input.policy.revision };
+      }
       case 'PROFILE_PROXY': return asJsonObject(await (this.proxy ??= new ExtensionProxyController()).execute(relayV2PayloadSchemas.PROFILE_PROXY.parse(payload)));
       case 'CREATE_TAB': {
         const input = relayV2PayloadSchemas.CREATE_TAB.parse(payload);
@@ -268,6 +279,8 @@ export class RelayDispatcher {
           attachmentGeneration: input.expected.attachmentGeneration,
           method: input.method,
           params: input.params,
+          ...(input.policyRevision === undefined ? {} : { policyRevision: input.policyRevision }),
+          ...(input.recoveryObservation === undefined ? {} : { recoveryObservation: input.recoveryObservation }),
           ...(input.sessionId === null ? {} : { childSessionId: input.sessionId })
         }));
       }

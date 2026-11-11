@@ -14,9 +14,9 @@ Status: confirmed as the implementation baseline and ready for Component decompo
 
 - broker-owned routing, status, request, event, and audit truth;
 - automatic extension-initiated local pairing with a readable correlation code, persisted-key reconnect authentication, and one endpoint per browser profile;
-- verified GitHub Release installation behind versioned runtimes, stable local launchers, and a one-reload extension version gate;
+- verified GitHub Release installation behind versioned runtimes and stable extension paths, with operator reload after an update;
 - public logical windows, workspaces, tabs, requests, and cursors over private browser generations;
-- thirteen acknowledgement-gated submissions, four immediate reads, and terminal close;
+- sixteen acknowledgement-gated submissions, five immediate reads, and terminal close;
 - exact distinct-endpoint workspace allocation and existing-window selection;
 - versioned managed-tab CDP capability enforcement through `chrome.debugger`;
 - full-cycle per-tab FIFO lanes, scoped controls, ownership epochs, and orderly termination;

@@ -26,7 +26,7 @@ async function readHealthy() {
   const url = new URL(record.mcpUrl);
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.pathname !== '/mcp' || record.databasePath !== resolve(data, 'relay.sqlite')) throw new Error('Broker discovery does not match this local installation.');
   const health = await fetch(new URL('/health', url), { signal: AbortSignal.timeout(1500) }).then(response => response.json());
-  if (health.status !== 'ok' || health.instanceRef !== record.instanceRef || health.serviceVersion !== state.version || health.mcpContractVersion !== '5') throw new Error('Existing Broker has incompatible health or protocol.');
+  if (health.status !== 'ok' || health.instanceRef !== record.instanceRef || health.serviceVersion !== state.version || health.mcpContractVersion !== (state.contractVersion ?? '5')) throw new Error('Existing Broker has incompatible health or protocol.');
   return { processId: record.processId, runtime: { runtimeFile, mcpUrl: record.mcpUrl, relayUrl: record.relayUrl, health } };
 }
 
@@ -36,12 +36,15 @@ try {
     report({ status: 'already_running', ...current });
   } else {
     const environment = {};
-    const inherited = new Set(['path', 'systemroot', 'windir', 'comspec', 'pathext', 'temp', 'tmp', 'userprofile', 'localappdata', 'appdata', 'programfiles', 'programfiles(x86)', 'programw6432', 'psmodulepath', 'username', 'userdomain', 'homedrive', 'homepath']);
+    const inherited = new Set(['path', 'systemroot', 'windir', 'comspec', 'pathext', 'temp', 'tmp', 'userprofile', 'localappdata', 'appdata', 'programfiles', 'programfiles(x86)', 'programw6432', 'psmodulepath', 'username', 'userdomain', 'homedrive', 'homepath', 'home', 'user', 'logname', 'tmpdir', 'display', 'wayland_display', 'xauthority', 'xdg_runtime_dir', 'xdg_config_home', 'xdg_data_home', 'dbus_session_bus_address', 'lang', 'lc_all']);
+    for (const [key, value] of Object.entries(state.desktopEnvironment ?? {})) if (inherited.has(key.toLowerCase()) && typeof value === 'string') environment[key] = value;
     for (const [key, value] of Object.entries(process.env)) if (inherited.has(key.toLowerCase())) environment[key] = value;
     Object.assign(environment, { RELAY_DB_PATH: resolve(data, 'relay.sqlite'), RELAY_HOST: '127.0.0.1', RELAY_MCP_PORT: '0', RELAY_WS_PORT: '0',
-      RELAY_LOG_LEVEL: 'info', TABRO_RUNTIME_FILE: runtimeFile, TABRO_NATIVE_RUNTIME_FILE: resolve(runtime, dirname(state.nativeHostEntry), 'relay-runtime.json'), NODE_NO_WARNINGS: '1' });
+      RELAY_LOG_LEVEL: 'info', TABRO_RUNTIME_FILE: runtimeFile, TABRO_NATIVE_RUNTIME_FILE: process.platform === 'win32'
+        ? resolve(runtime, dirname(state.nativeHostEntry), 'relay-runtime.json') : runtimeFile, NODE_NO_WARNINGS: '1' });
     const config = resolve(data, 'managed-profiles.json');
     if (existsSync(config)) environment.RELAY_PROFILES_CONFIG = config;
+    if (process.platform === 'darwin') environment.TABRO_MACOS_HELPER = resolve(runtime, 'native-host/tabro-macos');
     const out = openSync(resolve(data, 'broker.stdout.log'), 'a');
     const err = openSync(resolve(data, 'broker.stderr.log'), 'a');
     let child;
@@ -62,7 +65,13 @@ try {
       if (ready && ready.processId === child.pid) break;
       ready = null;
     }
-    if (!ready) { if (!exited) child.kill(); throw new Error('Broker startup timed out. See installation logs.'); }
+    if (!ready) {
+      if (!exited) {
+        child.kill();
+        for (let i = 0; i < 20 && !exited; i++) await delay(100);
+      }
+      throw new Error('Broker startup timed out. See installation logs.');
+    }
     writeFileSync(resolve(data, 'broker.pid'), String(child.pid));
     report({ status: 'started', ...ready });
   }

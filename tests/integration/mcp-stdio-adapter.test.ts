@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startStdioAdapter } from '../../apps/mcp-stdio-adapter/src/server.js';
 import { Client } from '@modelcontextprotocol/client';
@@ -16,12 +19,14 @@ interface AdapterClient {
 describe('stdio MCP session adapter', () => {
   let application: RelayApplication | null = null;
   const adapterClients: AdapterClient[] = [];
+  let rulesRoot: string | undefined;
 
   afterEach(async () => {
     vi.restoreAllMocks();
     await Promise.allSettled(adapterClients.splice(0).map(({ client }) => client.close()));
     if (application) await application.stop();
     application = null;
+    if (rulesRoot) rmSync(rulesRoot, { recursive: true, force: true });
   });
 
   it('rejects old or unversioned Brokers before opening MCP or dispatching tools', async () => {
@@ -65,7 +70,7 @@ describe('stdio MCP session adapter', () => {
       host: '127.0.0.1',
       mcpPort: 0,
       wsPort: 0,
-      dbPath: ':memory:',
+      dbPath: ':memory:', browserRulesPath: join(rulesRoot = mkdtempSync(join(tmpdir(), 'tabro-test-rules-')), 'browser-rules.json'),
       logLevel: 'silent',
       heartbeatTimeoutMs: 5_000,
       errorThreshold: 3,
@@ -75,9 +80,10 @@ describe('stdio MCP session adapter', () => {
     await application.start();
     const { port } = application.mcpGateway.address();
 
-    const first = await connectAdapter(port, 'first');
-    const second = await connectAdapter(port, 'second');
+    const first = createAdapter(port, 'first');
+    const second = createAdapter(port, 'second');
     adapterClients.push(first, second);
+    await Promise.all([first.client.connect(first.transport), second.client.connect(second.transport)]);
 
     const [firstTools, secondTools] = await Promise.all([
       first.client.listTools(),
@@ -92,10 +98,10 @@ describe('stdio MCP session adapter', () => {
     ]);
     expect(firstContext.session_ref).not.toBe(secondContext.session_ref);
     expect(firstContext.lineage_ref).not.toBe(secondContext.lineage_ref);
-  }, 30_000);
+  }, 60_000);
 });
 
-async function connectAdapter(port: number, label: string): Promise<AdapterClient> {
+function createAdapter(port: number, label: string): AdapterClient {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ['--import', 'tsx', 'apps/mcp-stdio-adapter/src/main.ts'],
@@ -112,7 +118,6 @@ async function connectAdapter(port: number, label: string): Promise<AdapterClien
     name: `stdio-adapter-test-${label}`,
     version: '0.3.0-test'
   }, { versionNegotiation: { mode: 'auto' } });
-  await client.connect(transport);
   return { client, transport };
 }
 

@@ -4,17 +4,17 @@ Authority level: User Interface.
 
 For this vault, User Interface is the runtime-independent, agent-facing MCP contract rather than a graphical interface. It owns exact tool names and modes, model-authored inputs, returned envelopes, public facts, problems, request tickets, event cursors, available actions, and machine-readable schemas.
 
-Status: confirmed as wire-contract version `5` and ready for System realization. Numeric limits and runtime adapters remain evidence-tunable only where the contract advertises the active value and preserves the same public semantics.
+Status: confirmed as wire-contract version `6` and ready for System realization. Numeric limits and runtime adapters remain evidence-tunable only where the contract advertises the active value and preserves the same public semantics.
 
 ## Canonical contract
 
-### Eighteen tools expose thirteen submissions, four reads, and one terminal close
+### Twenty-two tools expose sixteen submissions, five reads, and one terminal close
 
 [`MCP-Contract.md`](./MCP-Contract.md) defines:
 
-- thirteen asynchronous submissions: `create_browser_profile`, `open_browser_profile`, `stop_browser_profile`, `request_browser_workspace`, `create_browser_tab`, `send_cdp_command`, `take_over_workspace`, `terminate_workspace`, `resolve_browser_request`, `stop_workspace_automation`, `resume_workspace_automation`, `kill_browser_endpoint`, and `resume_browser_endpoint`;
-- four immediate reads: `list_browser_profiles`, `get_browser_context`, `read_cdp_events`, and `get_browser_request`; and
-- one immediate terminal-ticket control: `close_browser_request`.
+- sixteen asynchronous submissions including Profile lifecycle, proxy changes and checks, workspace lifecycle, browser actions, and scoped controls;
+- five immediate reads, including `get_browser_proxy`, `list_browser_profiles`, `get_browser_context`, `read_cdp_events`, and `get_browser_request`; and
+- one immediate terminal-ticket control, `close_browser_request`.
 
 ### One Draft 2020-12 bundle defines every public body
 
@@ -39,3 +39,9 @@ Parent: [`02-User-Experience`](../02-User-Experience/_MOC.md).
 ### Profile proxy support follows the accepted network decision
 
 The [Profile proxy decision](../90-Proposals/Profile-Proxy.md) permits authenticated HTTP, HTTPS and SOCKS5 configuration only for closed broker-owned Profiles. The canonical owner in this directory defines its layer; [the implementation plan](../80-Plans/profile-proxy-2026-10-03/README.md) and implementation report track delivery evidence.
+
+## Extension dashboard
+
+### The human dashboard leaves the agent-facing MCP tool set unchanged
+
+The [dashboard contract](./MCP-Contract.md#extension-dashboard) defines connection controls, read-only profiles and domain rule editing through the extension's private interface. The [approved plan](../80-Plans/domain-input-only-rules-2026-11-10/README.md#extension-dashboard) records scope and verification.

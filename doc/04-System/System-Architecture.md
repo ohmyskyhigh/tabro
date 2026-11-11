@@ -24,7 +24,7 @@ The extension connects to its native companion through Chrome Native Messaging. 
 
 An in-process or loopback extension transport may exist only as an automated-test or developer fixture. Transport framing, chunking, and reconnection are replaceable; endpoint identity, tickets, workspaces, cursors, and recovery remain broker-owned.
 
-The loopback `/relay` upgrade rejects a present browser Origin unless it exactly equals `chrome-extension://caekiojlchhifdomfghejkbfpmaklafe`, before automatic endpoint registration. Missing Origin remains allowed for the WinHTTP Native Host. This browser-origin boundary does not authenticate arbitrary local processes or replace relay identity checks. The [October 5 review decision](../90-Proposals/hermes-review-fixes-2026-10-05.md) records the approved transport refinement.
+The loopback `/relay` upgrade rejects a present browser Origin unless it exactly equals `chrome-extension://caekiojlchhifdomfghejkbfpmaklafe`, before automatic endpoint registration. The Windows and Unix Native Hosts use a connection with no Origin. Relay identity checks still authenticate the profile. The [October 5 review decision](../90-Proposals/hermes-review-fixes-2026-10-05.md) records the original transport refinement.
 
 ## Runtime topology
 
@@ -58,23 +58,23 @@ The shared deployment uses one Broker database for Demo and ordinary MCP session
 
 After both listeners start, Broker Runtime atomically replaces each configured discovery file with schema version `1`, an instance UUID, process ID, start time, actual `mcpUrl` and `relayUrl`, and absolute database path. Discovery locates a process; it is not the authority for browser identity, ownership or credentials. Those remain in the durable store. Shutdown removes a discovery record only while its instance UUID still matches.
 
-Source installations publish `runtime.json` in the data directory and `relay-runtime.json` beside the native executable. Packaged launchers select the installed data and native paths. Discovery contains no bearer token; clients retain their token-file configuration. The managed Profile launcher receives the relay address actually bound by the Broker.
+Packaged installations publish `runtime.json` in the data directory. The Windows Native Host uses an additional `relay-runtime.json` beside its executable, as does the Windows source installer. The macOS and Linux Native Hosts read the same data-directory record as the adapter. Clients retain a separate token file. The managed Profile launcher receives the relay address actually bound by the Broker.
 
 ### Clients validate discovered instances before forwarding a new call
 
 When `TABRO_RUNTIME_FILE` is configured, the stdio adapter validates the closed discovery schema, loopback URLs and process liveness, then checks MCP contract version and the health endpoint's instance UUID before connecting. Before each new tool call it rereads discovery and reconnects if the instance changed, keeping the adapter's caller identity. A malformed or unavailable configured record fails instead of falling back to an unrelated Broker. A dispatched call is never retried by this reconnection mechanism.
 
-Native Host reads its adjacent relay record on each connection, checks the discovery version, process liveness and local relay URL, and forwards to that relay. Only absence of a discovery file permits its legacy configured-URL behavior; a present invalid record fails. Native Host's checks are not the adapter's HTTP health/instance handshake. These process checks do not establish a general PID-reuse guarantee.
+Native Host reads its platform's discovery record on each connection and checks the schema version, process liveness and local relay URL. Windows retains a configured-URL fallback for legacy installations without an adjacent discovery record. The Unix companion requires its configured discovery file. The adapter separately verifies HTTP health and Broker instance identity.
 
 ### Startup coordination prevents a second process from opening the same live data directory
 
-The local startup helper serializes launches with a Windows startup mutex and reuses a matching healthy process. A Broker entry process also exclusively creates a PID lock in its data directory and refuses a live recorded owner; stale-owner removal and a fresh exclusive create permit recovery. Unknown or invalid ownership requires inspection. This lock belongs to process startup, independently of per-Profile operation leases and managed-tab FIFO lanes.
+Setup and installed startup serialize access to the install root with a Windows mutex or a macOS/Linux file lock, then reuse a matching healthy process. A Broker entry process also exclusively creates a PID lock in its data directory and refuses a live recorded owner. Stale-owner removal and a fresh exclusive create permit recovery. Unknown or invalid ownership requires inspection. This lock belongs to process startup, independently of per-Profile operation leases and managed-tab FIFO lanes.
 
 Demo preparation reuses this shared runtime and owns only its fixture server and per-run evidence. Stopping the fixture leaves the Broker running. Merging historical stores is an explicit offline migration, not a Broker startup action.
 
 ### Installation prepares both agent runtimes and each browser profile
 
-Scripted installation builds the broker and extension, registers the MCP server for Codex and for the default plus every installed named Hermes profile, installs the Native Messaging host, and verifies local readiness. Hermes profiles remain isolated: each profile stores its own MCP entry and launches its own session-owned adapter, while every adapter reaches the same local broker. Running the registration script again after profile creation brings the new profile into the registered set. Each intended Chrome or AdsPower profile loads its own extension, which generates a default readable code, accepts optional customization in its options page, and registers automatically when the running broker is reachable. Installation provides no broker-code issuance or required user-entry step.
+Standalone setup installs the runtime and registers the Native Messaging host on the browser user's desktop. Windows writes current-user registry values. macOS and Linux write a manifest under the selected browser's user-data directory and place a copy in each managed Profile's user-data directory. Setup starts or reuses the Broker and prints the local stdio handoff and stable extension path. Each MCP session launches a session-owned adapter and reaches the same Broker. The Windows source and legacy updater paths also generate Codex and all-profile Hermes handoffs. Each participating browser extension generates its own readable code and registers automatically.
 
 Installation reports one explicit unmet prerequisite at a time. It does not become an agent-visible browser-automation tool.
 
@@ -82,13 +82,13 @@ Installation reports one explicit unmet prerequisite at a time. It does not beco
 
 The approved [first-time Hermes setup journey](../02-User-Experience/User-Experience-Definition.md#first-time-hermes-setup-downloads-and-installs-the-local-browser-runtime) must compose package download, dependency preparation, local installation, Native Messaging registration, Broker startup and MCP readiness for a machine without Tabro. It uses the shared runtime and preserves the existing Profile proxy contract. The Windows portable package implements this flow through the pinned plugin payload and setup scripts. Multiple Hermes profiles enable independent MCP connections to one shared local Broker. The [delivery record](../80-Plans/tabro-hermes-provider-2026-10-01/plugin-delivery-2026-10-04.md) distinguishes isolated installation evidence from pending clean-machine browser qualification and catalog admission.
 
-Release construction bundles the broker and MCP adapter with their production dependencies, copies migrations and the unpacked extension, gives the native executable a versioned filename, and records the hash and byte length of every packaged file. GitHub publishes the Windows archive, its SHA-256 checksum, and the updater.
+Standalone release construction bundles the Broker, adapter, migrations, unpacked extension, platform companion and installer. The runtime manifest records file hashes and byte lengths. The release workflow qualifies each archive on its target host and publishes Windows x64, macOS arm64 and x64, and Linux x64 packages and SHA-256 checksums together after all targets pass. The Windows legacy updater uses a separate compatible ZIP and checksum on the same release.
 
-The updater verifies the archive checksum and internal manifest before stopping a process. It installs the runtime under a versioned directory, preserves the durable data directory, points stable broker and MCP launchers at the selected release, updates the Native Messaging manifest to the versioned native executable, mirrors extension files into one stable unpacked-extension directory, and commits current-release state before startup. Health must report the selected version. A failed startup restores the prior current-release state, extension files, Native Messaging target, and previously running broker.
+The operator verifies the standalone archive checksum before extraction and stops the idle previous Broker before upgrading. Setup verifies its runtime manifest, selects a versioned payload, preserves the data directory, refreshes the stable unpacked extension and native registration, and verifies the selected Broker version and MCP contract. A failed setup restores the previous handoff, configuration and extension contents. The Windows legacy updater separately verifies the archive itself and can restart the previously running Broker during rollback.
 
 The current updater also requires release-manifest `runtimeDiscoveryVersion: 1` before stopping the existing installation. A historical package without that capability does not qualify for the shared-runtime upgrade path. Profile-aware upgrade checks reject active work or running managed instances and preserve database/configuration snapshots for recovery.
 
-Relay `READY` facts carry the broker version, required extension version, and whether reload is required. A version mismatch does not enter broker-ready dispatch. The extension reloads once for that required version through `chrome.runtime.reload()`, reconnects through the refreshed Native Messaging target, and only then publishes inventory. Persisted extension storage retains endpoint identity and pairing. A second mismatch for the same required version fails closed for operator repair.
+Relay protocol and capability negotiation determine compatibility. `READY` retains the existing fields for older extension clients. The current Broker echoes the extension's declared version and sets `reloadExtension` to `false`. The operator reloads the unpacked extension to activate new files. Ordinary reconnect preserves the persisted endpoint identity and pairing.
 
 ## Source of truth
 
@@ -273,7 +273,7 @@ Current runtime evidence is narrower: Broker Runtime constructs a redacting Pino
 
 ### Browser compatibility combines version admission with runtime capability checks
 
-The Windows Hermes package declares its selected browser through `TABRO_BROWSER_PATH` with a PE version floor of `153.0.0.0`. Setup accepts Chrome, Chromium or compatible derivatives such as Edge, preserves a saved browser selection, and rejects an incompatible explicit selection rather than silently substituting another browser. The managed launcher verifies the Chromium engine floor and extension loading; readiness additionally requires extension authentication and inventory. Newer builds are not rejected solely because their version differs from the setup observation.
+The Windows Hermes package declares its selected browser through `TABRO_BROWSER_PATH` with a PE version floor of `153.0.0.0`. The standalone installers accept an explicit absolute browser path and preserve the saved selection on repeat setup. The managed launcher verifies the Chromium engine floor and extension loading. Readiness additionally requires extension authentication and inventory. The current engine floor comes from `MINIMUM_BROWSER_MAJOR` in the managed launcher source and is copied into the standalone package manifest.
 
 Process discovery must include Chromium derivatives, while control still requires the exact recorded PID, creation time, executable path and user-data directory. Discovery by the executable name `chrome.exe` alone is insufficient. Private lifecycle connections and extension-mediated website execution keep their existing boundaries.
 
@@ -334,3 +334,27 @@ A per-Profile loopback HTTP proxy forwards through one configured HTTP, HTTPS or
 Network changes use acknowledgement-before-dispatch, principal-scoped idempotency and expected revisions. Set, clear and exit checks require broker ownership. Pending network mutations fence workspace admission and Profile lifecycle; admission rejects open Profiles and execution verifies actual process closure before committing. Unknown closure never counts as stopped. Set and clear save intent without applying to a live browser or launching Chrome. Observed application belongs to a connection generation and desired revision. Reconnect reconciles before automation resumes. Gateway readiness precedes configured launch; a cleared configuration omits the startup proxy flag on the next explicit launch. No proxy command or automatic proxy reconciliation targets user-owned Chrome. Conflicts or missing credentials prevent readiness without clearing unrelated pause causes.
 
 Parent: [`System MOC`](./_MOC.md).
+
+## Domain interaction
+
+### Authenticated policy revisions govern the current tab at execution
+
+The Broker loads the validated user file, derives a content revision, and synchronizes it over the authenticated relay before dispatch. The extension explicitly advertises input-policy support; an older extension cannot execute browser commands when rules require enforcement. Reconnect establishes the policy again. The extension checks the current top-level URL and current revision immediately before CDP dispatch. Matching uses exact hostname or a dot-delimited subdomain suffix; no frame-origin or redirect-history enforcement is added.
+
+### Durable input intent and confirmed outcomes survive lost responses
+
+Input intent is stored before dispatch alongside its request/attempt identity. A per-window durable record retains possible held inputs, owner, last confirmed step and recovery reference. Cached reconciliation establishes completed presses/releases when available. Missing, stale or unpersisted outcomes remain uncertain. Interrupted held input blocks manipulation but permits owned guarded recovery observations through an explicit FIFO exception. Browser-generated release effects are observed separately; Tabro generates no recovery release or replay.
+
+Explicit termination validates the input record belongs to the terminating workspace/session and has no held, pending or uncertain input before fencing requests. A confirmation-waiting command with no live worker may then fail as abandoned with possible effects retained in durable history. Ordinary dispatched work still requires reconciliation. The released-input record remains until group archival succeeds, so a failed cleanup does not resume manipulation.
+
+Workspace/tab creation checks the affected window before browser dispatch. A current top-level URL or focus change pauses held input. Authorized workspace takeover atomically transfers recovery ownership and rotates its reference without clearing held state. Profile context reports a paused gesture as paused automation.
+
+## Extension dashboard
+
+### Authenticated relay messages carry scoped human management commands
+
+The dashboard derives connection labels from readiness, extension state and recorded failures, and renders automation pause independently. Browser process liveness alone never proves that a connection attempt is still running. Workspace creation and recovery dispatch `CREATE_TAB` with `active: false`; they do not activate the user's window. Explicit foreground CDP remains available under existing workspace and input-recovery authority.
+
+The extension advertises dashboard support through the existing HELLO capability-manifest list. The Broker includes the optional dashboard version in READY only for clients that advertise it. A connected Broker without dashboard support produces an update message locally, without sending an unknown management request or disrupting its browser connection.
+
+Only the extension's own options page can request dashboard operations from its service worker. The worker uses the authenticated relay, binds requests/replies to a connection generation and does not replay them after disconnection. The Broker validates the typed command after socket authentication. Rule saves validate the complete configuration, compare the loaded revision and atomically replace the existing file. No profile start, stop, creation or removal command is accepted by the dashboard. Dashboard responses exclude tokens and profile secrets; requests cannot select a filesystem path. Configuration diagnostics may identify the Broker's rule-file path so the user can repair it.

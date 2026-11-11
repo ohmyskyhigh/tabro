@@ -50,6 +50,21 @@ function toLane(row: Row): StoredTabLane {
 export class SqliteRequestRepository implements RequestRepository {
   constructor(private readonly db: SqliteDatabase) {}
 
+  browserRulesInitialized(): boolean {
+    return !!this.db.prepare('SELECT 1 FROM browser_rules_initialization WHERE singleton=1').get();
+  }
+  markBrowserRulesInitialized(): void {
+    this.db.prepare('INSERT OR IGNORE INTO browser_rules_initialization VALUES(1,?)').run(nowIso());
+  }
+  inputStates(): ReturnType<RequestRepository['inputStates']> {
+    return (this.db.prepare('SELECT state_json FROM browser_input_states').all() as Row[]).map(row => parseJson(row.state_json));
+  }
+  saveInputState(windowRef: string, state: Parameters<RequestRepository['saveInputState']>[1]): void {
+    if (state === null) { this.db.prepare('DELETE FROM browser_input_states WHERE window_ref=?').run(windowRef); return; }
+    this.db.prepare('INSERT INTO browser_input_states VALUES(?,?) ON CONFLICT(window_ref) DO UPDATE SET state_json=excluded.state_json')
+      .run(windowRef, JSON.stringify(state));
+  }
+
   private insertTransition(request: StoredRequestTicket, reasonCode: string | null, at: string): void {
     this.db.prepare(`INSERT INTO request_transitions(request_ref,state,phase,checkpoint_json,pause_condition,reason_code,claim_generation,observed_at)
       VALUES(?,?,?,?,?,?,?,?)`).run(request.requestRef, request.state, request.phase, JSON.stringify(request.checkpoint),
@@ -156,7 +171,7 @@ export class SqliteRequestRepository implements RequestRepository {
       if (current.workspaceRef && current.tabRef) {
         const lane = this.db.prepare('SELECT head_request_ref FROM tab_lanes WHERE workspace_ref = ? AND tab_ref = ?')
           .get(current.workspaceRef, current.tabRef) as Row | undefined;
-        if (!lane || String(lane.head_request_ref) !== current.requestRef) return null;
+        if (!lane || (String(lane.head_request_ref) !== current.requestRef && !input.recoveryObservation)) return null;
       }
       const result = this.db.prepare(`UPDATE request_tickets SET state = 'running', claimed_by = ?, claim_expires_at = ?,
         claim_generation = claim_generation + 1, updated_at = ? WHERE request_ref = ? AND state IN ('queued','running')

@@ -20,20 +20,15 @@ For the Hermes plugin distribution, the human starts Tabro setup after installin
 
 An existing compatible local installation may be reused through the shared-deployment journey below. Reuse is an optimization, not a prerequisite for new users. Proxy configuration follows [the Profile networking journey](#profile-networking) after installation; it retains the closed broker-owned Profile restriction.
 
-This approved journey is pending implementation and clean-machine qualification in the [Hermes delivery plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md). The scripted installation and direct MCP registration described below remain the existing supporting path.
+The [Hermes delivery plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md) tracks the Windows catalog package and its qualification. A local stdio client, including Hermes, can use the standalone installation and registration journey below.
 
 ### The same installer sequence applies whether a human or setup agent starts it
 
-A human can run the scripted installer directly or ask a standalone setup agent to run it on the human's behalf. Both entry paths use the same scripted installation journey because the Tabro MCP tool is not available until installation and registration are complete.
+A human or setup agent selects the standalone archive for the desktop host and CPU, verifies its checksum, and runs setup under the browser user's OS account. Agents use the host outside their own sandbox and keep the browser's security sandbox enabled. An agent with limited host or desktop access gives the human the steps to complete on that host and reports the remaining checks.
 
-The scripted installer dictates the order of the setup work required to install:
+Setup prepares the local Broker and prints the stdio MCP registration and extension path. The operator applies the registration to the intended client and starts a new MCP session. In an existing browser profile, the human or setup agent loads the reported unpacked extension and checks its connection status. A Broker-managed Profile loads its extension when the agent creates or opens it.
 
-- the local Tabro broker and MCP integration required by the intended agent runtime; and
-- one distinct Tabro browser-extension instance in each browser profile intended to participate.
-
-When an agent runs the installer, the agent follows the script's sequence and reports its output and result instead of reconstructing or improvising a separate installation sequence.
-
-For Hermes, the registration script targets the default profile and every named profile installed when the script runs. Each isolated Hermes profile receives its own Tabro MCP entry and starts a new session before using the tools. Creating another Hermes profile later requires running the same registration script again for the expanded profile set.
+For Hermes, each enabled profile has its own Tabro MCP entry. The Windows source and legacy updater registration helper applies the handoff to the default and all installed named profiles. Run that helper again after creating another profile.
 
 Exact script names, commands, implementation language, packaging, and extension-to-broker transport details belong to later System, Component, and File definitions. The browser execution path is already fixed at the Product level: the installed extension relays managed-tab-confined CDP through Chrome's `chrome.debugger` API without a Chrome remote-debugging port or pipe.
 
@@ -51,9 +46,9 @@ Pairing registers browser capacity without assigning it to an agent. A Codex or 
 
 The installation journey is not ready for browser automation until every intended profile's extension reports that it is paired with the broker and its generated endpoint nickname is available for discovery. Ordinary reconnect uses the persisted profile identity without another pairing step. Reset or reinstall generates a new identity, readable code, and nickname candidate.
 
-### The installer result tells the setup actor whether raw CDP automation can begin
+### A connected profile and a real browser action confirm readiness
 
-The installer result states:
+The installer reports the Broker and registration handoff. The setup actor verifies and reports:
 
 - whether the local broker is installed and running;
 - whether Tabro is registered as an MCP tool for each intended agent runtime;
@@ -63,15 +58,15 @@ The installer result states:
 - whether the intended endpoint can accept extension-relayed CDP traffic through `chrome.debugger`; and
 - which unmet prerequisite prevents automation when the environment is not ready.
 
-The installer result uses the extension's automatic-pairing result, generated code, and endpoint nickname when reporting whether those prerequisites are complete.
+The setup actor matches the extension's generated nickname to MCP profile discovery, then verifies a browser action through a workspace in that Profile.
 
 The Codex-and-Hermes demonstration is ready when Tabro is available as an MCP tool in both sessions, each intended browser profile has its own extension instance, and every resulting endpoint is paired, uniquely named within the local broker, and able to relay permitted CDP traffic through `chrome.debugger`.
 
 ### A verified update preserves pairing and reloads the unpacked extension from one stable path
 
-GitHub Releases provide the versioned local-runtime package and checksum. The local updater verifies the package, stops only the installer-owned broker, installs the versioned runtime, preserves broker data, refreshes Native Messaging and MCP launch paths, starts the updated broker, and reports matching health evidence.
+GitHub Releases provide the versioned local-runtime packages and checksums. The operator finishes active work, closes managed Profiles, and stops the verified installer-owned Broker before updating. Setup verifies the payload, installs the versioned runtime, preserves Broker data, refreshes the Native Messaging and MCP handoffs, and reports the updated Broker's health.
 
-The human loads the updater's stable unpacked-extension directory once through browser developer mode. Later updates replace the contents at that same path. When the extension reconnects with an older version, the updated broker withholds browser-work readiness and requests one extension reload. The extension reloads, retains its profile-local identity and pairing, and reconnects before publishing browser inventory. A repeated mismatch stops with an explicit update error instead of creating a reload loop.
+The human loads the stable unpacked-extension directory once through browser developer mode. Later updates replace the contents at that same path. The operator reloads the extension in each existing profile, then verifies that it reconnects under the same alias. Relay protocol and capability negotiation determine connection compatibility independently of package version.
 
 ### Codex and Hermes begin browser work through the same ready MCP experience
 
@@ -102,7 +97,7 @@ An invalid caller, ownership relationship, target, unsupported CDP method, or ou
 
 `accepted` is the disposition of the submission response, not a request state. The accepted request begins in `queued`, advances to `running`, and finishes in exactly one terminal state: `succeeded`, `failed`, or `uncertain`. A disconnected extension can pause a queued or running request at its durable phase or checkpoint without changing that lifecycle state; the pause reason is a separate nullable condition, not a sixth state. The agent calls the direct `get_browser_request` read with the returned `request_ref` to see the exact normalized request body, current state, pause condition, and, after the request becomes terminal, its domain result. The domain result retains the existing workspace, tab, raw CDP, takeover, or termination meaning instead of becoming a typed website-operation outcome.
 
-`list_browser_profiles`, `get_browser_context`, `read_cdp_events`, and `get_browser_request` are direct reads and do not issue request tickets. `read_cdp_events` requires a broker-issued cursor and returns the currently retained bounded event page immediately; it does not wait for a future browser event. A terminal `uncertain` request is never replayed automatically. The User Interface contract owns the complete tool catalog and execution classes: thirteen asynchronous submissions, four immediate reads, and one immediate terminal-ticket close.
+`get_browser_proxy`, `list_browser_profiles`, `get_browser_context`, `read_cdp_events`, and `get_browser_request` return immediate reads without issuing request tickets. `read_cdp_events` requires a broker-issued cursor and returns the currently retained bounded event page immediately. A terminal `uncertain` request requires an explicit decision before repeating an action. The User Interface contract owns sixteen asynchronous submissions, five immediate reads, and one immediate terminal-ticket close.
 
 ### The default use case requests browser workspaces and sends raw CDP commands
 
@@ -361,7 +356,7 @@ The available-action list does not enumerate or recommend the CDP methods the ag
 
 An invalid caller, ownership relationship, or target is rejected synchronously without a `request_ref`. A command that requests a method unavailable through `chrome.debugger`, or whose method or target-bearing parameters cannot be confined to the selected managed-tab tree, is also rejected synchronously without a ticket or browser delivery. A workspace request that cannot be satisfied by the connected eligible distinct endpoint set is rejected synchronously without a ticket or workspace creation, and an unavailable designated endpoint is not silently replaced. Endpoint kill or resume is rejected synchronously without a ticket when the caller does not own every active workspace on that endpoint, and workspace task-stop remains available. A reconnect-ambiguous raw CDP effect remains paused for explicit human resolution and is not automatically retried.
 
-The thirteen asynchronous submissions, four direct reads, and immediate terminal-ticket close use the modes defined by the canonical User Interface contract. Exact agent-visible wire schemas and problem codes belong there. Internal endpoint selection, CDP attachment, durable request storage, broker event retention, checkpointing, and cross-lane concurrency policy belong to the System layer.
+The asynchronous submissions, direct reads, and immediate terminal-ticket close use the modes defined by the canonical User Interface contract. Exact agent-visible wire schemas and problem codes belong there. Internal endpoint selection, CDP attachment, durable request storage, broker event retention, checkpointing, and cross-lane concurrency policy belong to the System layer.
 
 ### Tabro owns browser routing while the agent owns CDP intent and interpretation
 
@@ -548,3 +543,27 @@ The agent ends its work, closes the broker-owned Profile, reads the current prox
 Responses distinguish saved revision, effective extension application, and a dated browser-originated exit IP and latency observation. Saving while closed reports pending connection. Policy or competing-extension control reports a conflict. Clear saves removal of Tabro's setting; the next explicit launch omits the startup proxy flag and the extension releases its setting to the browser's underlying configuration, which may itself use a system proxy. Reconnection reconciles settings before automation becomes eligible.
 
 Parent: [`02-User-Experience`](./_MOC.md).
+
+## Domain interaction
+
+### Agents discover input-only rules through context and actionable errors
+
+Operators edit `data/browser-rules.json` or explicitly ask a host agent to edit it. Valid edits apply automatically; upgrades preserve the file. Domains cover themselves, nested subdomains and all paths. Agents inspect the effective policy through workspace/tab context. `INPUT_ONLY_REQUIRED` identifies the rejected method and gives observation and input alternatives. Agents must not remove a rule to recover from a rejection.
+
+### Recovery observations can pass a paused mutation without advancing it
+
+A connected owning session can inspect a paused tab through classified read-only CDP commands with forced JavaScript side-effect guards. This is the explicit exception to ordinary same-tab FIFO. The read does not complete or replay the blocked action. Input recovery appears in context and request diagnostics. The user finishes or cancels a held gesture; `resume_workspace_automation` acknowledges the current recovery reference. `resolve_browser_request` separately resolves the uncertain website effect. Manual stop and endpoint kill remain independent causes.
+
+If the task is ending, release acknowledgement also permits `terminate_workspace` while the manual stop remains. Cleanup archives the group and records an abandoned uncertain command as failed with an explicit possible-effect fact; the user need not falsely confirm successful website behavior to end the task.
+
+An authorized workspace takeover transfers recovery responsibility to the new owner and pauses the gesture. It does not clear held input or establish the website outcome; the new owner must complete the same observation and user-acknowledgement path.
+
+## Extension dashboard
+
+### Two tabs separate this profile's connection from shared Broker management
+
+The profile table presents Connection and Automation separately: a connected browser can have paused automation. A running browser with a disconnected extension is not assumed to be connecting; a known timeout or failure is displayed with an explanatory diagnostic.
+
+New managed tabs start in the background. Agents prefer background observations and navigation, reuse task workspaces, and explicitly bring a page forward only when the website needs it. Foreground activation remains allowed without a new per-action approval flow. Repeated activation and automatic focus restoration should be avoided; an interrupted held gesture still follows the existing recovery procedure.
+
+Connection shows live status, pairing code and alias, with save/reconnect, copy and reset controls. Broker management shows registered profiles and the shared input-only rules. Users can add, edit or remove a domain; each domain includes nested subdomains and all paths. A changed revision rejects a stale save and asks the user to reload. Disconnection disables Broker actions without discarding an unsaved domain edit. The profile list is read-only; this version has no profile lifecycle controls.

@@ -4,6 +4,11 @@ This directory records applied changes to vault structure and canonical document
 
 ## Entries
 
+- [Extension dashboard](../../.changelog/extension_dashboard-2026-11-11.md) records the two-tab UI, read-only profile scope, shared rule editing and native Chrome verification, followed by soft background defaults, separate connection/automation status, acknowledged-input cleanup and the normal macOS installation update.
+
+- [Domain input-only rules](../../.changelog/input_only_rules_proposal-2026-11-10.md) records approved canonical amendments, implementation, local evidence and outstanding platform/client qualification.
+
+- [Standalone installer reconciliation](../../.changelog/tabro_installer_review-2026-11-05_2219.md) records the platform scope, configuration and qualification evidence.
 - [Hermes review fixes](./2026-10-05-hermes-review-fixes.md) records relay Origin admission, custom-root environment forwarding and corrected disclosures.
 - [Chromium browser compatibility](./2026-10-04-chromium-browser-compatibility.md) records Chrome/Edge qualification and the Hermes selected-browser install gate.
 

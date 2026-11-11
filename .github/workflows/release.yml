@@ -1,44 +1,181 @@
 name: Release
 
 on:
+  pull_request:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  windows-release:
-    runs-on: windows-latest
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: windows-x64, runner: windows-latest }
+          - { platform: macos-arm64, runner: macos-15 }
+          - { platform: macos-x64, runner: macos-15-intel }
+          - { platform: linux-x64, runner: ubuntu-24.04 }
+    runs-on: ${{ matrix.runner }}
+    env:
+      TABRO_PLATFORM: ${{ matrix.platform }}
+      TABRO_QUALIFY_DASHBOARD: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.22.3'
       - name: Enable the repository pnpm version
-        shell: pwsh
+        shell: bash
         run: |
           corepack enable
-          corepack prepare pnpm@11.19.0 --activate
+          pnpm --version
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Require the tag and package versions to match
-        shell: pwsh
+        if: github.ref_type == 'tag'
+        shell: bash
         run: |
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($env:GITHUB_REF_NAME -ne "v$version") {
-            throw "Tag $env:GITHUB_REF_NAME does not match package version v$version."
-          }
+          version=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_NAME" = "v$version"
       - name: Verify source and build artifacts
         run: pnpm verify
-      - name: Package the portable Windows release
+      - name: Stage the host installer and shared runtime
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          package="tabro-v${version}-${TABRO_PLATFORM}"
+          pnpm stage:hermes "--output=$package"
+          echo "TABRO_QUALIFY_PACKAGE=artifacts/release/$package" >> "$GITHUB_ENV"
+          echo "TABRO_ASSET=tabro-setup-v${version}-${TABRO_PLATFORM}" >> "$GITHUB_ENV"
+      - name: Package the Windows installer and legacy updater
+        if: runner.os == 'Windows'
         shell: pwsh
-        run: pwsh -NoProfile -File tools/package-release.ps1 -SkipVerify
-      - name: Publish immutable release assets
+        run: |
+          $archive = Join-Path 'artifacts/release' "$env:TABRO_ASSET.zip"
+          Compress-Archive -Path (Join-Path $env:TABRO_QUALIFY_PACKAGE '*') -DestinationPath $archive
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$archive.sha256" -Value "$hash  $env:TABRO_ASSET.zip" -Encoding ascii
+          $manifest = Get-Content -Raw (Join-Path $env:TABRO_QUALIFY_PACKAGE 'runtime-manifest.json') | ConvertFrom-Json
+          $name = ([uri]$manifest.nativeHostUrl).Segments[-1]
+          $hostAsset = Join-Path 'artifacts/release' $name
+          Copy-Item -LiteralPath (Join-Path $env:TABRO_QUALIFY_PACKAGE "runtime/$($manifest.nativeHostEntry)") -Destination $hostAsset
+          $hash = (Get-FileHash -LiteralPath $hostAsset -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -cne ($manifest.files | Where-Object path -CEQ $manifest.nativeHostEntry).sha256) { throw 'Native Host asset differs from the Windows archive.' }
+          Set-Content -LiteralPath "$hostAsset.sha256" -Value "$hash  $name" -Encoding ascii
+          pwsh -NoProfile -File tools/package-release.ps1 -SkipVerify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package the Unix installer
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          tar -czf "artifacts/release/$TABRO_ASSET.tar.gz" -C "$TABRO_QUALIFY_PACKAGE" .
+          cd artifacts/release
+          shasum -a 256 "$TABRO_ASSET.tar.gz" > "$TABRO_ASSET.tar.gz.sha256"
+      - name: Qualify the Windows archive and Chrome connection
+        if: runner.os == 'Windows'
         shell: pwsh
+        run: |
+          $env:TABRO_QUALIFY_PACKAGE = Join-Path $env:RUNNER_TEMP 'tabro-package'
+          Expand-Archive -Path "artifacts/release/$env:TABRO_ASSET.zip" -DestinationPath $env:TABRO_QUALIFY_PACKAGE
+          pnpm exec vitest run tests/real-world/portable-installation.test.ts
+      - name: Qualify the Hermes catalog package against the release binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'tabro-package'
+          $version = node -p "require('./package.json').version"
+          $name = "tabro-hermes-v$version-windows-x64"
+          pnpm stage:hermes "--catalog-from=$archive" "--output=$name"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:TABRO_TEST_HERMES_INSTALL = '1'
+          $env:TABRO_TEST_HERMES_PACKAGE = "artifacts/release/$name"
+          $env:TABRO_TEST_HERMES_NATIVE_HOST = (Resolve-Path "artifacts/release/tabro-native-host-v$version-windows-x64.exe").Path
+          $prior = '6b0b7e526cb6d85dc3fb3d0eae63d051b5be127a'
+          git fetch --depth=1 origin refs/tags/hermes-v0.4.2
+          if ($LASTEXITCODE -ne 0 -or (git rev-parse 'FETCH_HEAD^{commit}') -cne $prior) { throw 'Unexpected Hermes preview commit.' }
+          $preview = Join-Path $env:RUNNER_TEMP 'tabro-preview'
+          git archive --format=zip "--output=$preview.zip" $prior integrations/hermes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive -LiteralPath "$preview.zip" -DestinationPath $preview
+          $env:TABRO_TEST_HERMES_PRIOR_PACKAGE = Join-Path $preview 'integrations/hermes'
+          pnpm exec vitest run tests/real-world/hermes-plugin-installation.test.ts
+      - name: Extract the Unix archive for qualification
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/tabro-package"
+          tar -xzf "artifacts/release/$TABRO_ASSET.tar.gz" -C "$RUNNER_TEMP/tabro-package"
+          echo "TABRO_QUALIFY_PACKAGE=$RUNNER_TEMP/tabro-package" >> "$GITHUB_ENV"
+      - name: Qualify Chrome and Keychain on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          keychain="$RUNNER_TEMP/tabro-qualification.keychain-db"
+          security create-keychain -p tabro-fixture "$keychain"
+          trap 'security delete-keychain "$keychain"' EXIT
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -s "$keychain"
+          security unlock-keychain -p tabro-fixture "$keychain"
+          TABRO_QUALIFY_CREDENTIALS=1 pnpm exec vitest run tests/integration/proxy-credentials.test.ts tests/real-world/portable-installation.test.ts
+      - name: Qualify Chrome and Secret Service on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnome-keyring libsecret-tools xvfb
+          dbus-run-session -- bash -ec '
+            printf %s tabro-fixture | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            TABRO_QUALIFY_CREDENTIALS=1 xvfb-run -a pnpm exec vitest run tests/integration/proxy-credentials.test.ts tests/real-world/portable-installation.test.ts
+          '
+      - name: Qualify domain rules and interrupted input in real Chrome
+        shell: bash
+        run: |
+          pnpm exec vitest run tests/real-world/input-only-recovery.test.ts
+          node -e 'const fs=require("node:fs"); const p="artifacts/qualification/"+process.platform+"-"+process.arch+"-input-only.json"; if(JSON.parse(fs.readFileSync(p)).status!=="passed") process.exit(1)'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: input-evidence-${{ matrix.platform }}
+          path: artifacts/qualification/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            artifacts/release/*.zip
+            artifacts/release/*.tar.gz
+            artifacts/release/*.sha256
+            artifacts/release/tabro-native-host-v*-windows-x64.exe
+            artifacts/release/tabro-update.ps1
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: package-*
+          merge-multiple: true
+      - name: Attest the Windows Native Host build
+        uses: actions/attest@v4
+        with:
+          subject-path: release-assets/tabro-native-host-${{ github.ref_name }}-windows-x64.exe
+          create-storage-record: false
+      - name: Publish all qualified installers in one release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          $assets = Get-ChildItem artifacts/release/*.zip, artifacts/release/*.sha256, artifacts/release/tabro-update.ps1 | ForEach-Object FullName
-          gh release create $env:GITHUB_REF_NAME @assets --generate-notes --verify-tag
+          gh release create "$GITHUB_REF_NAME" release-assets/* --generate-notes --verify-tag

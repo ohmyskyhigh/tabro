@@ -543,6 +543,10 @@ export interface LogicalRepository {
 }
 
 export interface RequestRepository {
+  browserRulesInitialized(): boolean;
+  markBrowserRulesInitialized(): void;
+  inputStates(): JsonRecord[];
+  saveInputState(windowRef: string, state: JsonRecord | null): void;
   acceptRequest(input: {
     requestRef: string;
     toolName: string;
@@ -570,7 +574,7 @@ export interface RequestRepository {
   }): Page<StoredRequestTicket>;
   markAcknowledgementDelivered(requestRef: string, at?: string): StoredRequestTicket | null;
   failAcknowledgement(requestRef: string, reasonCode: string, at?: string): StoredRequestTicket | null;
-  claimRequest(input: { requestRef: string; workerRef: string; leaseExpiresAt: string; at?: string }): StoredRequestTicket | null;
+  claimRequest(input: { requestRef: string; workerRef: string; leaseExpiresAt: string; recoveryObservation?: boolean; at?: string }): StoredRequestTicket | null;
   recordCheckpoint(input: {
     requestRef: string;
     expectedClaimGeneration: number;

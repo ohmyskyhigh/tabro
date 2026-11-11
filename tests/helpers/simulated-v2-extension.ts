@@ -252,7 +252,7 @@ export class SimulatedV2Extension {
 
   private succeed<Type extends Exclude<RelayV2MessageType,
     'HELLO' | 'CHALLENGE' | 'AUTH' | 'PAIRED' | 'READY' | 'HEARTBEAT' | 'INVENTORY_REQUEST'
-    | 'INVENTORY_SNAPSHOT' | 'ACK' | 'OPERATION_RESULT' | 'CDP_EVENT' | 'DEBUGGER_DETACHED' | 'ERROR'>>(
+    | 'DASHBOARD_REQUEST' | 'DASHBOARD_RESULT' | 'INVENTORY_SNAPSHOT' | 'ACK' | 'OPERATION_RESULT' | 'CDP_EVENT' | 'DEBUGGER_DETACHED' | 'ERROR'>>(
     message: RelayV2Envelope<Type>,
     result: NonNullable<RelayV2PayloadByType['OPERATION_RESULT']['result']>,
     generations: {
@@ -298,7 +298,7 @@ export async function connectAgent(port: number, token: string, session: string)
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
     requestInit: {
       headers: {
-        'x-octopus-contract-version': '5', Authorization: `Bearer ${token}`,
+        'x-octopus-contract-version': '6', Authorization: `Bearer ${token}`,
         'x-octopus-runtime': 'codex',
         'x-octopus-runtime-session': session
       }

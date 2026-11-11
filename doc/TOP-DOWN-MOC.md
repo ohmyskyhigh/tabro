@@ -21,9 +21,9 @@ This is the entry point for project knowledge. Read canonical knowledge in autho
 
 ### Canonical owners cover managed Profiles and the shared dynamic runtime
 
-The Product and UX contracts include extension-registered Profiles with broker/user launch ownership alongside session-owned tab-group workspaces. User Interface owns MCP contract version `5`: twenty-two tools, including Profile lifecycle and authenticated proxy controls. System owns the shared local Broker, runtime discovery and recovery rules; Components assigns their owners; Files maps their source, tests and operator procedures. Follow those owners for the normative details.
+The Product and UX contracts include extension-registered Profiles with broker/user launch ownership alongside session-owned tab-group workspaces. User Interface owns MCP contract version `6`: twenty-two tools, including Profile lifecycle and authenticated proxy controls. System owns the shared local Broker, runtime discovery and recovery rules; Components assigns their owners; Files maps their source, tests and operator procedures. Follow those owners for the normative details.
 
-The source package version is recorded in `package.json`. Repository publication evidence is in [the September 30 source publication](./99-Changelog/2026-09-30-tabro-source-publication.md); publication of source does not establish publication of an equivalent installer package.
+The source package version is recorded in `package.json`. The [packaged installation record](./06-Files/Real-World-Runbook.md#packaged-installation) tracks standalone qualification separately from [source publication](./99-Changelog/2026-09-30-tabro-source-publication.md) and the Windows Hermes catalog package.
 
 ## Delivery records
 
@@ -41,7 +41,7 @@ The source package version is recorded in `package.json`. Repository publication
 - [Profile alias naming](./99-Changelog/2026-10-03-profile-alias-only.md) records the alias-only Profile names and MCP contract 4 deployment.
 - [Managed Profile implementation report](./80-Plans/single-agent-multi-chrome-demo-2026-09-27/implementation-report.md) records the September 27 Windows qualification and its limits.
 - [Hermes reference migration](./99-Changelog/2026-10-01-hermes-tabro-migration.md) and [shared dynamic runtime](./99-Changelog/2026-10-01-shared-dynamic-runtime.md) record the October 1 changes in execution order.
-- [Hermes Provider plan](./80-Plans/tabro-hermes-provider-2026-10-01/README.md) owns the remaining Plugin, cross-platform installation and upstream menu work. Shared-runtime consolidation is complete in that plan; those later milestones remain pending.
+- [Hermes Provider plan](./80-Plans/tabro-hermes-provider-2026-10-01/README.md) separates standalone platform qualification, Windows catalog admission and upstream Provider menu work.
 - [Runtime conformance follow-up](./80-Plans/runtime-conformance-follow-up-2026-10-02/README.md) records the audit's pending discovery-helper, isolated-probe, scheduler-bound and retention work. Canonical requirements do not by themselves prove these implementations exist.
 - [The August implementation plan](./80-Plans/octopus-browser-relay-implementation-2026-08-31/README.md) remains a historical implementation and qualification record. Its original fourteen-tool scope does not override the current MCP contract.
 

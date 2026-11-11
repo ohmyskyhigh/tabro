@@ -1,16 +1,16 @@
 # 安装与设置
 
-本指南帮助 Windows 用户从零完成 Tabro、浏览器扩展、自动配对、Codex/Hermes MCP 注册和基础验证。精确运行时边界以英文 [Real-World Runbook](../06-Files/Real-World-Runbook.md) 为准。
+Windows、macOS 和 Linux 独立安装包统一使用[开始使用](../../GETTING_STARTED.md#standalone-installers)中的安装、MCP 注册和扩展配对流程。下文保留 Windows 源码安装与旧版更新器操作。各平台验收状态以[英文实机验收记录](../06-Files/Real-World-Runbook.md#packaged-installation)为准。
 
 ## 路径选择
 
-### 当前十八工具与动态发现使用源码或合格的本地发布包
+### 当前二十二工具与动态发现使用源码或合格的发布包
 
 | 目标 | 选择 |
 | --- | --- |
-| 安装并使用已经发布的版本 | GitHub Release 更新器 |
-| 使用当前十八工具、受管 Profile、动态发现或修改源码 | 源码安装；也可使用当前源码构建的合格本地包 |
-| 更新已经安装的 Release | 已安装目录中的 `update-local.ps1` |
+| 安装独立发行版 | 按[开始使用](../../GETTING_STARTED.md#standalone-installers)选择与操作系统及 CPU 匹配的包 |
+| 验证当前二十二工具、受管 Profile 和动态发现 | Windows 源码安装，或使用当前源码构建的合格独立包 |
+| 更新旧版 Windows 更新器安装 | 已安装目录中的 `update-local.ps1` |
 
 当前源码默认 MCP 与 relay 端口为 `0`，由系统分配。源码运行记录在 `.relay-data/runtime.json`，合格包安装后在安装目录的 `data/runtime.json`。不要并行启动同一数据目录的第二个 Broker。仓库记录的历史 `v0.3.0` 包是旧名称与十四工具协议；当前源码更新器要求包声明 `runtimeDiscoveryVersion: 1`，在停止现有安装前拒绝旧包。
 
@@ -18,7 +18,7 @@
 
 ### 独立更新器会验证下载内容后再修改安装目录
 
-本节下载入口说明历史发布包安装；当前功能请使用后面的源码路径。历史包生成的服务名和交接内容以该包输出为准，不能直接套用当前 `tabro` 十八工具验收。
+本节固定使用历史 `v0.3.0` 包。该包提供十四个工具，当前二十二工具的验收步骤适用于契约 v6。
 
 先确认 Node.js：
 
@@ -30,9 +30,9 @@ node --version
 
 ```powershell
 Invoke-WebRequest `
-  https://github.com/ohmyskyhigh/tabro/releases/latest/download/octopus-browser-relay-update.ps1 `
+  https://github.com/ohmyskyhigh/tabro/releases/download/v0.3.0/octopus-browser-relay-update.ps1 `
   -OutFile .\octopus-browser-relay-update.ps1
-pwsh -NoProfile -File .\octopus-browser-relay-update.ps1
+pwsh -NoProfile -File .\octopus-browser-relay-update.ps1 -Repository ohmyskyhigh/tabro -Version v0.3.0
 ```
 
 更新器完成前会依次验证：
@@ -134,7 +134,7 @@ Invoke-RestMethod ($runtime.mcpUrl -replace '/mcp$', '/health') | ConvertTo-Json
 hermes -p <profile> mcp test tabro
 ```
 
-通过条件是连接成功并发现 18 个工具。以后新建 Hermes 配置文件时，需要再次运行 `hermes-mcp.txt` 中的命令，再为该配置文件新建会话。
+通过条件是连接成功并发现 22 个工具。以后新建 Hermes 配置文件时，需要再次运行 `hermes-mcp.txt` 中的命令，再为该配置文件新建会话。
 
 ## 源码安装
 
@@ -181,7 +181,7 @@ $relayHealth = ($runtime.relayUrl -replace '^ws:', 'http:') -replace '/relay$', 
 pwsh -NoProfile -File .\tools\real-world-preflight.ps1 -McpUrl $runtime.mcpUrl -McpHealthUrl $mcpHealth -RelayHealthUrl $relayHealth
 ```
 
-当前交接文件校验仍要求固定 Broker URL，可能对有效的发现文件配置报告 `mcp_registration_handoffs: ACTION_REQUIRED`。核对 `TABRO_RUNTIME_FILE`、令牌路径和真实十八工具发现，并保留该未通过项；不要把它当作完整预检通过或反复重装。
+当前交接文件校验仍要求固定 Broker URL，可能对有效的发现文件配置报告 `mcp_registration_handoffs: ACTION_REQUIRED`。核对 `TABRO_RUNTIME_FILE`、令牌路径和实际发现的二十二个工具，并保留该未通过项。
 
 ## 更新
 
@@ -199,7 +199,7 @@ pwsh -NoProfile -File "$env:LOCALAPPDATA\Octopus Browser Relay\update-local.ps1"
 4. 扩展稳定目录被同步；
 5. Native Messaging 和 MCP 启动入口更新；
 6. 新 Broker 启动并验证健康；
-7. 已连接旧扩展收到一次重载请求并重新连接；
+7. 操作者在每个已有 Profile 中重载扩展并确认原别名重新连接；
 8. 失败时恢复之前的发布状态。
 
 配对密钥和昵称保存在浏览器配置文件中；Broker 的端点、工作区、票据和审计状态保存在 `data` 中，两者不会因正常更新被重置。
@@ -242,7 +242,7 @@ pwsh -NoProfile -File .\tools\start-local-broker.ps1
 
 ### Agent 已连接但工具数量不正确时应检查 MCP 注册入口
 
-Codex/Hermes 使用安装器生成的 adapter 入口：源码通常为编译的 `dist/mcp-stdio-adapter/src/main.js`，合格包为稳定 `bootstrap/mcp-stdio-adapter.mjs`。配置通过 `TABRO_RUNTIME_FILE` 发现 Broker，并引用本地 token 文件。Hermes 的每个隔离配置文件都必须拥有自己的 MCP 注册；可以重新运行 `hermes-mcp.txt` 一次性修复当前所有配置文件。修改后创建新会话。正确结果是 18 个工具。
+Windows 源码安装通常使用编译的 `dist/mcp-stdio-adapter/src/main.js`，旧版更新器使用 `bootstrap/mcp-stdio-adapter.mjs`。配置通过 `TABRO_RUNTIME_FILE` 发现 Broker，并引用本地令牌文件。独立安装包使用 setup 输出的 stdio 配置。每个 Hermes 配置文件单独注册 MCP。修改后创建新会话，确认发现 22 个工具。
 
 ## 安全
 
@@ -262,7 +262,7 @@ Codex/Hermes 使用安装器生成的 adapter 入口：源码通常为编译的 
 
 ### 启用受管 Profile 后不再需要逐个手工安装扩展
 
-本地开发安装运行 `pwsh -NoProfile -File tools/install-local.ps1 -Install -EnableManagedProfiles -StartBroker`。从当前源码构建的离线发布包运行 `tools/update-local.ps1 -PackagePath <zip> -EnableManagedProfiles`。本功能尚未发布远程 Release；旧发布包不会因为添加参数而具备新能力。安装器要求 Chrome 153.0.8010.53，检查固定扩展身份并设置私有目录权限。一次性 Native host 注册完成后，Agent 用 MCP 创建/打开 Profile 即可自动连接。外部已有 Profile 保留原人工安装旅程。
+Windows 本地开发安装运行 `pwsh -NoProfile -File tools/install-local.ps1 -Install -EnableManagedProfiles -StartBroker`。Windows 旧版更新器的合格离线包使用 `tools/update-local.ps1 -PackagePath <zip> -EnableManagedProfiles`。独立包启用受管 Profile，要求兼容的 Chromium 153 或更新版本，并在启动时验证所需能力。注册 Native Host 后，Agent 用 MCP 创建或打开受管 Profile 即可自动加载扩展。已有 Profile 通过浏览器开发者模式加载扩展。
 
 生成的 managed 配置保存在源码 `.relay-data/managed-profiles.json` 或包安装的 `data/managed-profiles.json`，记录浏览器路径、版本、扩展摘要、受管根和引导参数；Broker 启动后用实际绑定的 relay 地址引导 Profile。不要移动已建 Profile 的扩展目录。设置 `launchesEnabled: false` 并重启 Broker 可禁用 create/open，同时保留有权主体的 list/stop；不要删除配置或数据库来禁用功能。
 
@@ -273,3 +273,11 @@ Codex/Hermes 使用安装器生成的 adapter 入口：源码通常为编译的 
 真正降级到旧版前保留升级后的数据库及 Profile 元数据，恢复迁移前快照并使用旧版 Broker/adapter；旧版不会显示升级后新增的 Profile，但数据目录应保留。v0.3.0 → v2 → v0.3.0 的隔离实测见 `artifacts/real-world/profile-upgrade-probe-001/report.json`。不要直接拿旧二进制打开未知的新 schema，不回滚网站副作用。
 
 Parent: [`中文文档`](./README.md).
+
+## 域名规则
+
+### 同一份规则文件适用于所有浏览器配置和 MCP 客户端
+
+契约 6 的源码实现从安装目录的 `data/browser-rules.json` 读取规则。初次启动创建空列表，升级保留用户配置。格式和各平台路径见 [英文设置说明](../../GETTING_STARTED.md#domain-rules)。`example.com` 自动覆盖自身、所有子域名和全部路径，只按当前标签页顶层 URL 匹配。有效修改自动应用；无效修改保留最近有效版本并报告错误。
+
+匹配网站仍可使用受保护的 JavaScript、DOM、辅助功能树和截图观察页面；点击、输入、选择、拖动和滚动必须使用浏览器输入。输入中断后不自动松键或重放动作，先观察并按恢复提示处理。当前源码测试与各平台发布验收分别记录在 [实施计划](../80-Plans/domain-input-only-rules-2026-11-10/README.md)。

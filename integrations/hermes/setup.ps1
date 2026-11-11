@@ -27,10 +27,28 @@ $registryBackups = @()
 $stateWritten = $false
 $configurationBackups = @()
 $configurationWritten = $false
+$extension = Get-TabroChild $install 'browser-extension'
+$extensionStage = "$extension.$([guid]::NewGuid().ToString('N')).incoming"
+$extensionBackup = "$extensionStage.previous"
+$extensionPublished = $false
+$nativeDownload = $null
 try {
   try { $locked = $mutex.WaitOne(30000) } catch [Threading.AbandonedMutexException] { $locked = $true }
   if (-not $locked) { throw 'Another Tabro setup is running. Retry after it finishes.' }
+  if ($manifest.nativeHostUrl) {
+    $version = [string]$manifest.version
+    $expectedEntry = "native-host/relay-native-host-$version.exe"
+    $expectedUrl = "https://github.com/ohmyskyhigh/tabro/releases/download/v$version/tabro-native-host-v$version-windows-x64.exe"
+    $nativeFacts = @($manifest.files | Where-Object { $_.path -ceq $expectedEntry })
+    if ($version -cnotmatch '^\d+\.\d+\.\d+$' -or $manifest.nativeHostEntry -cne $expectedEntry -or $manifest.nativeHostUrl -cne $expectedUrl -or
+        $nativeFacts.Count -ne 1 -or $nativeFacts[0].sha256 -cnotmatch '^[a-f0-9]{64}$' -or $nativeFacts[0].bytes -le 0) {
+      throw 'Invalid Native Host release metadata.'
+    }
+    $nativeFile = Get-TabroChild $source $expectedEntry
+    if (-not (Test-Path -LiteralPath $nativeFile)) { $nativeDownload = $nativeFacts[0] }
+  }
   foreach ($fact in $manifest.files) {
+    if ($nativeDownload -and $fact.path -ceq $nativeDownload.path) { continue }
     $file = Get-TabroChild $source $fact.path
     if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fact.sha256) { throw "Package integrity check failed: $($fact.path)" }
   }
@@ -89,19 +107,46 @@ try {
     $target = Get-TabroChild $release $fact.path
     if (Test-Path -LiteralPath $target) {
       if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fact.sha256) { throw 'An installed immutable runtime file was modified. Use a fresh InstallRoot or repair the installation.' }
+    } elseif ($nativeDownload -and $fact.path -ceq $nativeDownload.path) {
+      [void](New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force)
+      $pending = "$target.$([guid]::NewGuid().ToString('N')).incoming"
+      try {
+        & curl.exe --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 20 --max-time 180 --output $pending $manifest.nativeHostUrl
+        if ($LASTEXITCODE -ne 0) { throw 'Native Host download failed; retry setup. Existing runtime data is preserved.' }
+        if ((Get-Item -LiteralPath $pending).Length -ne $fact.bytes -or (Get-FileHash -LiteralPath $pending -Algorithm SHA256).Hash.ToLowerInvariant() -cne $fact.sha256) {
+          throw 'Native Host checksum mismatch.'
+        }
+        Move-Item -LiteralPath $pending -Destination $target
+      } finally {
+        if (Test-Path -LiteralPath $pending) { Remove-Item -LiteralPath $pending -Force }
+      }
     } else {
       [void](New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force)
       Copy-Item -LiteralPath (Get-TabroChild $source $fact.path) -Destination $target
     }
   }
-  $extension = Join-Path $release 'browser-extension'
+  $extensionMatches = Test-Path -LiteralPath $extension -PathType Container
+  foreach ($fact in @($manifest.files | Where-Object { $_.path -like 'browser-extension/*' })) {
+    $name = ([string]$fact.path).Substring('browser-extension/'.Length)
+    $file = Get-TabroChild $extension $name
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fact.sha256) {
+      $extensionMatches = $false
+      break
+    }
+  }
+  if (-not $extensionMatches) {
+    Copy-Item -LiteralPath (Get-TabroChild $release 'browser-extension') -Destination $extensionStage -Recurse
+    if (Test-Path -LiteralPath $extension) { Move-Item -LiteralPath $extension -Destination $extensionBackup }
+    Move-Item -LiteralPath $extensionStage -Destination $extension
+    $extensionPublished = $true
+  }
   foreach ($relative in @('data\managed-profiles.json', 'data\managed-profiles.json.previous', ('bootstrap\' + $nativeName + '.json'))) {
     $file = Get-TabroChild $install $relative
     $configurationBackups += @{ path = $file; bytes = $(if (Test-Path -LiteralPath $file -PathType Leaf) { [IO.File]::ReadAllBytes($file) } else { $null }) }
   }
   $configurationWritten = $true
   & (Join-Path $release 'helpers\configure-managed-profiles.ps1') -DataRoot $data -ExtensionPath $extension -BrowserPath $browser.path -RelayUrl 'ws://127.0.0.1:0/relay' | Out-Null
-  $state = [ordered]@{ schemaVersion = 1; version = $manifest.version; packageDigest = $package.digest; runtimeDirectory = $releaseRelative; nativeHostEntry = $manifest.nativeHostEntry; nodePath = $NodePath; nativeRegistered = -not $SkipNativeRegistration }
+  $state = [ordered]@{ schemaVersion = 1; version = $manifest.version; contractVersion = $manifest.contractVersion; packageDigest = $package.digest; runtimeDirectory = $releaseRelative; nativeHostEntry = $manifest.nativeHostEntry; nodePath = $NodePath; nativeRegistered = -not $SkipNativeRegistration; extensionPath = $extension }
   [IO.File]::WriteAllText($stateFile, ($state | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
   $stateWritten = $true
   if (-not $SkipNativeRegistration) {
@@ -109,7 +154,9 @@ try {
     foreach ($backup in $registryBackups) { [void](New-Item -Path $backup.key -Force); Set-Item -Path $backup.key -Value $nativeManifest }
   }
   $started = Start-TabroRuntime (Read-TabroState $install)
-  [ordered]@{ status = 'INSTALLED'; version = $manifest.version; installRoot = $install; installationScope = 'windows-user'; hermesHome = $env:HERMES_HOME; browser = $browser; broker = $started; nativeRegistered = -not $SkipNativeRegistration; extensionPath = $extension; nextAction = 'Reload MCP in this Hermes profile. Enable the plugin separately in each other Hermes profile; all share this Broker installation. Broker-owned Profiles load the extension automatically. For an existing browser Profile, load the extension directory in chrome://extensions or edge://extensions.' } | ConvertTo-Json -Depth 8
+  if (Test-Path -LiteralPath $extensionBackup) { Remove-Item -LiteralPath $extensionBackup -Recurse -Force -ErrorAction SilentlyContinue }
+  $mcp = [ordered]@{ command = 'powershell.exe'; args = @('-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot 'launch.ps1')); env = @{ TABRO_INSTALL_ROOT = $install; TABRO_RUNTIME = 'mcp-agent' } }
+  [ordered]@{ status = 'INSTALLED'; version = $manifest.version; installRoot = $install; installationScope = 'windows-user'; hermesHome = $env:HERMES_HOME; browser = $browser; broker = $started; nativeRegistered = -not $SkipNativeRegistration; extensionPath = $extension; mcp = $mcp; nextAction = 'Register the printed stdio MCP entry or reload the enabled Hermes plugin connection. For an existing profile, load extensionPath from chrome://extensions or edge://extensions. Broker-owned Profiles load the extension on creation or open.' } | ConvertTo-Json -Depth 8
 } catch {
   if ($configurationWritten) {
     foreach ($backup in $configurationBackups) {
@@ -125,8 +172,11 @@ try {
       elseif (Test-Path -LiteralPath $backup.key) { Remove-Item -LiteralPath $backup.key }
     }
   }
+  if ($extensionPublished) { Remove-Item -LiteralPath $extension -Recurse -Force }
+  if (Test-Path -LiteralPath $extensionBackup) { Move-Item -LiteralPath $extensionBackup -Destination $extension }
   throw
 } finally {
+  if (Test-Path -LiteralPath $extensionStage) { Remove-Item -LiteralPath $extensionStage -Recurse -Force -ErrorAction SilentlyContinue }
   if ($locked) { $mutex.ReleaseMutex() }
   $mutex.Dispose()
 }

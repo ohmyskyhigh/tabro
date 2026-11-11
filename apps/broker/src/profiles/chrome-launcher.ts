@@ -1,16 +1,48 @@
 import { execFile, execFileSync, spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ChromeManagementConnection } from './management-connection.js';
 import { assertCompatibleBrowser } from './browser-compatibility.js';
-import { MANAGED_EXTENSION_ID, profileLayout, validateRuntime, type ProfileRuntimeConfig } from './runtime-config.js';
+import { containedPath, MANAGED_EXTENSION_ID, privateDirectory, profileLayout, validateRuntime, type ProfileRuntimeConfig } from './runtime-config.js';
 import { ProfileError, type ManagedBrowserInstance, type ManagedProfile } from './types.js';
 
 const runFile = promisify(execFile);
-export interface ChromeProcessIdentity { pid: number; createdAt: string; executablePath: string; commandLine: string }
+export interface ChromeProcessIdentity { pid: number; createdAt: string; executablePath: string; commandLine: string; dataDir?: string }
+
+function linuxProcesses(): ChromeProcessIdentity[] {
+  const processes: ChromeProcessIdentity[] = [];
+  const boot = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+  for (const pid of readdirSync('/proc').filter(name => /^\d+$/u.test(name))) {
+    const directory = `/proc/${pid}`;
+    const start = () => readFileSync(`${directory}/stat`, 'utf8').split(') ').at(-1)?.split(' ')[19];
+    try {
+      const started = start();
+      const args = readFileSync(`${directory}/cmdline`, 'utf8').split('\0');
+      const dataDir = args.find(arg => arg.startsWith('--user-data-dir='))?.slice(16);
+      if (!dataDir || !started) continue;
+      const executablePath = readlinkSync(`${directory}/exe`);
+      if (started === start()) processes.push({ pid: Number(pid), createdAt: `${boot}:${started}`, executablePath, commandLine: '', dataDir });
+    } catch (error) {
+      if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+    }
+  }
+  return processes;
+}
+
 export async function chromeProcesses(): Promise<ChromeProcessIdentity[]> {
+  if (process.platform === 'linux') return linuxProcesses();
+  if (process.platform === 'darwin') {
+    const { stdout } = await runFile(process.env.TABRO_MACOS_HELPER ?? resolve('dist/native-host/tabro-macos'), ['processes'], { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
+    const fields = stdout.split('\0');
+    const processes: ChromeProcessIdentity[] = [];
+    for (let i = 0; i + 2 < fields.length; i += 3) {
+      const identity = fields[i]!;
+      processes.push({ pid: Number(identity.split(':')[0]), createdAt: identity, executablePath: fields[i + 1]!, commandLine: '', dataDir: fields[i + 2]! });
+    }
+    return processes;
+  }
   // Include Chromium derivatives and renamed executables. Ownership still
   // requires the PID, creation time, full executable path and exact data dir.
   const script = "@(Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%--user-data-dir=%'\" | ForEach-Object { @{pid=$_.ProcessId;createdAt=$_.CreationDate.ToUniversalTime().ToString('o');executablePath=$_.ExecutablePath;commandLine=$_.CommandLine} }) | ConvertTo-Json -Compress";
@@ -24,8 +56,11 @@ export async function chromeProcesses(): Promise<ChromeProcessIdentity[]> {
   }).filter(p => Number.isSafeInteger(p.pid) && p.pid > 0);
 }
 
-const samePath = (a: string, b: string): boolean => resolve(a).toLowerCase() === resolve(b).toLowerCase();
+const samePath = (a: string, b: string): boolean => process.platform === 'win32'
+  ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
+  : resolve(a) === resolve(b);
 export function processUsesDataDir(process: ChromeProcessIdentity, dataDir: string): boolean {
+  if (process.dataDir) return samePath(process.dataDir, dataDir);
   const match = /(?:^|\s)(?:"--user-data-dir=([^"]+)"|--user-data-dir="([^"]+)"|--user-data-dir=([^\s"]+))/u.exec(process.commandLine);
   return !!match && samePath(match[1] ?? match[2] ?? match[3]!, dataDir);
 }
@@ -43,9 +78,17 @@ export class ChromeLauncher {
     validateRuntime(this.config);
     const paths = profileLayout(this.config.root, profile.dataDirKey);
     mkdirSync(paths.dataDir, { recursive: true }); mkdirSync(paths.extensionDir, { recursive: true });
-    const owner = /S-1-5-[\d-]+/u.exec(execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true }))?.[0];
-    if (!owner) throw new ProfileError('PROFILE_PATH_INVALID');
-    execFileSync('icacls.exe', [paths.directory, '/inheritance:r', '/grant:r', `*${owner}:(OI)(CI)F`, '*S-1-5-18:(OI)(CI)F'], { windowsHide: true, stdio: 'ignore', timeout: 10_000 });
+    if (process.platform === 'win32') {
+      const owner = /S-1-5-[\d-]+/u.exec(execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true }))?.[0];
+      if (!owner) throw new ProfileError('PROFILE_PATH_INVALID');
+      execFileSync('icacls.exe', [paths.directory, '/inheritance:r', '/grant:r', `*${owner}:(OI)(CI)F`, '*S-1-5-18:(OI)(CI)F'], { windowsHide: true, stdio: 'ignore', timeout: 10_000 });
+    } else {
+      privateDirectory(paths.directory);
+      const manifest = this.config.nativeHostManifest!;
+      const hostDirectory = containedPath(paths.dataDir, 'NativeMessagingHosts');
+      privateDirectory(hostDirectory);
+      copyFileSync(manifest, containedPath(hostDirectory, basename(manifest)));
+    }
     for (const file of ['manifest.json', 'service-worker.js', 'options.js', 'options.html']) {
       copyFileSync(resolve(this.config.extensionSource, file), resolve(paths.extensionDir, file));
     }

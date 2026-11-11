@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -8,9 +8,10 @@ import { containedPath, profileLayout, type ProfileRuntimeConfig } from '../../a
 import type { ManagedBrowserInstance, ManagedProfile } from '../../apps/broker/src/profiles/types.js';
 
 const roots: string[] = [];
+const temp = realpathSync(tmpdir());
 afterEach(() => {
   for (const root of roots.splice(0)) {
-    if (!resolve(root).startsWith(resolve(tmpdir()) + sep) || !root.includes('octopus-path-test-')) throw new Error('Invalid cleanup path');
+    if (!resolve(root).startsWith(temp + sep) || !root.includes('octopus-path-test-')) throw new Error('Invalid cleanup path');
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -47,7 +48,7 @@ describe('managed Chrome ownership', () => {
     expect(await new ChromeLauncher({} as ProfileRuntimeConfig, async () => [{ ...edge, createdAt: 'reused' }]).inspect(edgeInstance)).toBe('unknown');
   });
   it('rejects traversal and junctions before assigning a profile path', () => {
-    const root = mkdtempSync(join(tmpdir(), 'octopus-path-test-')); roots.push(root);
+    const root = mkdtempSync(join(temp, 'octopus-path-test-')); roots.push(root);
     expect(() => containedPath(root, '..', 'escape')).toThrow('PROFILE_PATH_INVALID');
     expect(() => profileLayout(root, '../../escape')).toThrow('PROFILE_PATH_INVALID');
     expect(profileLayout(root, randomUUID()).dataDir.startsWith(root + sep)).toBe(true);
@@ -56,7 +57,7 @@ describe('managed Chrome ownership', () => {
     expect(() => profileLayout(root, randomUUID())).toThrow('PROFILE_PATH_INVALID');
   });
   it('checks the complete Profile directory even without a tracked browser instance', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'octopus-path-test-')); roots.push(root);
+    const root = mkdtempSync(join(temp, 'octopus-path-test-')); roots.push(root);
     const profile = { dataDirKey: randomUUID() } as ManagedProfile;
     const config = { root } as ProfileRuntimeConfig;
     const { dataDir } = profileLayout(root, profile.dataDirKey);

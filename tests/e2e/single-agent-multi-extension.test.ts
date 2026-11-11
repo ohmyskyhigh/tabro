@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Client } from '@modelcontextprotocol/client';
 import { createRelayApplication, type RelayApplication } from '../../apps/broker/src/runtime/bootstrap.js';
@@ -7,10 +10,11 @@ describe('one Agent with three simulated extensions', () => {
   let app: RelayApplication;
   let client: Client;
   const extensions: SimulatedV2Extension[] = [];
-  afterEach(async () => { app?.broker.beginShutdown(); await client?.close(); for (const extension of extensions.splice(0)) await extension.close(); await app?.stop(); });
+  let rulesRoot: string | undefined;
+  afterEach(async () => { app?.broker.beginShutdown(); await client?.close(); for (const extension of extensions.splice(0)) await extension.close(); await app?.stop(); if (rulesRoot) rmSync(rulesRoot, { recursive: true, force: true }); });
   it('keeps three workspace owners identical, routes correctly and lets A/C finish while B waits', async () => {
     const token = 'one-agent-three-extensions-test-token';
-    app = createRelayApplication({ host: '127.0.0.1', mcpPort: 0, wsPort: 0, dbPath: ':memory:', logLevel: 'silent', heartbeatTimeoutMs: 5000, errorThreshold: 3, leaseTtlMs: 60000, adminToken: token });
+    app = createRelayApplication({ host: '127.0.0.1', mcpPort: 0, wsPort: 0, dbPath: ':memory:', browserRulesPath: join(rulesRoot = mkdtempSync(join(tmpdir(), 'tabro-test-rules-')), 'browser-rules.json'), logLevel: 'silent', heartbeatTimeoutMs: 5000, errorThreshold: 3, leaseTtlMs: 60000, adminToken: token });
     await app.start(); client = await connectAgent(app.mcpGateway.address().port, token, 'one-agent');
     const names = ['mintwave', 'calmreef', 'brightstar'];
     for (let i = 0; i < 3; i++) {

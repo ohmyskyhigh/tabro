@@ -264,7 +264,7 @@ env = { TABRO_RUNTIME_FILE = "$((Join-Path $data 'runtime.json').Replace('\','\\
 Load this extension directory once with Chrome developer mode and Load unpacked:
 $stableExtension
 
-Future updates keep this path and the updated broker requests one safe extension reload.
+Future updates keep this path. Reload Tabro from chrome://extensions after updating its files.
 
 Codex: merge the generated codex-mcp.toml fragment into the applicable Codex config.toml and start a new session.
 
@@ -284,10 +284,8 @@ Both handoffs point to the local token file instead of embedding its contents. D
     extensionPath = $stableExtension
     extensionAction = if (-not $previousStateText) {
       'load_unpacked_once'
-    } elseif ([string]$previousState.version -ne [string]$state.version) {
-      'automatic_reload_requested'
     } else {
-      'same_version_repaired_reload_manually_if_needed'
+      'reload_unpacked'
     }
     nativeManifest = $nativeManifest
     broker = $started

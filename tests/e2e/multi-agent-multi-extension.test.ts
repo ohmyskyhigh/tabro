@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Client } from '@modelcontextprotocol/client';
 import { createRelayApplication, type RelayApplication } from '../../apps/broker/src/runtime/bootstrap.js';
@@ -7,12 +10,14 @@ describe('multi-agent / multi-extension canonical real transport path', () => {
   let app: RelayApplication | null = null;
   const clients: Client[] = [];
   const extensions: SimulatedV2Extension[] = [];
+  let rulesRoot: string | undefined;
 
   afterEach(async () => {
     for (const client of clients.splice(0)) await client.close();
     for (const extension of extensions.splice(0)) await extension.close();
     if (app) await app.stop();
     app = null;
+    if (rulesRoot) rmSync(rulesRoot, { recursive: true, force: true });
   });
 
   it('isolates three agent sessions while relaying CDP to three designated browser-profile endpoints', async () => {
@@ -21,7 +26,7 @@ describe('multi-agent / multi-extension canonical real transport path', () => {
       host: '127.0.0.1',
       mcpPort: 0,
       wsPort: 0,
-      dbPath: ':memory:',
+      dbPath: ':memory:', browserRulesPath: join(rulesRoot = mkdtempSync(join(tmpdir(), 'tabro-test-rules-')), 'browser-rules.json'),
       logLevel: 'silent',
       heartbeatTimeoutMs: 5_000,
       errorThreshold: 3,

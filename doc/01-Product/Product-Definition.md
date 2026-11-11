@@ -10,11 +10,15 @@ All Tabro-owned project components are open source under the MIT License: the Br
 
 Tabro's browser scope includes Chrome and compatible Chromium-based browsers such as Microsoft Edge. Compatibility depends on the required extension and browser capabilities, rather than one exact Chrome build. A browser-family claim does not establish that every derivative or release has been qualified. The [approved compatibility decision](../90-Proposals/chromium-browser-compatibility-2026-10-04.md) records this scope.
 
+### Standalone installers deliver the same existing features on Windows, macOS and Linux
+
+One standalone release delivers the same local MCP, profile pairing, managed Profile lifecycle, workspace and authenticated proxy experience on all qualified platform targets. The installer and its Native Messaging companion run on the desktop host under the same OS account as Chrome. Qualification is specific to the platform, architecture and browser tested. The [standalone delivery decision](../80-Plans/tabro-hermes-provider-2026-10-01/README.md#独立安装包) separates this release from Hermes catalog admission.
+
 ### First-time Hermes setup must install the Broker and its required runtime
 
 Tabro's Hermes plugin distribution must serve users who have no Tabro installation. First-time Tabro setup must download and install the local Broker and the supporting runtime needed for browser automation; a separately preinstalled Broker is not a prerequisite. The distribution includes the [Profile networking](#profile-networking) capability under the same open-source scope.
 
-This is an approved delivery requirement. Plugin packaging, first-time setup qualification and catalog admission remain pending; the [Hermes delivery plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md) tracks that work.
+The Windows catalog package has isolated setup evidence. The [Hermes delivery plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md) tracks catalog admission and clean-machine qualification separately from standalone release evidence.
 
 ## Target client
 
@@ -58,7 +62,7 @@ Tabro replaces agent-managed Chrome remote-debugging ports, pipes, and private t
 
 The broker retains browser identity, workspace ownership, routing, current status, coordination decisions, and operational history outside the agent's working context. The agent remains responsible for choosing CDP commands and deciding what the returned browser facts mean for its website task.
 
-The promise includes the confirmed workspace and managed-tab targeting rules. It does not establish additional safety promises, access restrictions, or a fixed security policy; those require later explicit Product decisions.
+The promise includes the confirmed workspace and managed-tab targeting rules. The domain interaction policy below is an explicitly approved restriction. Further safety promises or restrictions require an explicit Product decision.
 
 ## Product model
 
@@ -292,7 +296,7 @@ Every extension that authenticates and establishes a connection registers one Pr
 
 ### Lifecycle management keeps browser-wide debugging private to Tabro
 
-On the verified Windows runtime, Tabro uses a private loopback browser connection only to load its extension, inspect the owned instance, prepare an empty window and close normally. Website actions and native tab-group workspaces continue through the extension. Active work prevents a Profile stop.
+Tabro uses a private loopback browser connection to load its extension, inspect the owned instance, prepare an empty window and close normally. Website actions and native tab-group workspaces run through the extension. Active work prevents a Profile stop.
 
 The workspace/raw-CDP no-terminal-timeout rule does not eliminate the approved managed lifecycle's bounded startup and normal-close waits. A lifecycle failure reports its known state while preserving data and refusing unverified process termination; it does not decide whether an ambiguous website effect succeeded.
 
@@ -307,3 +311,23 @@ Profiles with `ownership=broker` support HTTP and HTTPS proxies with Basic usern
 Agents can inspect, set, clear and check proxy configuration through MCP. Setting and clearing require dedicated network-management authority, broker ownership, verified browser closure and no conflicting unfinished work. The change is saved while closed and applied on the next explicit launch; configuration never automatically closes or opens Chrome. Enabled proxy failures do not silently select direct routing. Credentials remain protected on the local machine and are represented by opaque references in MCP. The promise covers regular-profile URL proxying, not system-wide VPN or incognito.
 
 Parent: [`01-Product`](./_MOC.md).
+
+## Domain interaction
+
+### User-selected domains require browser input for manipulation
+
+Users maintain one local domain rule list shared by the Broker's profiles and agent clients. Each entry covers its hostname, nested subdomains and every path. Only the current top-level tab URL selects the rule; iframe-origin enforcement and redirect-history tracking are excluded. On matching sites, manipulation uses browser mouse and keyboard input. Read-only JavaScript, DOM, accessibility and screenshots remain available. This policy does not guarantee a website accepts automation.
+
+### Interrupted gestures preserve uncertainty until recovery is established
+
+Tabro records intended and confirmed input and reserves held input within its browser window. Interrupted or inactive held input pauses manipulation while allowing guarded observation when connected. Recovery never releases input or replays the gesture automatically. Resume requires input recovery and separate resolution of any uncertain website effect. The [accepted decision](../90-Proposals/domain-input-only-rules-2026-11-10.md) and its linked test strategy govern delivery evidence.
+
+After input is confirmed released, an explicit stop-and-cleanup request may terminate the workspace without claiming an uncertain website action succeeded. The unknown effect remains recorded; cleanup does not replay the action or create a replacement tab.
+
+## Local dashboard
+
+### People manage connection details and shared Broker rules from the extension
+
+Background browser work is preferred, and new managed tabs do not automatically become selected. An agent may explicitly bring a page forward when its website task needs it; background operation is a soft preference, independent of the domain's input-only requirement. Dashboard profile rows distinguish connection health from automation pause and show failed connections as failures.
+
+The extension toolbar opens a dashboard with Connection and Broker tabs. Connection shows pairing code, alias and pairing status. Broker management lists registered profiles and their status as read-only information, and lets the local user add, edit and remove domain rules. These controls use the same local runtime and rule file as Codex and Hermes.

@@ -1,11 +1,30 @@
 # Real-world Chrome, AdsPower, Codex, and Hermes runbook
 
-Status: executable operator runbook for the `0.3.1` source runtime with MCP contract v2 and shared dynamic discovery.
+This runbook covers the packaged installer matrix and the Windows source/Demo procedure for MCP contract v6 with twenty-two tools and shared dynamic discovery.
 
 This runbook proves physical behavior separately from simulated tests. A failed checkpoint is evidence of a runtime or setup gap; it must not be rewritten as a pass because a lower-level unit or integration test succeeded.
 
+## Packaged installation
 
-## Scope
+### Each release archive must pass the same desktop Chrome checks
+
+The [release workflow](../../.github/workflows/release.yml) stages and extracts the exact target archive before running [`portable-installation.test.ts`](../../tests/real-world/portable-installation.test.ts). Each job checks installer reuse, twenty-two MCP tools, Native Messaging for existing and managed Profiles, CDP through a workspace, stop and reopen with identity retained, authenticated HTTP proxy traffic, and reconnect after a Broker restart. The proxy checks exercise the target's OS credential vault. Publication requires a passing result from every target.
+
+| Standalone target | Evidence for the current platform work |
+| --- | --- |
+| Windows x64 | Native runner qualification pending. Prior Windows catalog and source/Demo evidence applies to those separate paths. |
+| macOS arm64 | Extracted `0.5.0` archive passed on Apple Silicon with Google Chrome `156.0.8078.81` and Keychain on 2026-11-06. |
+| macOS x64 | Native runner qualification pending. |
+| Linux x64 | Native runner qualification pending. |
+
+Run qualification on the desktop host as the Chrome user. Build with `pnpm verify` and stage with `pnpm stage:hermes --output=tabro-v<version>-<target>`. Use the matching archive step from the release workflow, extract the archive, and point `TABRO_QUALIFY_PACKAGE` to the extracted directory. Run `pnpm exec vitest run tests/real-world/portable-installation.test.ts`. Set `TABRO_QUALIFY_CREDENTIALS=1` on macOS or Linux to exercise the actual Keychain or unlocked Secret Service. Windows qualification uses an account with a free Tabro Native Messaging registration. The [operator guide](../../GETTING_STARTED.md#standalone-installers) describes regular installation and pairing.
+
+### Hermes setup must verify the official Native Host and preserve preview data on upgrade
+
+The Windows release job stages the Hermes package from the extracted standalone archive. Before publication, it uses the actual release executable to exercise checksum rejection, repeated setup, shared MCP sessions and an upgrade from the pinned 0.4.2 preview. After publication, verify the executable’s build attestation and run setup with the public download in the real Hermes plugin manager before submitting the catalog pin. The [Hermes development instructions](../../integrations/hermes/README.md#development) list the commands and qualification inputs.
+
+
+## Windows source and Demo scope
 
 ### The qualification uses real agent sessions and separately installed browser profiles
 
@@ -57,18 +76,9 @@ The command writes local generated state below `.relay-data/`. Keep the final JS
 
 ### A GitHub Release installation keeps one extension path across updates
 
-The historical published-package path uses the standalone updater below. Repository publication records identify `v0.3.0` as the earlier fourteen-tool runtime. It cannot pass this runbook’s twenty-two-tool/shared-discovery qualification; use the current source installer or a locally built discovery-capable package for that scope:
+Use [packaged installation](#packaged-installation) to qualify standalone archives. The [historical updater example](../../README.md#github-releases-provide-verified-installation-and-updates) reproduces the Windows `v0.3.0` fourteen-tool package. The Windows legacy updater requires a discovery-capable package to exercise contract v6 with shared discovery.
 
-```powershell
-Invoke-WebRequest `
-  https://github.com/ohmyskyhigh/tabro/releases/latest/download/octopus-browser-relay-update.ps1 `
-  -OutFile .\octopus-browser-relay-update.ps1
-pwsh -NoProfile -File .\octopus-browser-relay-update.ps1
-```
-
-The result names the stable extension directory under `%LOCALAPPDATA%\Octopus Browser Relay`. Load that directory unpacked once in every intended profile. A later invocation of the installed `update-local.ps1` verifies and installs the next version behind the same extension path. The broker requests one extension reload when versions differ; pairing storage remains in the profile.
-
-Before qualifying an update, require the updater's broker health to report the selected version and require every intended endpoint to reconnect. A repeated extension-version mismatch is a failed checkpoint, not permission to reload indefinitely.
+Load the reported stable extension directory once in each intended browser profile. On update, verify the selected Broker version, reload the extension from its existing location, and confirm that each intended endpoint reconnects under its original alias.
 
 ### Preflight exposes setup gaps and the remaining legacy handoff check
 
@@ -312,7 +322,7 @@ State which browser product and version, extension version, broker service versi
 
 ### The current runbook exposes unsupported setup rather than hiding it
 
-- The native host and installer are Windows-specific.
+- The PowerShell source installer, registry preflight and AdsPower checks in this procedure target Windows. Use [packaged installation](#packaged-installation) for the standalone matrix.
 - The defaults include the installed AdsPower/SunBrowser Native Messaging root; another AdsPower or Chromium variant can require its actual registry root through the installer's and preflight's `-NativeRegistryRoots` parameter.
 - The installer generates but does not apply Codex configuration. Its generated Hermes command applies registration to every profile installed when that command runs; profiles created later require another run.
 - Independent-session proof requires one stdio adapter process per session or a supported runtime session environment value; a deliberately shared unidentified adapter process cannot pass it.
@@ -339,7 +349,7 @@ pwsh -NoProfile -File .\tools\real-world-cleanup.ps1 -RunId "<run-id>"
 
 ### Restart discovery preserves caller identity without retrying a dispatched operation
 
-After source installation, `tools/start-local-broker.ps1` starts or reuses the matching healthy Broker and reports the actual endpoints. Compare the discovery instance UUID with MCP health; do not assume an old port still belongs to Tabro. Ordinary registrations use `TABRO_RUNTIME_FILE` and a separate token file. Native Host reads the adjacent relay record. Demo fixture shutdown must leave the shared Broker healthy.
+After Windows source installation, `tools/start-local-broker.ps1` starts or reuses the matching healthy Broker and reports the actual endpoints. Compare the discovery instance UUID with MCP health. Ordinary registrations use `TABRO_RUNTIME_FILE` and a separate token file. The Windows Native Host reads its adjacent relay record. Standalone macOS and Linux use the data-directory runtime file for both the Native Host and adapter. Demo fixture shutdown leaves the shared Broker running.
 
 Automated coverage is in `tests/integration/runtime-discovery.test.ts` and `tests/integration/native-runtime-discovery.test.ts`. The native test requires its named Windows test binary and otherwise skips; report the actual result. A new physical qualification must record its own results rather than reusing the October 1 migration report as a fresh pass.
 
@@ -349,7 +359,7 @@ Automated coverage is in `tests/integration/runtime-discovery.test.ts` and `test
 
 Use the current source installer with `-Install -EnableManagedProfiles -StartBroker` on the verified Windows/Chrome runtime described in [Operational defaults](../02-User-Experience/Operational-Defaults.md). Follow [the Demo runbook](../../tests/demo/RUNBOOK.md) for create/open/stop, Profile isolation, native tab groups and persisted identity. `list_browser_profiles` includes every authenticated extension identity, with or without a configured launcher. Report each nickname and `ownership`: `broker` supports MCP launch; `user` needs the human to open Chrome. Both use the same workspace and CDP tools after connection. Update the Broker and adapters together to MCP contract version 5; existing version-2 or version-3 adapter processes must reconnect with the rebuilt adapter. Profile names come only from `endpoint_nickname`; creation takes an idempotency key and the extension assigns the alias.
 
-End active workspaces before stopping a managed Profile. Stop preserves its data. Broker shutdown and fixture shutdown are not commands to delete or close unrelated Chrome instances. Hermes Plugin packaging, cross-platform installation and upstream Provider discovery remain pending in [the Provider plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md).
+End active workspaces before stopping a managed Profile. Stop preserves its data. Use [packaged installation](#packaged-installation) to verify managed lifecycle through standalone packages. [The Provider plan](../80-Plans/tabro-hermes-provider-2026-10-01/README.md) tracks Hermes catalog admission and upstream Provider discovery separately.
 
 ## Profile proxies
 
@@ -380,3 +390,11 @@ The saved change reports `pending_connection` and leaves Chrome closed. Call `op
 Run `pnpm exec tsx tools/probe-profile-proxy.ts` after building. It creates disposable Profiles and its own Native Messaging registration and controlled upstreams. It verifies the closed-configure-open flow on broker-owned Chrome and rejects user-owned changes both online and offline. It fails if the required Windows/Chrome environment is unavailable. Preserve its `report.json` under the emitted evidence directory. See the [closed-Profile amendment](../80-Plans/profile-proxy-2026-10-03/closed-profile-amendment.md) for current qualification and the [initial implementation report](../80-Plans/profile-proxy-2026-10-03/implementation-report.md) for historical transport evidence.
 
 Parent: [`Files MOC`](./_MOC.md).
+
+## Extension dashboard
+
+### The packaged Chrome probe verifies dashboard edits through native relay and MCP enforcement
+
+After building and staging the host package, set `TABRO_QUALIFY_PACKAGE` to its extracted directory and `TABRO_QUALIFY_DASHBOARD=1`, then run `pnpm exec vitest run tests/real-world/portable-installation.test.ts`. Set `TABRO_QUALIFY_CHROME` when Chrome is outside the default location. Run on the actual browser host with Chrome's security sandbox enabled. The test installs into a temporary root and uses a disposable Chrome profile; on Windows, use a dedicated test OS account because Native Messaging registration is account-wide.
+
+The probe opens the real extension options page, navigates tabs with keyboard input, validates connection identity and read-only profiles, adds/edits/removes rules with pointer and keyboard input, and verifies stale-save rejection without losing the draft. A rule saved through the page must permit observation and reject a scripted mutation through MCP on a local fixture website. The probe also checks a narrow viewport, pairing-alias reconnect and rule preservation through a Broker restart. Reports and full-page screenshots are written under `artifacts/qualification/` with a platform/architecture prefix. This is native package and MCP SDK evidence, not acceptance through the actual Codex or Hermes application.

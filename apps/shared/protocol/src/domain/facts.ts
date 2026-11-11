@@ -20,6 +20,7 @@ export type RequestPauseCause =
   | 'extension_disconnected'
   | 'manual_workspace_stop'
   | 'endpoint_killed'
+  | 'input_recovery_required'
   | 'user_confirmation_required';
 export type WorkspacePauseReason =
   | 'manual_workspace_stop'
@@ -99,6 +100,7 @@ export interface WindowFacts {
 }
 
 export interface WorkspaceFacts {
+  readonly input_recovery?: InputRecoveryFacts | null;
   readonly workspace_ref: WorkspaceRef;
   readonly endpoint_nickname: string;
   readonly window_ref: WindowRef;
@@ -113,6 +115,7 @@ export interface WorkspaceFacts {
 }
 
 export interface TabFacts {
+  readonly interaction_policy?: InteractionPolicyFacts;
   readonly workspace_ref: WorkspaceRef;
   readonly tab_ref: TabRef;
   readonly window_ref: WindowRef;
@@ -121,6 +124,27 @@ export interface TabFacts {
   readonly url: string;
   readonly active: boolean;
   readonly initial_event_cursor: EventCursor;
+}
+
+export interface InteractionPolicyFacts {
+  readonly mode: 'standard' | 'input_only' | 'unavailable';
+  readonly domain: string;
+  readonly matched_rule: string | null;
+  readonly matched_domain: string | null;
+  readonly revision: string | null;
+  readonly diagnostic: string | null;
+}
+
+export interface InputRecoveryFacts {
+  readonly recovery_ref: string;
+  readonly workspace_ref: WorkspaceRef;
+  readonly tab_ref: TabRef;
+  readonly owner_session_ref: SessionRef;
+  readonly status: 'held' | 'paused' | 'uncertain';
+  readonly pause_reason: string | null;
+  readonly held_inputs: readonly string[];
+  readonly last_confirmed_step: string | null;
+  readonly pending_request_ref: RequestRef | null;
 }
 
 export interface CapabilityFacts {

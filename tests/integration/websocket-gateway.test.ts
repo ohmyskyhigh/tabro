@@ -14,6 +14,7 @@ import {
   type RelayV2PayloadByType
 } from '../../apps/shared/protocol/src/index.js';
 import { SqliteRelayStore } from '../../apps/broker/src/storage/index.js';
+import { DASHBOARD_CAPABILITY_ID } from '../../apps/shared/protocol/src/dashboard.js';
 
 function nextMessage(socket: WebSocket): Promise<RelayEnvelope> {
   return new Promise((resolve, reject) => {
@@ -71,10 +72,12 @@ describe('extension WebSocket gateway', () => {
   });
 
   afterEach(async () => {
+    octopus.beginShutdown();
     if (socket && socket.readyState === WebSocket.OPEN) {
       await new Promise<void>((resolve) => { socket!.once('close', () => resolve()); socket!.close(); });
     }
     await gateway.stop();
+    await octopus.waitForIdle();
     store.close();
   });
 
@@ -127,6 +130,18 @@ describe('extension WebSocket gateway', () => {
       expect((await paired).type).toBe('PAIRED');
       expect(pairing).toHaveBeenCalledOnce();
     });
+
+  it('rejects dashboard operations before extension authentication', async () => {
+    const handler = vi.fn(() => ({ profiles: [] })); gateway.setDashboardHandler(handler);
+    await gateway.start();
+    socket = new WebSocket(`ws://127.0.0.1:${gateway.address().port}/relay`);
+    await new Promise<void>(resolve => socket!.once('open', resolve));
+    const closed = new Promise<number>(resolve => socket!.once('close', resolve));
+    socket.send(JSON.stringify(createRelayV2Envelope('DASHBOARD_REQUEST', {
+      requestId: crypto.randomUUID(), connectionGeneration: 1, command: { action: 'snapshot' }
+    })));
+    expect(await closed).toBe(4001); expect(handler).not.toHaveBeenCalled();
+  });
 
   it('pairs, authenticates, delivers, and correlates a command', async () => {
     const admin = store.createAgent('admin', ['broker:admin', 'browser:read', 'browser:write', 'sessions:write']);
@@ -229,7 +244,7 @@ describe('extension WebSocket gateway', () => {
       extensionVersion: '0.3.0-test',
       browser: { product: 'Chrome', version: '140.0.0.0', userAgent: null },
       supportedProtocolVersions: [2],
-      capabilityManifestIds: ['octopus-extension-baseline-v1'],
+      capabilityManifestIds: ['octopus-extension-baseline-v1', DASHBOARD_CAPABILITY_ID],
       maxEnvelopeBytes: MAX_RELAY_V2_ENVELOPE_BYTES
     })));
     const challenge = await challengeMessage as RelayV2Envelope<'CHALLENGE'>;
@@ -250,10 +265,24 @@ describe('extension WebSocket gateway', () => {
     expect(ready.type).toBe('READY');
     expect(ready.payload).toMatchObject({
       nickname: 'calmreef',
+      dashboardVersion: 1,
       brokerVersion: '0.3.0-test',
       requiredExtensionVersion: '0.3.0-test',
       reloadExtension: false
     });
+
+    const dashboard = vi.fn(() => ({ profiles: [], marker: 'authenticated' }));
+    gateway.setDashboardHandler(dashboard);
+    const staleReply = nextV2Message(socket);
+    socket.send(JSON.stringify(createRelayV2Envelope('DASHBOARD_REQUEST', { requestId: crypto.randomUUID(),
+      connectionGeneration: ready.payload.connectionGeneration + 1, command: { action: 'snapshot' } })));
+    expect(await staleReply).toMatchObject({ type: 'DASHBOARD_RESULT', payload: { result: null, error: { code: 'STALE_CONNECTION' } } });
+    expect(dashboard).not.toHaveBeenCalled();
+    const currentReply = nextV2Message(socket);
+    socket.send(JSON.stringify(createRelayV2Envelope('DASHBOARD_REQUEST', { requestId: crypto.randomUUID(),
+      connectionGeneration: ready.payload.connectionGeneration, command: { action: 'snapshot' } })));
+    expect(await currentReply).toMatchObject({ type: 'DASHBOARD_RESULT', payload: { result: { marker: 'authenticated' }, error: null } });
+    expect(dashboard).toHaveBeenCalledTimes(1);
 
     expect(store.getTargetById(paired.payload.endpointId)?.alias).toBe('calmreef');
     expect(store.canonical.logical.getEndpointByNickname('mintwave')).toBeNull();
@@ -470,6 +499,7 @@ describe('extension WebSocket gateway', () => {
       reloadExtension: false
     });
     expect(readySpy).toHaveBeenCalledOnce();
+    expect(ready.payload).not.toHaveProperty('dashboardVersion');
   });
 
   it('returns a retryable conflict so an unpaired extension can generate another two-word nickname', async () => {

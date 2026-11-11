@@ -1,6 +1,6 @@
 # 架构与 MCP
 
-本说明帮助中文读者理解 Tabro 的运行边界和 18 个 Agent 工具。规范性定义仍由英文 [System Architecture](../04-System/System-Architecture.md) 和 [MCP Contract](../03-User-Interface/MCP-Contract.md) 拥有。
+本说明帮助中文读者理解 Tabro 的运行边界和 MCP 契约 v6 的 22 个工具。规范性定义由英文 [System Architecture](../04-System/System-Architecture.md) 和 [MCP Contract](../03-User-Interface/MCP-Contract.md) 拥有。
 
 ## 目标
 
@@ -26,7 +26,7 @@ agent session
 | 规范组件 | 责任 |
 | --- | --- |
 | Broker Runtime | 组合运行组件、启动锁、健康和运行记录发布 |
-| MCP Gateway | 会话 stdio 适配、18 工具 Schema、身份注入、票据交付与发现重连 |
+| MCP Gateway | 会话 stdio 适配、22 工具 Schema、身份注入、票据交付与发现重连 |
 | Broker Core | 工作区所有权、票据、FIFO、控制和恢复；Broker 内的 Profile 管理器处理主体所有权与生命周期 |
 | Durable Store | SQLite 端点、会话、工作区、Profile、票据、检查点、事件和审计 |
 | Extension Gateway | relay-v2 认证、代次与消息关联；Native Host 提供浏览器到 loopback 的传输 |
@@ -38,7 +38,7 @@ agent session
 
 MCP 和 relay 是同一进程的两个 loopback 接口，默认端口均为 `0`，实际地址写入运行记录。普通 MCP 注册使用 `TABRO_RUNTIME_FILE` 与独立令牌文件；适配器校验记录及 health 实例标识，在新调用前处理 Broker 实例变化，保留会话身份，不重试已经派发的调用。
 
-Native Host 每次连接读取可执行文件旁的 `relay-runtime.json`，校验版本、进程存活和本地 relay URL；仅记录不存在时沿用旧配置 URL，记录存在但无效时失败。其校验不等于适配器的 HTTP 实例握手。启动助手复用健康实例，Broker 数据目录锁拒绝第二个存活所有者。Demo 退出仅关闭自己的站点。
+Windows Native Host 每次连接读取可执行文件旁的 `relay-runtime.json`。macOS 和 Linux 的 Native Host 与适配器共用数据目录的 `runtime.json`。Native Host 校验版本、进程存活和本地 relay URL，适配器另行校验 HTTP 健康和 Broker 实例身份。启动助手复用健康实例，Broker 数据目录锁拒绝第二个存活所有者。Demo 退出仅关闭自己的站点。
 
 ## 请求周期
 
@@ -74,11 +74,15 @@ Native Host 每次连接读取可执行文件旁的 `relay-runtime.json`，校�
 
 ## 工具目录
 
-### 三类 18 个工具保持读取、异步工作和立即关闭的语义分离
+### 二十二个工具分别提供读取、异步工作和立即关闭
 
 | 类型 | 工具 | 作用 |
 | --- | --- | --- |
+| 读取 | `get_browser_proxy` | 查看 Profile 的代理配置、应用状态和最近出口观测 |
 | 读取 | `list_browser_profiles` | 列出持久 Profile，包括已停止的浏览器和观测到的就绪状态 |
+| 异步 | `set_browser_proxy` | 为已关闭的受管 Profile 保存代理配置 |
+| 异步 | `clear_browser_proxy` | 清除已关闭的受管 Profile 的代理配置 |
+| 异步 | `check_browser_proxy` | 在已打开的受管 Profile 中验证代理出口 |
 | 异步 | `create_browser_profile` | 创建持久 Profile，启动 Chrome 并建立扩展连接 |
 | 异步 | `open_browser_profile` | 打开已有 Profile 或复用正在运行的实例 |
 | 异步 | `stop_browser_profile` | 在活动工作结束后正常关闭 Profile |
@@ -111,13 +115,13 @@ Native Host 每次连接读取可执行文件旁的 `relay-runtime.json`，校�
 
 受管环境启用后，Agent 可列出打开和关闭的 Profile，通过 create/open 的票据得到 ready 端点，再沿既有工作区流程执行网站操作。stop 会拒绝活跃工作并保留 Cookie、存储和扩展身份。普通外部端点不会自动获得进程管理权限。
 
-已记录的实机资格是 Windows / Chrome 153.0.8010.53。私有 loopback 管理连接用于启动引导、实例核对和正常关闭；网站 CDP 仍经扩展执行。跨平台安装、Hermes Plugin 和默认 Provider 菜单见[待办计划](../80-Plans/tabro-hermes-provider-2026-10-01/README.md)。
+私有 loopback 管理连接用于启动引导、实例核对和正常关闭。网站 CDP 仍经扩展执行。独立安装包的实机证据见[分平台验收记录](../06-Files/Real-World-Runbook.md#packaged-installation)。Hermes 目录收录和默认 Provider 菜单见[交付计划](../80-Plans/tabro-hermes-provider-2026-10-01/README.md)。
 
 ## 更新边界
 
-### Broker 只有在扩展版本匹配后才允许该端点执行浏览器工作
+### 扩展更新后由操作者重载并确认重新连接
 
-Release 更新器先替换稳定扩展目录，再启动目标 Broker。relay `READY` 公开 Broker 版本、要求的扩展版本和是否重载。版本不匹配的扩展最多自动重载一次，重新认证并发布清单后才成为可工作端点。重复不匹配会失败关闭，避免重载循环。
+安装器更新稳定扩展目录后，操作者在已有 Profile 中重载扩展。扩展保留配对身份，重新连接后由 relay 协议和能力协商决定兼容性。Broker 和扩展的软件版本可以不同。
 
 ## 状态和安全
 

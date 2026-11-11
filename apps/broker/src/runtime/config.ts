@@ -7,12 +7,14 @@ const ConfigSchema = z.strictObject({
   profiles: z.strictObject({
     launchesEnabled: z.boolean().optional(),
     root: z.string().min(1), executablePath: z.string().min(1), extensionSource: z.string().min(1),
-    expectedBrowserVersion: z.string().min(1), expectedExtensionDigest: z.string().regex(/^[a-f0-9]{64}$/u), relayUrl: z.string().url()
+    expectedBrowserVersion: z.string().min(1), expectedExtensionDigest: z.string().regex(/^[a-f0-9]{64}$/u), relayUrl: z.string().url(),
+    nativeHostManifest: z.string().min(1).optional()
   }).optional(),
   host: z.string().default('127.0.0.1'),
   mcpPort: z.coerce.number().int().min(0).max(65_535).default(0),
   wsPort: z.coerce.number().int().min(0).max(65_535).default(0),
   dbPath: z.string().min(1).default('.relay-data/relay.sqlite'),
+  browserRulesPath: z.string().min(1).optional(),
   logLevel: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   heartbeatTimeoutMs: z.coerce.number().int().min(5_000).max(300_000).default(45_000),
   errorThreshold: z.coerce.number().int().min(1).max(100).default(3),
@@ -39,6 +41,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RelayConfig {
     mcpPort: env.RELAY_MCP_PORT,
     wsPort: env.RELAY_WS_PORT,
     dbPath,
+    browserRulesPath: env.TABRO_BROWSER_RULES_PATH ?? resolve(dirname(dbPath), 'browser-rules.json'),
     logLevel: env.RELAY_LOG_LEVEL,
     heartbeatTimeoutMs: env.RELAY_HEARTBEAT_TIMEOUT_MS,
     errorThreshold: env.RELAY_ERROR_THRESHOLD,

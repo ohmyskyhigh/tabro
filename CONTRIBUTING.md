@@ -26,7 +26,7 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
-`pnpm verify` includes the Windows native build. Run the narrower checks separately when developing without the native C++ toolchain:
+`pnpm verify` builds the Windows companion with the C++ toolchain or the macOS helper with Clang. Linux bundles the Node companion when staging an archive. Run the narrower checks separately when the native build toolchain is unavailable.
 
 ```powershell
 pnpm lint

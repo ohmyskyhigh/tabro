@@ -1,6 +1,7 @@
 import type { RelayV2PayloadByType } from '../../../../shared/protocol/src/index.js';
 
 export type ExtensionOperationType =
+  | 'SYNC_BROWSER_RULES'
   | 'PROFILE_PROXY'
   | 'CREATE_TAB'
   | 'GROUP_TABS'
@@ -17,6 +18,7 @@ export interface ExtensionConnectionSnapshot {
   inventoryGeneration: number;
   connected: boolean;
   profileProxy?: boolean;
+  browserInputPolicy?: boolean;
 }
 
 export interface ExtensionEventSink {

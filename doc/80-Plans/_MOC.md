@@ -4,6 +4,7 @@ Plans describe intended development work. They do not establish delivered behavi
 
 ## Plans
 
+- [Domain input-only rules](./domain-input-only-rules-2026-11-10/README.md) — implemented source and macOS arm64 browser evidence; other native targets and actual Codex/Hermes client acceptance remain open.
 - [Hermes October 5 review fixes](./tabro-hermes-provider-2026-10-01/review-fixes-2026-10-05.md) — relay Origin admission, setup disclosure and custom install-root forwarding.
 - [`profile-proxy-2026-10-03`](./profile-proxy-2026-10-03/README.md) — implemented HTTP, HTTPS and authenticated SOCKS5 support for closed broker-owned Profiles; includes current qualification and local deployment evidence.
 - [`runtime-conformance-follow-up-2026-10-02`](./runtime-conformance-follow-up-2026-10-02/README.md) — pending fixes for discovery-aware preflight, Demo and isolated probes, plus evidence for general scheduler bounds and retention requirements found during the documentation audit.

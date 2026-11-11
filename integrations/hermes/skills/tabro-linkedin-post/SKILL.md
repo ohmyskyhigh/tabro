@@ -96,3 +96,9 @@ Completion: either a verified live post with an exact permalink, an unsent prepa
 - After publish: exact permalink opened, full text matched, author and images checked, local receipt saved.
 - After cleanup: own workspace termination verified, other agents' browser work untouched.
 - Tests validate the packaged documentation and examples offline, not LinkedIn's live UI. A real publication requires separate authorization; do not publish a test post merely to validate installation of this skill.
+
+## Domain policy
+
+### Input-only rules govern composer focus, text entry and file selection
+
+Read the current tab's `interaction_policy` before acting. On a listed domain, focus, selection and scrolling use mouse/keyboard input; JavaScript is for guarded observation. Use DOM/accessibility fallbacks when the guard refuses a read. Open file pickers through input and let the user select files. Never remove rules to permit DOM.setFileInputFiles or scripted focus. On interrupted input, inspect recovery facts and follow the general Tabro skill's explicit user recovery and separate effect-resolution sequence.

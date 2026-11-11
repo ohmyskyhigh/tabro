@@ -20,5 +20,5 @@ try {
   const credentialRef = await vault.provision(secret, principal);
   process.stdout.write(`${JSON.stringify({ credential_ref: credentialRef })}\n`);
 } catch {
-  process.stderr.write('Credential provisioning failed. Check stdin JSON, database, principal and Windows vault access.\n'); process.exitCode = 1;
+  process.stderr.write('Credential provisioning failed. Check stdin JSON, database, principal and OS credential vault access.\n'); process.exitCode = 1;
 } finally { store?.close(); }

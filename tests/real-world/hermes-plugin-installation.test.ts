@@ -10,7 +10,9 @@ import { MCP_TOOL_NAMES } from '../../apps/shared/protocol/src/index.js';
 
 const run = promisify(execFile);
 const enabled = process.platform === 'win32' && process.env.TABRO_TEST_HERMES_INSTALL === '1';
-const plugin = resolve('integrations/hermes');
+const plugin = resolve(process.env.TABRO_TEST_HERMES_PACKAGE ?? 'integrations/hermes');
+const nativeHostFixture = process.env.TABRO_TEST_HERMES_NATIVE_HOST;
+const priorPlugin = process.env.TABRO_TEST_HERMES_PRIOR_PACKAGE;
 const base = resolve('artifacts/hermes-plugin-tests');
 const hermesSource = process.env.TABRO_TEST_HERMES_SOURCE;
 const hermesPython = process.env.TABRO_TEST_HERMES_PYTHON;
@@ -23,10 +25,26 @@ interface McpLaunch { command: string; args: string[]; env: Record<string, strin
 interface HermesProfile { home: string; plugin: string; env: Record<string, string>; configHash: string; server?: McpLaunch }
 const hermesProfiles: HermesProfile[] = [];
 const digest = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
-const setup = (profile = hermesProfiles[0]!, directory = profile.plugin, target?: string) => run('powershell.exe', [
-  '-NoProfile', '-File', resolve(directory, 'setup.ps1'), ...(target ? ['-InstallRoot', target] : []),
-  '-NodePath', process.execPath, '-SkipNativeRegistration'
-], { timeout: 60000, windowsHide: true, cwd: profile.home, env: { ...process.env, ...profile.env } });
+const setup = (profile = hermesProfiles[0]!, directory = profile.plugin, target?: string, nativeHost = nativeHostFixture) => {
+  const env = { ...process.env, ...profile.env };
+  const options = { timeout: 60000, windowsHide: true, cwd: profile.home, env };
+  const file = resolve(directory, 'setup.ps1');
+  if (!nativeHost) return run('powershell.exe', ['-NoProfile', '-File', file, ...(target ? ['-InstallRoot', target] : []),
+    '-NodePath', process.execPath, '-SkipNativeRegistration'], options);
+  // Substitute the transport only. Setup still verifies the pinned URL, length and digest.
+  Object.assign(env, { TABRO_FIXTURE_SETUP: file, TABRO_FIXTURE_ROOT: target ?? '', TABRO_FIXTURE_NODE: process.execPath,
+    TABRO_FIXTURE_NATIVE_HOST: nativeHost });
+  return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `
+    function curl.exe {
+      if ($args[-1] -cnotmatch '^https://github[.]com/ohmyskyhigh/tabro/releases/download/v[0-9.]+/tabro-native-host-v[0-9.]+-windows-x64[.]exe$') {
+        throw 'Unexpected Native Host URL in test.'
+      }
+      Copy-Item -LiteralPath $env:TABRO_FIXTURE_NATIVE_HOST -Destination $args[([array]::IndexOf($args, '--output') + 1)] -ErrorAction Stop
+      $global:LASTEXITCODE = 0
+    }
+    & $env:TABRO_FIXTURE_SETUP -InstallRoot $env:TABRO_FIXTURE_ROOT -NodePath $env:TABRO_FIXTURE_NODE -SkipNativeRegistration
+  `], options);
+};
 
 describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
   beforeAll(async () => {
@@ -136,6 +154,49 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
     expect(existsSync(resolve(target, 'installation.json'))).toBe(false);
     expect(JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')).processId).toBe(record.processId);
   });
+
+  it.runIf(!!nativeHostFixture)('verifies the downloaded Native Host and reuses only the verified installed copy', async () => {
+    const manifest = JSON.parse(readFileSync(resolve(plugin, 'runtime-manifest.json'), 'utf8'));
+    const state = JSON.parse(readFileSync(resolve(install, 'installation.json'), 'utf8'));
+    expect(existsSync(resolve(plugin, 'runtime', manifest.nativeHostEntry))).toBe(false);
+    expect(digest(resolve(install, state.runtimeDirectory, manifest.nativeHostEntry))).toBe(digest(nativeHostFixture!));
+    const target = resolve(fixture, 'native-host-mismatch');
+    const altered = resolve(fixture, 'altered-host.exe');
+    const bytes = readFileSync(nativeHostFixture!);
+    bytes[0] = bytes[0]! ^ 1;
+    writeFileSync(altered, bytes);
+    await expect(setup(hermesProfiles[0], plugin, target, altered)).rejects.toThrow('Native Host checksum mismatch');
+    expect(existsSync(resolve(target, 'installation.json'))).toBe(false);
+    expect(existsSync(resolve(target, state.runtimeDirectory, manifest.nativeHostEntry))).toBe(false);
+    const repeated = JSON.parse((await setup(hermesProfiles[0], plugin, undefined, altered)).stdout);
+    expect(repeated.broker.processId).toBe(record.processId);
+  }, 60000);
+
+  it.runIf(!!priorPlugin)('upgrades a stopped 0.4.2 installation and preserves its user data', async () => {
+    const legacy = resolve(priorPlugin!);
+    const target = resolve(fixture, 'preview-upgrade');
+    const stop = (directory: string) => run('powershell.exe', ['-NoProfile', '-File', resolve(directory, 'stop.ps1'),
+      '-InstallRoot', target], { timeout: 30000, windowsHide: true });
+    const oldState = JSON.parse((await setup(hermesProfiles[0], legacy, target)).stdout);
+    const token = resolve(target, 'data/admin-token.txt');
+    const before = digest(token);
+    let activePackage = legacy;
+    try {
+      expect(oldState.version).toBe('0.4.2');
+      await expect(setup(hermesProfiles[0], plugin, target)).rejects.toThrow('A different Tabro release is running');
+      await stop(legacy);
+      await expect.poll(() => {
+        try { process.kill(oldState.broker.processId, 0); return false; }
+        catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true; throw error; }
+      }).toBe(true);
+      const upgraded = JSON.parse((await setup(hermesProfiles[0], plugin, target)).stdout);
+      activePackage = plugin;
+      expect(upgraded.version).toBe(JSON.parse(readFileSync(resolve(plugin, 'runtime-manifest.json'), 'utf8')).version);
+      expect(digest(token)).toBe(before);
+    } finally {
+      await stop(activePackage);
+    }
+  }, 120000);
 
   it('rejects a different plugin release without restarting the other profile\'s daemon', async () => {
     const copied = mkdtempSync(resolve(base, 'different-release-'));

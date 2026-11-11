@@ -10,6 +10,9 @@ Proposals request changes to the vault. A proposal is non-canonical until the us
 
 ## Accepted proposals
 
+- [Domain input-only rules](./domain-input-only-rules-2026-11-10.md) — accepted for implementation on 2026-11-11; domain configuration, guarded observation and interrupted-input recovery.
+
+- [Standalone installer parity](../80-Plans/tabro-hermes-provider-2026-10-01/README.md#独立安装包) records the approved decision to deliver the same existing feature set on Windows, macOS, and Linux in one release after platform qualification.
 - [Hermes October 5 review decision](./hermes-review-fixes-2026-10-05.md) — user-approved transport admission and installation corrections for the catalog re-review.
 - [`Open-Source-Hermes-Distribution.md`](./Open-Source-Hermes-Distribution.md) — accepted on 2026-10-04; full open-source scope, Broker installation during first-time Hermes setup, and proxy-inclusive distribution; delivery pending.
 

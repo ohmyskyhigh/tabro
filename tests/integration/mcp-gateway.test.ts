@@ -17,7 +17,7 @@ const CALLER = {
 };
 
 const rejectedOutput = () => ({
-  contract_version: '5',
+  contract_version: '6',
   disposition: 'rejected',
   observed_at: NOW,
   caller: CALLER,
@@ -34,7 +34,7 @@ const rejectedOutput = () => ({
 const acceptedWorkspaceOutput = (input: unknown) => {
   const requestRef = 'req_gateway_test';
   return {
-    contract_version: '5',
+    contract_version: '6',
     disposition: 'accepted',
     observed_at: NOW,
     caller: CALLER,
@@ -131,7 +131,7 @@ describe('canonical MCP gateway', () => {
     await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
       requestInit: {
         headers: {
-          'x-octopus-contract-version': '5', Authorization: `Bearer ${TOKEN}`,
+          'x-octopus-contract-version': '6', Authorization: `Bearer ${TOKEN}`,
           ...headers
         }
       }
@@ -139,7 +139,7 @@ describe('canonical MCP gateway', () => {
     return client;
   }
 
-  it('publishes exactly the canonical fourteen tools with full JSON schemas', async () => {
+  it('publishes the full canonical tool catalog with JSON schemas', async () => {
     const connected = await connect(new FakeCanonicalBroker());
     const listed = await connected.listTools();
     expect(listed.tools.map((tool) => tool.name)).toEqual([...MCP_TOOL_NAMES]);
@@ -193,10 +193,10 @@ describe('canonical MCP gateway', () => {
     await gateway.start();
     const { port } = gateway.address();
     const firstTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-      requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${TOKEN}` } }
+      requestInit: { headers: { 'x-octopus-contract-version': '6', Authorization: `Bearer ${TOKEN}` } }
     });
     const secondTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-      requestInit: { headers: { 'x-octopus-contract-version': '5', Authorization: `Bearer ${TOKEN}` } }
+      requestInit: { headers: { 'x-octopus-contract-version': '6', Authorization: `Bearer ${TOKEN}` } }
     });
     const first = new Client({ name: 'same-token-first', version: '1.0.0' }, { versionNegotiation: { mode: 'auto' } });
     const second = new Client({ name: 'same-token-second', version: '1.0.0' }, { versionNegotiation: { mode: 'auto' } });

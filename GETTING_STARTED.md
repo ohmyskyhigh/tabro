@@ -1,10 +1,43 @@
 # Getting started with Tabro
 
-Install the local Broker, connect your agent, then connect a browser. Multiple agents can share the same Broker and browser account while using separate task workspaces.
+Install Tabro on the desktop host and under the OS account that runs your browser. Connect your agent to the local Broker, then connect a browser profile. Multiple agents can share the same Broker and browser account while using separate task workspaces.
 
-Choose your agent: [Hermes](#hermes) · [Codex and other MCP agents](#other-agents). Then choose your browser connection: [create a profile through MCP](#create-and-open-a-browser-profile-through-mcp) or [load the extension into an existing browser](#connect-an-existing-chrome-edge-or-adspower-sunbrowser-profile).
+## Standalone installers
+
+### Each qualified platform uses the same install and browser verification flow
+
+On the [release page](https://github.com/ohmyskyhigh/tabro/releases), look for `tabro-setup-` assets and choose Windows x64, macOS arm64 (Apple Silicon), macOS x64 (Intel), or Linux x64. The [qualification record](./doc/06-Files/Real-World-Runbook.md#packaged-installation) tracks availability separately from local test results. Windows x64 users can use the [Windows preview](#other-agents) while the standalone release is pending.
+
+1. Download the matching archive and its `.sha256` file. Compare the SHA-256 before extracting the archive into its own folder. Use `Get-FileHash` on Windows, `shasum -a 256` on macOS, or `sha256sum` on Linux.
+2. Open a terminal in the extracted folder as your desktop browser user. Use Chrome, Chromium or Edge 153 or newer. Install Node.js 22.12 or newer before running the macOS or Linux setup. Linux also uses `flock` from `util-linux`. Authenticated proxies on Linux require `secret-tool` and an unlocked Secret Service keyring.
+
+   **Windows (PowerShell)**
+
+   ```powershell
+   powershell.exe -NoProfile -File .\setup.ps1 -DownloadNode
+   ```
+
+   **macOS and Linux (desktop terminal)**
+
+   ```sh
+   node ./setup.mjs
+   ```
+
+   Setup detects browsers in standard locations. To select a custom installation, supply `-BrowserPath` on Windows or `--browser` on macOS or Linux with the absolute browser executable path. `TABRO_BROWSER_PATH` sets a browser for a fresh installation. To choose a dedicated install directory, use `-InstallRoot` on Windows or `--root` on macOS or Linux. For a custom Chrome user-data directory on macOS or Linux, supply its absolute path with `--browser-data-dir`. Keep the extracted Windows folder because its MCP launcher runs from there.
+3. Copy the installer’s `mcp.command`, `mcp.args` and `mcp.env` (when present) into a `tabro` **stdio** server in your local MCP client. Restart the client’s MCP connection. The launcher starts or reuses the shared Broker. On Linux, if your MCP client filters desktop environment variables, run `node ~/.local/share/tabro/tabro.mjs start` from your desktop terminal first. Substitute your install root if you use `XDG_DATA_HOME` or a custom root.
+4. [Connect an existing profile](#connect-an-existing-chrome-edge-or-adspower-sunbrowser-profile) or [create a managed profile](#create-and-open-a-browser-profile-through-mcp), then [verify a browser action](#verification).
+
+### Authenticated proxies use the desktop user’s credential vault
+
+Use the Windows package’s `proxy-credential.ps1` to enter credentials. On macOS and Linux, run the installed launcher with `credentials` and pipe a JSON object with `username` and `password` through stdin from your secret manager. Pass the returned `credential_ref` to MCP when configuring a closed managed profile. Windows uses DPAPI, macOS uses Keychain, and Linux uses Secret Service. Keep the credential input out of shell history and process arguments.
+
+### Updates preserve browser data and require an idle Broker
+
+Finish browser work, terminate active workspaces, close completed request tickets, and stop any managed profiles. On Windows, run the old package’s `stop.ps1`, then run setup from the new archive and update your MCP entry. On macOS and Linux, run `node <install-root>/tabro.mjs stop` and then run setup from the new archive. Reload Tabro in each existing Chrome profile after updating its extension files. If you are upgrading from the Windows preview and its extension path changed, load the new `extensionPath` once.
 
 ## Requirements
+
+The following Hermes catalog and 0.4.2 preview instructions apply to Windows.
 
 - Windows x64 and Windows PowerShell 5.1 or later.
 - Chrome, Chromium or Microsoft Edge **153+** for setup and Tabro-managed browser profiles.
@@ -14,23 +47,23 @@ Setup installs the Broker, MCP adapter, Native Messaging companion and extension
 
 ## Hermes
 
-### Install and enable Tabro through the Hermes plugin catalog
+### Windows users can install the pinned Hermes preview from GitHub
 
-Once Tabro is available in the Hermes plugin catalog, use the normal install and enable commands:
+Hermes delisted Tabro over the bundled Native Host executable's build provenance. Existing installs can continue to run. For a new Windows x64 install while [relisting is pending](https://github.com/ohmyskyhigh/tabro/issues/2), set `TABRO_BROWSER_PATH` as described in the [plugin setup guide](./integrations/hermes/README.md#installation) and install the published 0.4.2 preview commit.
 
 ```powershell
-hermes plugins install tabro
+hermes plugins install "ohmyskyhigh/tabro#integrations/hermes" --ref 6b0b7e526cb6d85dc3fb3d0eae63d051b5be127a --no-enable
 hermes plugins enable tabro
 ```
 
-Follow the [plugin setup guide](./integrations/hermes/README.md#installation) for browser prerequisites and first-time Broker setup, then reload Hermes MCP or start a new agent session. See [Hermes's plugin documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins/) for its standard installation controls.
+Run first-time Broker setup from the installed plugin directory, then reload Hermes MCP or start a new agent session. On macOS and Linux, use the standalone installer's local stdio handoff once your platform package is available. See [Hermes's plugin documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins/) for installation controls.
 
 ### Each named Hermes profile enables its own Tabro connection
 
 For an existing named profile, add `-p <profile-name>` after `hermes`:
 
 ```powershell
-hermes -p tabro-1 plugins install tabro
+hermes -p tabro-1 plugins install "ohmyskyhigh/tabro#integrations/hermes" --ref 6b0b7e526cb6d85dc3fb3d0eae63d051b5be127a --no-enable
 hermes -p tabro-1 plugins enable tabro
 ```
 
@@ -151,7 +184,7 @@ Keep the returned references unchanged. The generated pairing alias is the profi
 
 Use this path to keep an existing logged-in browser account.
 
-1. Complete Broker setup on the same Windows machine and user account as the browser.
+1. Complete Broker setup on the same desktop host and under the same OS account as the browser. The preview and AdsPower instructions apply to Windows.
 2. Open the desired Chrome profile, or start the desired **SunBrowser** profile from AdsPower. For Edge, open the desired Edge profile.
 3. In that browser window, open `chrome://extensions` (`edge://extensions` for Edge).
 4. Turn on **Developer mode**, choose **Load unpacked**, and select the `extensionPath` printed by setup. Select the folder containing `manifest.json`.
@@ -201,3 +234,37 @@ Success means the agent discovers Tabro's **22 tools**, sees the expected profil
 | Broker and adapter versions differ | End active work, update participating clients together, and rerun the matching package's setup. See the [update procedure](./integrations/hermes/README.md#updates). |
 
 For source builds, see [the repository installation instructions](./README.md#the-installer-builds-registers-and-prepares-the-local-runtime). For profile proxies, see [proxy setup](./integrations/hermes/README.md#proxies).
+
+## Extension dashboard
+
+### Open Tabro from the toolbar to manage its connection and website rules
+
+The dashboard is part of the current source build. Use its matching Broker and extension; an older installed package may still show the previous options page. Click the **Tabro toolbar icon**, or choose **Extension options** from Chrome's extension menu.
+
+- **Connection:** view or copy your pairing code, see the alias agents use and check connection status. Keep **Native companion** selected under Connection settings. Use **Save and reconnect** after changing settings, or **Reconnect** to retry the saved connection. **Reset pairing** asks for confirmation before creating a new identity.
+- **Broker management:** view all registered profiles with separate **Connection** and **Automation** status. A connected profile can have paused automation; a failed connection shows its error instead of staying **Connecting**. Profiles are read-only here. Under **Website rules**, use **Add domain**, **Edit** or **Remove**. Enter a hostname such as `example.com` or `app.example.com`; the rule covers its subdomains and all pages. Removing a rule asks for confirmation.
+
+Saved rules apply across this Broker's profiles and Codex/Hermes clients. The dashboard uses the extension's authenticated connection; no Broker token is copied into the page. On disconnection, displayed data is marked stale and rule changes are disabled. If another window or file editor changes the rules, your save is rejected and your typed domain is retained; close the editor, refresh, review the current rules and retry. An invalid rule file must be repaired before dashboard editing resumes.
+
+New workspace, additional and replacement tabs open in the background. This is a soft preference: agents can explicitly use `Page.bringToFront` when a website needs activation to start or receive input, including on input-only domains. Reuse the workspace and avoid repeatedly selecting its tab or restoring focus after the user switches away. Interrupted gestures still follow input recovery.
+
+## Domain rules
+
+### The dashboard and file editor share one persistent domain rule list
+
+Add domains through **Broker management → Website rules**, or edit the file directly using the format below.
+
+The source implementation uses MCP contract 6; install a qualified contract-6 package and reload its extension before using these rules. The Broker initializes `<Tabro installation>/data/browser-rules.json` with an empty list. It is shared across that Broker's profiles and Codex/Hermes clients. Default locations are `%LOCALAPPDATA%\Tabro\data\browser-rules.json` on Windows, `~/Library/Application Support/Tabro/data/browser-rules.json` on macOS, and `${XDG_DATA_HOME:-~/.local/share}/tabro/data/browser-rules.json` on Linux. Custom installations use their own data folder; source runs default to `.relay-data/browser-rules.json`. `TABRO_BROWSER_RULES_PATH` can select a different host file.
+
+```json
+{
+  "schemaVersion": 1,
+  "rules": [
+    { "id": "example-input-only", "domain": "example.com", "mode": "input_only" }
+  ]
+}
+```
+
+Save the file to apply a valid revision automatically. Each hostname covers itself, nested subdomains and all paths; do not enter a scheme, path, IP address or wildcard. Remove an entry to remove its restriction, provided no matching parent rule remains. Saving `"rules": []` removes all domain restrictions. Invalid live edits retain the previous valid rules and report a diagnostic; a missing or malformed file after initialization blocks browser dispatch on restart until repaired. Upgrades preserve the file.
+
+An agent may edit this file when the user asks it to add or remove domains. It must not weaken a rule to get past a blocked browser command. Read `get_browser_context` with `view: {kind: "tab", workspace_ref, tab_ref}` to verify the effective policy and matching hostname. The Broker view exposes configuration diagnostics. Matching is checked again against the current top-level URL at execution. Observations remain available; manipulation uses supported browser input.

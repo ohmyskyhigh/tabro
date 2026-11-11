@@ -3,32 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tabro Settings</title>
+  <title>Tabro Dashboard</title>
+  <link rel="stylesheet" href="options.css">
 </head>
 <body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="brand" href="#connection" aria-label="Tabro connection"><svg viewBox="0 0 28 28" aria-hidden="true"><rect x="3" y="3" width="16" height="20" rx="4"/><rect x="10" y="8" width="15" height="17" rx="4"/></svg><span>tabro</span></a>
+    <span class="header-label">Your local browser companion</span><span id="header-status" class="badge">Checking connection</span>
+  </div></header>
   <main>
-    <h1>Tabro Settings</h1>
-    <p>This extension connects only this Chrome profile to the local broker.</p>
-    <form id="settings-form">
-      <label>Pairing code
-        <input id="pairing-code" name="pairing-code" type="text" required maxlength="17" pattern="[A-Za-z]{3,8}[-_ ][A-Za-z]{3,8}" autocomplete="off" spellcheck="false" placeholder="MINT-WAVE">
-      </label>
-      <p>Profile alias: <strong id="profile-nickname">creating…</strong></p>
-      <label>Local broker relay URL <input id="broker-url" type="url" required value="ws://127.0.0.1:7332/relay"></label>
-      <label>Transport
-        <select id="transport-mode">
-          <option value="native">Native companion (recommended)</option>
-          <option value="websocket">Direct WebSocket (diagnostics only)</option>
-        </select>
-      </label>
-      <button type="submit">Save settings and reconnect</button>
-    </form>
-    <p>The pairing code is saved in this browser profile and persists across browser windows and restarts. Use two 3-8 letter words separated by a hyphen; the lowercase words become the endpoint alias. The code identifies this installation and is not a password.</p>
-    <p>A new installation generates a code and registers automatically. Saving a different code changes the existing endpoint alias only after the broker authenticates this profile.</p>
-    <p>Normal Chrome and AdsPower both use the native companion. Direct WebSocket is retained only for explicit diagnostics.</p>
-    <p id="status" role="status"></p>
-    <button id="reset" type="button">Reset pairing</button>
+    <div class="page-heading"><div><p class="eyebrow">CONTROL CENTER</p><h1>Your browser workspace.</h1><p>Connect your browser. Keep your profiles and website rules in view.</p></div><span id="extension-version" class="version"></span></div>
+    <nav class="tabs" role="tablist" aria-label="Dashboard">
+      <button id="tab-connection" role="tab" aria-controls="panel-connection" aria-selected="true" tabindex="0" type="button">Connection</button>
+      <button id="tab-broker" role="tab" aria-controls="panel-broker" aria-selected="false" tabindex="-1" type="button">Broker management</button>
+    </nav>
+    <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+    <section id="panel-connection" role="tabpanel" aria-labelledby="tab-connection">
+      <article class="panel">
+        <div class="panel-heading"><div><h2>This browser profile</h2><p>Pair this profile with the Tabro Broker running on your computer.</p></div><span id="status" class="badge" role="status">Checking</span></div>
+        <div id="connection-error" class="inline-error" role="alert" hidden></div>
+        <form id="settings-form">
+          <div class="identity-grid">
+            <div><label for="pairing-code">Pairing code</label><div class="code-field"><input id="pairing-code" name="pairing-code" type="text" required maxlength="17" pattern="[A-Za-z]{3,8}[-_ ][A-Za-z]{3,8}" autocomplete="off" spellcheck="false" placeholder="MINT-WAVE"><button id="copy-code" type="button" class="copy-button" aria-label="Copy pairing code">Copy</button></div><p class="hint">Two words, one familiar identity. Saved in this Chrome profile.</p></div>
+            <div><label>Profile alias</label><div class="alias-field"><span class="profile-avatar" aria-hidden="true">P</span><strong id="profile-nickname">Loading…</strong></div><p id="alias-hint" class="hint">Agents use this name to find your browser.</p></div>
+          </div>
+          <details class="advanced"><summary>Connection settings <span id="transport-summary">Native companion</span></summary>
+            <div class="advanced-fields"><div><label for="transport-mode">Connection method</label><select id="transport-mode"><option value="native">Native companion (recommended)</option><option value="websocket">Direct WebSocket (diagnostics)</option></select></div><div id="broker-url-field"><label for="broker-url">Local Broker relay URL</label><input id="broker-url" type="url" value="ws://127.0.0.1:7332/relay"></div></div>
+            <p class="hint">Native companion finds your local Broker automatically. Direct WebSocket is for diagnostics.</p>
+          </details>
+          <div class="panel-actions"><button class="primary" id="save-settings" type="submit">Save and reconnect</button><button id="reconnect" class="secondary" type="button">Reconnect</button><span id="saved-state" class="hint">Changes stay on this computer.</span></div>
+        </form>
+      </article>
+      <div class="connection-notes"><div><h3>One profile, one identity</h3><p>A new installation registers automatically. Your code persists across browser windows and restarts; it is not a password. Changing it updates the alias after the Broker authenticates this profile.</p></div><button id="reset" class="text-button danger" type="button">Reset pairing…</button></div>
+    </section>
+    <section id="panel-broker" role="tabpanel" aria-labelledby="tab-broker" hidden>
+      <div class="section-intro"><div><h2>Your local Broker</h2><p id="broker-summary">Connect to load profiles and website rules.</p></div><button id="refresh-broker" class="secondary" type="button">Refresh</button></div>
+      <div id="broker-unavailable" class="empty-state panel"><h3>Connect to your Broker</h3><p>Open Connection to check this extension’s pairing status, then refresh.</p></div>
+      <div id="broker-content" hidden>
+        <article class="panel"><div class="panel-heading"><div><h2>Browser profiles <span id="profile-count" class="count">0</span></h2><p>Profiles registered with this Broker, including those currently offline.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Profile</th><th>Opened by</th><th>Connection</th><th>Automation</th><th>Last seen</th></tr></thead><tbody id="profile-rows"></tbody></table></div><p id="profiles-empty" class="empty-row" hidden>No profiles have connected yet.</p>
+        </article>
+        <article class="panel"><div class="panel-heading"><div><h2>Website rules <span id="rule-count" class="count">0</span></h2><p>Choose where agents must use mouse and keyboard input.</p></div><button id="add-rule" class="primary small" type="button">+ Add domain</button></div>
+          <p id="rules-diagnostic" class="inline-error" role="alert" hidden></p>
+          <div class="table-wrap"><table id="rules-table"><thead><tr><th>Domain</th><th>Interaction mode</th><th class="right">Actions</th></tr></thead><tbody id="rule-rows"></tbody></table></div>
+          <div id="rules-empty" class="empty-state" hidden><span class="empty-symbol" aria-hidden="true">↳</span><h3>No website rules yet</h3><p>Add a domain to require input actions there.<br>Agents can still read and inspect the page.</p><button id="add-first-rule" class="secondary" type="button">Add your first domain</button></div>
+          <div class="panel-footnote">Each domain includes all its subdomains and pages. Saved rules apply across this Broker’s profiles and agent clients.</div>
+        </article>
+      </div>
+    </section>
+    <footer><span>Local by design.</span><span id="footer-status">Checking your connection…</span></footer>
   </main>
+  <dialog id="rule-dialog" aria-labelledby="rule-dialog-title"><form id="rule-form"><h2 id="rule-dialog-title">Add a website rule</h2><p>Require input actions while allowing page observation.</p><label for="rule-domain">Domain or subdomain</label><input id="rule-domain" name="domain" placeholder="example.com" autocomplete="off" spellcheck="false" required maxlength="253"><p class="hint">Use a hostname only. Includes all subdomains and pages.</p><div class="mode-description"><strong>Input only</strong><span>Clicks, typing, scrolling and dragging use browser input. Scripts can observe, but cannot change the page.</span></div><p id="rule-error" class="inline-error" role="alert" hidden></p><div class="dialog-actions"><button id="cancel-rule" class="secondary" type="button">Cancel</button><button id="save-rule" class="primary" type="submit">Save rule</button></div></form></dialog>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title"><h2 id="confirm-title"></h2><p id="confirm-description"></p><p id="confirm-error" class="inline-error" role="alert" hidden></p><div class="dialog-actions"><button id="cancel-confirm" class="secondary" type="button">Cancel</button><button id="accept-confirm" class="danger-button" type="button">Confirm</button></div></dialog>
   <script type="module" src="options.js"></script>
 </body>
 </html>

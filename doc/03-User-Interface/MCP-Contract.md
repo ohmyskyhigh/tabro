@@ -1,6 +1,6 @@
 # MCP contract
 
-Status: canonical implementation baseline for wire-contract version `5`.
+Status: canonical implementation baseline for wire-contract version `6`.
 
 The companion [`MCP-Contract.schema.json`](./MCP-Contract.schema.json) is the exact machine-readable authority for public tool inputs and structured outputs. This document explains how agents use that schema. If prose and schema disagree, the mismatch is a contract defect that must be corrected before implementation is considered conformant.
 
@@ -37,7 +37,7 @@ Unsupported, unknown, browser-wide, or out-of-scope methods reject synchronously
 | `terminate_workspace` | Fence new work, reconcile dispatched work, confirm archive rename, and end control. |
 | `resolve_browser_request` | Resolve one owner-visible `user_confirmation_required` command. |
 | `stop_workspace_automation` | Add the manual-stop cause to one workspace. |
-| `resume_workspace_automation` | Reconcile one workspace and clear only its manual-stop cause. |
+| `resume_workspace_automation` | Reconcile one workspace, acknowledge input recovery when required, and clear its manual-stop cause. |
 | `kill_browser_endpoint` | Pause every active workspace on an entirely owned endpoint. |
 | `resume_browser_endpoint` | Reconcile an entirely owned endpoint and clear only endpoint kill. |
 
@@ -171,7 +171,7 @@ The database migration removes the retired display name from the Profile schema 
 
 ### Contract version 5 requires a matching Broker and adapter before tool execution
 
-The Broker exposes twenty-two tools and returns `contract_version: "5"`. The HTTP MCP transport requires `x-octopus-contract-version: 5`; authenticated mismatches return HTTP 409 before admission, while unauthenticated requests remain HTTP 401. The stdio adapter checks `/health` before connecting and sends the version header. Browser extension relay protocol remains version 2 independently.
+The Broker exposes twenty-two tools and returns `contract_version: "6"`. The HTTP MCP transport requires `x-octopus-contract-version: 6`; authenticated mismatches return HTTP 409 before admission, while unauthenticated requests remain HTTP 401. The stdio adapter checks `/health` before connecting and sends the version header. Browser extension relay protocol remains version 2 independently.
 
 ## Profile networking
 
@@ -184,3 +184,27 @@ The Broker exposes twenty-two tools and returns `contract_version: "5"`. The HTT
 Get can read saved facts for either ownership. Set, clear and exit checks require `ownership=broker`; user-owned references reject with `PROFILE_USER_OWNED`. Set and clear additionally require the Profile to be closed: a connected extension or known open instance rejects with `PROFILE_IN_USE`, and unverified process inspection reports `PROFILE_INSTANCE_UNVERIFIED`. Active work, acquisition and lifecycle conflicts also prevent changes. A saved change does not launch Chrome and remains pending until the next explicit launch and extension read-back. Get remains usable while open; exit checks require an applied proxy. Effective state and IP observations carry revisions and freshness. Contract 5 retains the same closed tool inputs and outputs; network-capable extensions advertise an explicit proxy capability on relay version 2. Unsupported extensions cannot be marked applied.
 
 Parent: [`User Interface MOC`](./_MOC.md).
+
+## Domain interaction
+
+### Contract 6 exposes domain policy and input recovery through the existing tools
+
+The twenty-two-tool catalog is unchanged. `get_browser_context` includes a targeted `tab` view with `workspace_ref` and `tab_ref`; tab facts expose `interaction_policy`, and workspace facts expose `input_recovery`. Policy facts contain mode, current observed hostname, matching rule/domain, revision and configuration diagnostic. The extension rechecks the current URL at execution, so inventory context is observational.
+
+`send_cdp_command` returns `INPUT_ONLY_REQUIRED` for forbidden methods/parameters or JavaScript side-effect refusals, including usable alternatives. A rejection before acceptance creates no ticket; rejection during execution produces a failed ticket. Repeating the identical command is not retryable. `BROWSER_RULES_INVALID`, `INPUT_POLICY_UNSUPPORTED` and `INPUT_POLICY_STALE` report configuration/capability prerequisites. `INPUT_BUSY`, `INPUT_RECOVERY_REQUIRED` and `INPUT_STATE_UNCERTAIN` distinguish reserved, paused and uncertain input.
+
+### Recovery acknowledgement and website-effect resolution remain distinct
+
+`resume_workspace_automation` accepts optional `input_recovery: {recovery_ref, user_confirmed_released: true}` after the user finishes or cancels the gesture. The current recovery reference prevents a stale acknowledgement clearing another gesture. This acknowledgement does not establish website success or bypass endpoint kill/disconnection. Uncertain website effects still require `resolve_browser_request`. Classified guarded observations may bypass a paused same-tab mutation without advancing that mutation or reordering other mutations. Exact fields and outcomes are defined in [the schema](./MCP-Contract.schema.json).
+
+A successful `take_over_workspace` updates the recovery owner and recovery reference while preserving possible held input. The new owner receives the same recovery requirements; the previous owner cannot acknowledge the new reference.
+
+## Extension dashboard
+
+### Human management uses a private extension interface while MCP retains twenty-two tools
+
+The profile table separates Connection and Automation and exposes known failure diagnostics. New workspace, additional and replacement tabs default to inactive. Tool guidance recommends background work; `Page.bringToFront` remains an explicitly requested supported CDP operation, including on input-only sites. This clarification adds no tool, wire field, hard foreground error or approval gate.
+
+After input release is confirmed, explicit `terminate_workspace` may abandon a `send_cdp_command` waiting for website-effect confirmation. Its terminal result is `failed` with `WORKSPACE_TERMINATED` and `known_facts.effect_may_have_occurred: true`, never a fabricated successful result. Existing generic failure facts carry this information; no new tool or input field is required. Held, pending or uncertain input still blocks termination.
+
+The extension options page exposes Connection and Broker tabs. Pairing code, alias and status belong to this browser profile; the profile registry and domain rules belong to the connected Broker. Private typed dashboard messages support snapshot reads and revision-checked rule replacement. Profiles and their status are read-only. They do not add MCP tools or expose arbitrary agent commands.

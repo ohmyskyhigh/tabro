@@ -1,3 +1,6 @@
+import { effectiveBrowserPolicy, isRecoveryObservation, isBrowserInput, type BrowserPolicySnapshot } from '../../../../shared/protocol/src/browser-interaction-policy.js';
+import type { BrowserRulesSource } from '../../runtime/browser-rules.js';
+import { InputRecovery } from './input-recovery.js';
 import { randomUUID } from 'node:crypto';
 import type { ProfileManager } from '../../profiles/profile-manager.js';
 import type { ProfileNetworkService } from '../../proxy/profile-network-service.js';
@@ -49,6 +52,7 @@ interface CursorEntry {
 }
 
 interface BrokerOptions {
+  browserRules?: BrowserRulesSource;
   referenceFactory?: ReferenceFactory;
   maxPageSize?: number;
   workerLeaseMs?: number;
@@ -81,6 +85,10 @@ const parsePrivate = <T extends JsonObject>(value: string, kind: string): T => {
 const browserRefFor = (endpointRef: string): string => `brw_${Buffer.from(endpointRef).toString('base64url')}`;
 
 export class OctopusBroker implements ExtensionEventSink {
+  private readonly inputRecovery: InputRecovery;
+  private readonly browserRules: BrowserRulesSource | null;
+  private readonly syncedPolicies = new Map<string, string>();
+  private readonly syncingPolicies = new Set<string>();
   private profileManager: ProfileManager | null = null;
   private network: ProfileNetworkService | null = null;
   setNetworkService(service: ProfileNetworkService): void { this.network = service; }
@@ -105,6 +113,8 @@ export class OctopusBroker implements ExtensionEventSink {
     private readonly repositories: CanonicalRepositories,
     options: BrokerOptions = {}
   ) {
+    this.inputRecovery = new InputRecovery(repositories.requests);
+    this.browserRules = options.browserRules ?? null;
     this.references = options.referenceFactory ?? new RandomReferenceFactory();
     this.callers = new CallerRegistry(repositories, this.references);
     this.maxPageSize = options.maxPageSize ?? 100;
@@ -124,14 +134,75 @@ export class OctopusBroker implements ExtensionEventSink {
   }
 
   async waitForIdle(): Promise<void> {
-    if (this.runningWorkers.size === 0 && this.endpointReconciliationRequests.size === 0) return;
+    if (this.runningWorkers.size === 0 && this.endpointReconciliationRequests.size === 0 && this.syncingPolicies.size === 0) return;
     await new Promise<void>(resolve => this.idleWaiters.add(resolve));
   }
 
   private notifyIdle(): void {
-    if (this.runningWorkers.size || this.endpointReconciliationRequests.size) return;
+    if (this.runningWorkers.size || this.endpointReconciliationRequests.size || this.syncingPolicies.size) return;
     for (const resolve of this.idleWaiters) resolve();
     this.idleWaiters.clear();
+  }
+
+  private requirePolicy(endpointRef: string): BrowserPolicySnapshot | null {
+    if (!this.browserRules) return null;
+    const snapshot = this.browserRules.refresh();
+    if (!snapshot) throw new OctopusBrokerError(problem('BROWSER_RULES_INVALID', this.browserRules.diagnostic ?? 'Repair browser-rules.json before browser dispatch.'));
+    const connection = this.extensionPort?.connection(endpointRef);
+    if (snapshot.configuration.rules.length && connection?.connected && !connection.browserInputPolicy) {
+      throw new OctopusBrokerError(problem('INPUT_POLICY_UNSUPPORTED', 'Reload or update the Tabro extension: domain rules require an extension advertising browserInputPolicy=1.'));
+    }
+    return snapshot;
+  }
+
+  private policyFact(url: string): JsonObject {
+    const snapshot = this.browserRules?.refresh();
+    const effective = effectiveBrowserPolicy(url, snapshot?.configuration ?? { schemaVersion: 1, rules: [] });
+    return { ...effective, mode: this.browserRules && !snapshot ? 'unavailable' : effective.mode,
+      revision: snapshot?.revision ?? null, diagnostic: this.browserRules?.diagnostic ?? null };
+  }
+
+  private async synchronizePolicy(endpointRef: string): Promise<BrowserPolicySnapshot | null> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const snapshot = this.requirePolicy(endpointRef);
+      if (!snapshot) return null;
+      const connection = this.requireExtensionConnection(endpointRef);
+      if (!connection.browserInputPolicy) return null; // Empty rules preserve older-extension compatibility.
+      const key = `${connection.connectionGeneration}:${snapshot.revision}`;
+      if (this.syncedPolicies.get(endpointRef) === key) return snapshot;
+      const result = await this.extensionOperation(endpointRef, 'SYNC_BROWSER_RULES', {
+        attemptId: randomUUID(), expected: { connectionGeneration: connection.connectionGeneration, inventoryGeneration: connection.inventoryGeneration }, policy: snapshot
+      });
+      if (result.result?.revision !== snapshot.revision) throw new OctopusBrokerError(problem('INPUT_POLICY_STALE', 'The extension did not acknowledge the current rules.'));
+      if (this.browserRules?.refresh()?.revision === snapshot.revision
+        && this.requireExtensionConnection(endpointRef).connectionGeneration === connection.connectionGeneration) {
+        this.syncedPolicies.set(endpointRef, key);
+        return snapshot;
+      }
+    }
+    throw new OctopusBrokerError(problem('INPUT_POLICY_STALE', 'Rules changed repeatedly during dispatch. Retry after configuration stabilizes.', true));
+  }
+
+  private refreshPolicies(): void {
+    if (!this.browserRules) return;
+    this.browserRules.refresh();
+    for (const endpoint of this.repositories.logical.scanLogicalRecovery().endpoints) {
+      if (!this.isEndpointReady(endpoint.endpointRef) || this.syncingPolicies.has(endpoint.endpointRef)) continue;
+      this.syncingPolicies.add(endpoint.endpointRef);
+      void this.synchronizePolicy(endpoint.endpointRef).catch(() => { /* Dispatch reports configuration or capability errors. */ })
+        .finally(() => { this.syncingPolicies.delete(endpoint.endpointRef); this.notifyIdle(); });
+    }
+  }
+
+  private isRecoveryRead(ticket: StoredRequestTicket): boolean {
+    if (ticket.toolName !== 'send_cdp_command' || !ticket.workspaceRef || !ticket.tabRef
+      || !isRecoveryObservation(String(this.requestArguments(ticket).method))) return false;
+    const workspace = this.repositories.logical.getWorkspace(ticket.workspaceRef);
+    if (!workspace || workspace.ownerSessionRef !== ticket.requesterSessionRef) return false;
+    const snapshot = this.repositories.requests.scanRequestRecovery();
+    const headRef = snapshot.lanes.find(lane => lane.tabRef === ticket.tabRef)?.headRequestRef;
+    const head = snapshot.requests.find(request => request.requestRef === headRef);
+    return !!this.inputRecovery.get(workspace.windowRef)?.pauseReason || head?.pauseCondition === 'user_confirmation_required';
   }
 
   resolveCaller(evidence: CallerEvidence): StoredCallerSession {
@@ -205,6 +276,8 @@ export class OctopusBroker implements ExtensionEventSink {
   closeEndpointConnection(endpointRef: string, connectionGeneration: number, reason: string): void {
     if (this.shuttingDown) return;
     if (!this.repositories.logical.disconnectEndpoint({ endpointRef, connectionGeneration, reason })) return;
+    this.inputRecovery.pauseEndpoint(endpointRef, 'extension_disconnected');
+    this.syncedPolicies.delete(endpointRef);
     this.pendingEndpointReconciliation.add(endpointRef);
     this.pauseEndpointRequests(endpointRef, 'extension_disconnected');
   }
@@ -307,7 +380,8 @@ export class OctopusBroker implements ExtensionEventSink {
       extension_state: connected ? 'connected' : 'disconnected',
       ready: this.isEndpointReady(endpoint.endpointRef) && windows.some(window => window.eligible),
       automation_paused: this.repositories.logical.getEndpointKillState(endpoint.endpointRef).killed
-        || this.repositories.logical.listActiveWorkspaces({ endpointRef: endpoint.endpointRef }).some(workspace => workspace.pauseCauses.length > 0),
+        || this.repositories.logical.listActiveWorkspaces({ endpointRef: endpoint.endpointRef }).some(workspace => workspace.pauseCauses.length > 0)
+        || this.inputRecovery.all().some(state => state.endpointRef === endpoint.endpointRef && state.pauseReason !== null),
       problem_code: connected ? null : profile?.problemCode ?? null,
       observed_at: windows.reduce((latest, window) => window.lastObservedAt > latest ? window.lastObservedAt : latest,
         [endpoint.updatedAt, instance?.observedAt ?? ''].sort().at(-1)!)
@@ -467,6 +541,7 @@ export class OctopusBroker implements ExtensionEventSink {
 
   recover(): void {
     if (this.shuttingDown) return;
+    this.inputRecovery.recover();
     const snapshot = this.repositories.requests.scanRequestRecovery();
     for (const ticket of snapshot.requests) {
       if (ticket.state === 'running' && ticket.pauseCondition === null) {
@@ -487,8 +562,17 @@ export class OctopusBroker implements ExtensionEventSink {
 
   onInventory(endpointRef: string, payload: RelayV2PayloadByType['INVENTORY_SNAPSHOT']): void {
     if (this.shuttingDown) return;
+    const inputTargets = new Map(this.inputRecovery.all().filter(state => state.endpointRef === endpointRef)
+      .map(state => [state.tabRef, this.repositories.logical.getTab(state.workspaceRef, state.tabRef)?.url]));
     const resetStreams = this.pendingEndpointReconciliation.has(endpointRef);
     const reconciled = this.reconcileInventory(endpointRef, payload, resetStreams);
+    if (reconciled) for (const state of this.inputRecovery.all().filter(item => item.endpointRef === endpointRef)) {
+      const tab = this.repositories.logical.getTab(state.workspaceRef, state.tabRef);
+      const id = tab ? Number(parsePrivate<JsonObject>(tab.privateTabKey, 'tab').tabId) : null;
+      const window = payload.windows.find(item => item.tabs.some(candidate => candidate.tabId === id));
+      if (!window?.focused || !window.tabs.find(item => item.tabId === id)?.active) this.inputRecovery.pause(state.windowRef, 'input_focus_or_target_changed');
+      else if (inputTargets.get(state.tabRef) !== tab?.url) this.inputRecovery.pause(state.windowRef, 'input_target_navigated');
+    }
     if (resetStreams && reconciled) {
       this.pendingEndpointReconciliation.delete(endpointRef);
       this.resumeEndpointPausedRequests(endpointRef, 'extension_disconnected');
@@ -559,6 +643,7 @@ export class OctopusBroker implements ExtensionEventSink {
       attachmentGeneration: 0,
       observedAt: payload.detachedAt
     });
+    this.inputRecovery.pause(tab.windowRef, 'debugger_detached');
     this.pauseTabRequests(tab.workspaceRef, tab.tabRef, 'extension_disconnected');
   }
 
@@ -631,6 +716,9 @@ export class OctopusBroker implements ExtensionEventSink {
         const target = isObject(input.target) ? input.target : {};
         tabRef = asString(target.tab_ref, 'target.tab_ref');
         this.requireTab(workspace, tabRef);
+        this.requirePolicy(workspace.endpointRef);
+        this.inputRecovery.sweep();
+        if (!isRecoveryObservation(String(input.method))) this.inputRecovery.assertAvailable(workspace.windowRef, caller.sessionRef, tabRef);
         const method = asString(input.method, 'method');
         if (!supportsCdpMethod(CONSERVATIVE_CAPABILITY_MANIFEST, method, typeof input.sessionId === 'string')) {
           throw new OctopusBrokerError(problem('CDP_METHOD_UNSUPPORTED_BY_EXTENSION', `${method} is not in the active extension capability profile.`, false, { workspace_ref: workspaceRef, tab_ref: tabRef }));
@@ -829,12 +917,33 @@ export class OctopusBroker implements ExtensionEventSink {
 
   private fenceTerminationQueue(termination: StoredRequestTicket): void {
     if (!termination.workspaceRef) return;
+    const workspace = this.repositories.logical.getWorkspace(termination.workspaceRef);
+    const input = workspace ? this.inputRecovery.get(workspace.windowRef) : null;
+    if (input && (input.workspaceRef !== termination.workspaceRef || input.ownerSessionRef !== termination.requesterSessionRef
+      || input.held.length || input.uncertain || input.pending)) return;
     const attempts = this.repositories.requests.scanRequestRecovery().attempts;
     const invalidated: string[] = [];
     for (const candidate of this.repositories.requests.scanRequestRecovery().requests) {
       if (candidate.requestRef === termination.requestRef || candidate.workspaceRef !== termination.workspaceRef
         || !['create_browser_tab', 'send_cdp_command'].includes(candidate.toolName)
         || !['queued', 'running'].includes(candidate.state)) continue;
+      if (candidate.toolName === 'send_cdp_command' && candidate.pauseCondition === 'user_confirmation_required'
+        && !this.runningWorkers.has(candidate.requestRef)) {
+        const abandoned = problem('WORKSPACE_TERMINATED', 'Workspace termination abandoned this uncertain command without replay. Its website effect may have occurred.', false, {
+          workspace_ref: termination.workspaceRef
+        });
+        const terminal = this.repositories.requests.terminalizeRequest({
+          requestRef: candidate.requestRef, state: 'failed', phase: 'termination_abandoned_uncertain_command',
+          checkpoint: checkpoint('termination_abandoned_uncertain_command', { termination_request_ref: termination.requestRef }),
+          effectMayHaveOccurred: true, problem: { ...abandoned },
+          result: { tool: candidate.toolName, kind: 'octopus_problem', problem: abandoned, debugger_error: null,
+            known_facts: { workspace_ref: termination.workspaceRef, dispatched: true, effect_may_have_occurred: true,
+              replayed: false, invalidated_by_request_ref: termination.requestRef } },
+          reasonCode: 'WORKSPACE_TERMINATED'
+        });
+        if (terminal) invalidated.push(candidate.requestRef);
+        continue;
+      }
       const dispatched = attempts.some((attempt) => attempt.requestRef === candidate.requestRef
         && (attempt.state === 'prepared' || attempt.state === 'dispatched'));
       if (dispatched || this.runningWorkers.has(candidate.requestRef)) continue;
@@ -880,13 +989,15 @@ export class OctopusBroker implements ExtensionEventSink {
   private pump(): void {
     queueMicrotask(() => {
       if (this.shuttingDown) return;
+      this.inputRecovery.sweep();
+      this.refreshPolicies();
       const snapshot = this.repositories.requests.scanRequestRecovery();
       const laneHeads = new Set(snapshot.lanes.map((lane) => lane.headRequestRef).filter((value): value is string => value !== null));
       for (const ticket of snapshot.requests) {
         if (ticket.state !== 'queued' && ticket.state !== 'running') continue;
         if (ticket.acknowledgementState !== 'delivered' || ticket.pauseCondition !== null
           || this.runningWorkers.has(ticket.requestRef)) continue;
-        if (ticket.workspaceRef !== null && ticket.tabRef !== null && !laneHeads.has(ticket.requestRef)) continue;
+        if (ticket.workspaceRef !== null && ticket.tabRef !== null && !laneHeads.has(ticket.requestRef) && !this.isRecoveryRead(ticket)) continue;
         void this.runWorker(ticket.requestRef);
       }
     });
@@ -898,6 +1009,7 @@ export class OctopusBroker implements ExtensionEventSink {
     try {
       const claim = this.repositories.requests.claimRequest({
         requestRef,
+        recoveryObservation: this.isRecoveryRead(this.repositories.requests.getRequest(requestRef)!),
         workerRef: `worker_${process.pid}`,
         leaseExpiresAt: new Date(Date.now() + this.workerLeaseMs).toISOString()
       });
@@ -1104,6 +1216,10 @@ export class OctopusBroker implements ExtensionEventSink {
 
   private async executeCreateTab(ticket: StoredRequestTicket): Promise<void> {
     const workspace = this.requireWorkspaceForTicket(ticket);
+    if (this.inputRecovery.get(workspace.windowRef)) {
+      this.inputRecovery.pause(workspace.windowRef, 'tab_creation_during_input');
+      this.inputRecovery.assertAvailable(workspace.windowRef, ticket.requesterSessionRef, 'new_tab');
+    }
     let tab: StoredManagedTab;
     let creationAttempts = 0;
     try {
@@ -1189,7 +1305,7 @@ export class OctopusBroker implements ExtensionEventSink {
       window: this.windowLocator(privateWindow) as never,
       group: privateGroup === null ? null : this.groupLocator(privateGroup) as never,
       url: null,
-      active: true,
+      active: false,
       index: null
     });
     const rawTab = this.resultObject(result, 'CREATE_TAB').tab;
@@ -1297,6 +1413,10 @@ export class OctopusBroker implements ExtensionEventSink {
       }
 
       if (attempts.length >= 3) throw lastError;
+      if (this.inputRecovery.get(windowRef)) {
+        this.inputRecovery.pause(windowRef, 'tab_creation_during_input');
+        this.inputRecovery.assertAvailable(windowRef, ticket.requesterSessionRef, 'new_tab');
+      }
       const attemptId = randomUUID();
       const attempt = this.repositories.requests.startAttempt({
         attemptRef: `att_${randomUUID()}`,
@@ -1315,7 +1435,7 @@ export class OctopusBroker implements ExtensionEventSink {
           window: this.windowLocator(privateWindow) as never,
           group: privateGroup === null ? null : this.groupLocator(privateGroup) as never,
           url: null,
-          active: true,
+          active: false,
           index: null
         });
       } catch (error) {
@@ -1453,8 +1573,29 @@ export class OctopusBroker implements ExtensionEventSink {
       return;
     }
 
+    const method = asString(args.method, 'method');
+    let inputState = this.inputRecovery.get(workspace.windowRef);
+    const observation = isRecoveryObservation(method);
+    if (!observation) {
+      if (inputState?.held.length && !isBrowserInput(method)) this.inputRecovery.pause(workspace.windowRef, 'target_change_during_input');
+      this.inputRecovery.assertAvailable(workspace.windowRef, ticket.requesterSessionRef, tab.tabRef);
+    }
+    const policy = await this.synchronizePolicy(workspace.endpointRef);
+    inputState = this.inputRecovery.get(workspace.windowRef);
+    if (!observation) this.inputRecovery.assertAvailable(workspace.windowRef, ticket.requesterSessionRef, tab.tabRef);
+    if (((inputState && observation) || this.isRecoveryRead(ticket)) && !this.requireExtensionConnection(workspace.endpointRef).browserInputPolicy) {
+      throw new OctopusBrokerError(problem('INPUT_POLICY_UNSUPPORTED', 'Update the extension before guarded recovery observation.'));
+    }
+    const currentWorkspace = this.requireWorkspaceForTicket(ticket);
+    if (currentWorkspace.ownerEpoch !== ticket.acceptedOwnerEpoch || currentWorkspace.pauseCauses.length) {
+      throw new OctopusBrokerError(problem('CONTROL_RACE_LOST', 'Workspace control changed while synchronizing browser rules.'));
+    }
     const attemptId = randomUUID();
-    const attempt = this.repositories.requests.startAttempt({
+    const attempt = this.repositories.transaction(({ requests }) => {
+      if (isBrowserInput(method)) this.inputRecovery.prepare({ windowRef: workspace.windowRef, endpointRef: workspace.endpointRef,
+        workspaceRef: workspace.workspaceRef, tabRef: tab.tabRef, ownerSessionRef: ticket.requesterSessionRef },
+        attemptId, ticket.requestRef, method, isObject(args.params) ? args.params : {});
+      const prepared = requests.startAttempt({
       attemptRef: attemptId,
       requestRef: ticket.requestRef,
       endpointRef: workspace.endpointRef,
@@ -1462,8 +1603,10 @@ export class OctopusBroker implements ExtensionEventSink {
       locatorGeneration: tab.locatorGeneration,
       attachmentGeneration,
       privateMessageRef: attemptId
+      });
+      requests.markAttemptDispatched(prepared.attemptRef);
+      return prepared;
     });
-    this.repositories.requests.markAttemptDispatched(attempt.attemptRef);
     let result: RelayV2PayloadByType['OPERATION_RESULT'];
     try {
       result = await this.requireExtensionPort().execute(workspace.endpointRef, 'SEND_CDP', {
@@ -1475,52 +1618,37 @@ export class OctopusBroker implements ExtensionEventSink {
           attachmentGeneration
         },
         tab: this.tabLocator(privateTab) as never,
+        ...(policy ? { policyRevision: policy.revision } : {}),
+        ...((inputState && observation) || this.isRecoveryRead(ticket) ? { recoveryObservation: true } : {}),
         method: asString(args.method, 'method'),
         params: (isObject(args.params) ? args.params : {}) as never,
         sessionId: typeof args.sessionId === 'string' ? args.sessionId : null
       });
-    } catch (error) {
-      if (!this.isEndpointReady(workspace.endpointRef)) {
-        this.pauseTicket(ticket, 'extension_disconnected');
-      } else {
-        this.repositories.requests.finishAttempt({
-          attemptRef: attempt.attemptRef,
-          state: 'missing',
-          outcome: { error: error instanceof Error ? error.message : 'Extension response missing.' },
-          effectClassification: 'effect_unknown'
-        });
-        this.pauseForHumanConfirmation(ticket, attemptId);
-      }
+    } catch {
+      this.inputRecovery.pause(workspace.windowRef, 'input_confirmation_lost');
+      if (!this.isEndpointReady(workspace.endpointRef)) this.pauseTicket(ticket, 'extension_disconnected');
+      else await this.reconcileCdpAttempt(ticket, workspace, tab, args, attemptId, attempt.attemptRef, attachmentGeneration);
       return;
     }
     if (result.outcome !== 'succeeded') {
       if (result.outcome === 'failed') {
-        this.repositories.requests.finishAttempt({
-          attemptRef: attempt.attemptRef,
-          state: 'completed',
-          outcome: { outcome: 'failed', error: result.error },
-          effectClassification: 'confirmed_failed'
+        this.repositories.transaction(({ requests }) => {
+          requests.finishAttempt({ attemptRef: attempt.attemptRef, state: 'completed', outcome: { outcome: 'failed', error: result.error }, effectClassification: 'confirmed_failed' });
+          this.inputRecovery.complete(attempt.attemptRef, false);
+          this.failCdpWithDebuggerError(ticket, result.error);
         });
-        this.failCdpWithDebuggerError(ticket, result.error);
       } else {
-        this.repositories.requests.finishAttempt({
-          attemptRef: attempt.attemptRef,
-          state: 'missing',
-          outcome: { outcome: result.outcome },
-          effectClassification: 'effect_unknown'
-        });
-        this.pauseForHumanConfirmation(ticket, attemptId);
+        this.inputRecovery.pause(workspace.windowRef, 'input_confirmation_lost');
+        await this.reconcileCdpAttempt(ticket, workspace, tab, args, attemptId, attempt.attemptRef, attachmentGeneration);
       }
       return;
     }
     const body = this.resultObject(result, 'SEND_CDP');
-    this.repositories.requests.finishAttempt({
-      attemptRef: attempt.attemptRef,
-      state: 'completed',
-      outcome: body,
-      effectClassification: 'confirmed_succeeded'
+    this.repositories.transaction(({ requests }) => {
+      requests.finishAttempt({ attemptRef: attempt.attemptRef, state: 'completed', outcome: body, effectClassification: 'confirmed_succeeded' });
+      this.inputRecovery.complete(attempt.attemptRef, true);
+      this.completeCdpTicket(ticket, workspace, tab, args, body);
     });
-    this.completeCdpTicket(ticket, workspace, tab, args, body);
   }
 
   private async reconcileCdpAttempt(
@@ -1573,24 +1701,19 @@ export class OctopusBroker implements ExtensionEventSink {
       return;
     }
     const outcome = reconciliation.outcome;
-    if (outcome.ok === true && isObject(outcome.output)) {
-      this.repositories.requests.finishAttempt({
-        attemptRef, state: 'completed', outcome, effectClassification: 'confirmed_succeeded'
-      });
-      this.completeCdpTicket(ticket, workspace, tab, args, outcome.output);
-      return;
-    }
-    this.repositories.requests.finishAttempt({
-      attemptRef, state: 'completed', outcome, effectClassification: 'confirmed_failed'
-    });
-    const cachedError = isObject(outcome.error) ? outcome.error : null;
-    this.failCdpWithDebuggerError(ticket, {
-      source: 'chrome_debugger',
-      code: null,
-      message: typeof cachedError?.message === 'string'
-        ? `${typeof cachedError.code === 'string' ? `${cachedError.code}: ` : ''}${cachedError.message}`
-        : 'The reconciled CDP command failed.',
-      data: cachedError === null ? null : cachedError
+    this.repositories.transaction(({ requests }) => {
+      if (outcome.ok === true && isObject(outcome.output)) {
+        requests.finishAttempt({ attemptRef, state: 'completed', outcome, effectClassification: 'confirmed_succeeded' });
+        this.inputRecovery.complete(attemptRef, true);
+        this.completeCdpTicket(ticket, workspace, tab, args, outcome.output);
+        return;
+      }
+      requests.finishAttempt({ attemptRef, state: 'completed', outcome, effectClassification: 'confirmed_failed' });
+      this.inputRecovery.complete(attemptRef, false);
+      const cachedError = isObject(outcome.error) ? outcome.error : null;
+      this.failCdpWithDebuggerError(ticket, { source: 'chrome_debugger', code: null,
+        message: typeof cachedError?.message === 'string' ? `${typeof cachedError.code === 'string' ? `${cachedError.code}: ` : ''}${cachedError.message}` : 'The reconciled CDP command failed.',
+        data: cachedError });
     });
   }
 
@@ -1619,6 +1742,9 @@ export class OctopusBroker implements ExtensionEventSink {
     ticket: StoredRequestTicket,
     debuggerError: RelayV2PayloadByType['OPERATION_RESULT']['error'] | JsonObject | null
   ): void {
+    const message = debuggerError && typeof debuggerError.message === 'string' ? debuggerError.message : '';
+    const code = PublicProblemCodes.find(candidate => message.startsWith(`${candidate}:`));
+    if (code) return this.failTicket(ticket, problem(code, message, false, { workspace_ref: ticket.workspaceRef!, tab_ref: ticket.tabRef! }));
     this.failTicket(ticket, null, {
       tool: 'send_cdp_command', kind: 'debugger_error', problem: null,
       debugger_error: debuggerError ?? { source: 'chrome_debugger', code: null, message: 'CDP command failed.', data: null },
@@ -1627,11 +1753,12 @@ export class OctopusBroker implements ExtensionEventSink {
   }
 
   private pauseForHumanConfirmation(ticket: StoredRequestTicket, privateAttemptId: string): void {
+    if (ticket.workspaceRef) this.inputRecovery.pause(this.requireWorkspaceForTicket(ticket).windowRef, 'input_confirmation_lost');
     this.repositories.requests.recordCheckpoint({
       requestRef: ticket.requestRef,
       expectedClaimGeneration: ticket.claimGeneration,
       phase: 'awaiting_human_confirmation',
-      checkpoint: checkpoint('extension_result_missing', { private_attempt_recorded: true, attempt_id_redacted: privateAttemptId.length > 0 }),
+      checkpoint: checkpoint('extension_result_missing', { input_recovery: ticket.workspaceRef ? this.inputRecovery.facts(this.requireWorkspaceForTicket(ticket).windowRef) : null, private_attempt_recorded: true, attempt_id_redacted: privateAttemptId.length > 0 }),
       pauseCondition: 'user_confirmation_required',
       reasonCode: 'USER_CONFIRMATION_REQUIRED'
     });
@@ -1652,6 +1779,7 @@ export class OctopusBroker implements ExtensionEventSink {
         newLineageRef: caller.lineageRef
       });
       if (!next) return null;
+      this.inputRecovery.transferOwner(next.workspaceRef, caller.sessionRef);
       for (const tab of logical.listWorkspaceTabs(next.workspaceRef).filter((candidate) => candidate.lifecycle === 'active')) {
         events.replaceStreamBaseline({
           tabRef: tab.tabRef,
@@ -1680,6 +1808,12 @@ export class OctopusBroker implements ExtensionEventSink {
 
   private async executeTermination(ticket: StoredRequestTicket): Promise<void> {
     let workspace = this.requireWorkspaceForTicket(ticket);
+    const input = this.inputRecovery.get(workspace.windowRef);
+    if (input && (input.workspaceRef !== workspace.workspaceRef || input.ownerSessionRef !== ticket.requesterSessionRef
+      || input.held.length || input.uncertain || input.pending)) {
+      this.inputRecovery.pause(workspace.windowRef, 'workspace_termination_during_input');
+      this.inputRecovery.assertAvailable(workspace.windowRef, ticket.requesterSessionRef, 'termination');
+    }
     const checkpointDetails = isObject(ticket.checkpoint.details) ? ticket.checkpoint.details : {};
     let claimedControlEpoch = Number(checkpointDetails.termination_control_epoch ?? 0);
     if (!Number.isInteger(claimedControlEpoch) || claimedControlEpoch <= 0) {
@@ -1770,6 +1904,7 @@ export class OctopusBroker implements ExtensionEventSink {
       succeeded: true
     });
     if (!ended) return this.failTicket(ticket, problem('CONTROL_RACE_LOST', 'Another workspace control committed first.', false, { workspace_ref: workspace.workspaceRef }));
+    this.inputRecovery.clear(workspace.windowRef);
     this.succeedTicket(ticket, {
       tool: 'terminate_workspace', disposition: 'complete', facts: {
         workspace: this.workspaceFact(ended, this.sessionForTicket(ticket)),
@@ -1893,6 +2028,9 @@ export class OctopusBroker implements ExtensionEventSink {
     if (decision !== 'restart_failed') throw new TypeError(`Unsupported resolution decision: ${decision}`);
 
     const workspace = this.requireWorkspaceForTicket(target);
+    const held = this.inputRecovery.get(workspace.windowRef);
+    if (held && (held.held.length || held.uncertain)) throw new OctopusBrokerError(problem('INPUT_RECOVERY_REQUIRED',
+      'Before restarting a failed tab, have the user finish or cancel held input and acknowledge its recovery reference with resume_workspace_automation.'));
     if (workspace.pauseCauses.includes('endpoint_killed')) return this.pauseTicket(ticket, 'endpoint_killed');
     if (workspace.pauseCauses.includes('manual_workspace_stop')) return this.pauseTicket(ticket, 'manual_workspace_stop');
     const oldTab = this.requireTab(workspace, target.tabRef!);
@@ -2050,6 +2188,7 @@ export class OctopusBroker implements ExtensionEventSink {
 
   private executeWorkspaceStop(ticket: StoredRequestTicket): void {
     const workspace = this.requireWorkspaceForTicket(ticket);
+    this.inputRecovery.pause(workspace.windowRef, 'workspace_stopped');
     const updated = this.repositories.logical.setWorkspacePauseCause({
       workspaceRef: workspace.workspaceRef,
       cause: 'manual_workspace_stop',
@@ -2067,6 +2206,17 @@ export class OctopusBroker implements ExtensionEventSink {
     const workspace = this.requireWorkspaceForTicket(ticket);
     const inventory = await this.requireExtensionPort().requestInventory(workspace.endpointRef, null);
     this.reconcileInventory(workspace.endpointRef, inventory);
+    const input = this.requestArguments(ticket).input_recovery;
+    const state = this.inputRecovery.get(workspace.windowRef);
+    if (state) {
+      this.inputRecovery.acknowledge(workspace.windowRef, workspace.workspaceRef, ticket.requesterSessionRef,
+        isObject(input) && input.user_confirmed_released === true ? input.recovery_ref : undefined);
+      const unresolved = this.repositories.requests.scanRequestRecovery().requests.some(request =>
+        request.workspaceRef === workspace.workspaceRef && request.pauseCondition === 'user_confirmation_required' && request.state === 'running');
+      if (unresolved) throw new OctopusBrokerError(problem('INPUT_RECOVERY_REQUIRED', 'Input recovery is acknowledged; resolve the uncertain website effect with resolve_browser_request, then resume.'));
+      if (workspace.pauseCauses.includes('endpoint_killed')) throw new OctopusBrokerError(problem('ENDPOINT_KILLED', 'Endpoint kill remains active. Input recovery does not clear it.'));
+      this.inputRecovery.clear(workspace.windowRef);
+    }
     const updated = this.repositories.logical.clearWorkspacePauseCause({ workspaceRef: workspace.workspaceRef, cause: 'manual_workspace_stop' });
     this.resumeWorkspacePausedRequests(updated, 'manual_workspace_stop');
     this.succeedTicket(ticket, {
@@ -2079,6 +2229,7 @@ export class OctopusBroker implements ExtensionEventSink {
 
   private executeEndpointKill(ticket: StoredRequestTicket): void {
     const endpoint = this.requireEndpointForTicket(ticket);
+    this.inputRecovery.pauseEndpoint(endpoint.endpointRef, 'endpoint_killed');
     const workspaces = this.repositories.logical.listActiveWorkspaces({ endpointRef: endpoint.endpointRef })
       .map((workspace) => this.repositories.logical.setWorkspacePauseCause({
         workspaceRef: workspace.workspaceRef, cause: 'endpoint_killed', sourceRequestRef: ticket.requestRef
@@ -2107,7 +2258,13 @@ export class OctopusBroker implements ExtensionEventSink {
   }
 
   private contextFacts(kind: string, view: JsonObject, caller: StoredCallerSession): JsonObject {
-    if (kind === 'broker') return { view_kind: 'broker', broker: { condition: 'ready', observed_at: new Date().toISOString() } };
+    this.browserRules?.refresh();
+    if (kind === 'broker') return { view_kind: 'broker', broker: { condition: 'ready', rules_diagnostic: this.browserRules?.diagnostic ?? null, observed_at: new Date().toISOString() } };
+    if (kind === 'tab') {
+      const workspace = this.requireOwnedWorkspace(caller, asString(view.workspace_ref, 'workspace_ref'));
+      const tab = this.requireTab(workspace, asString(view.tab_ref, 'tab_ref'));
+      return { view_kind: 'tab', tab: this.tabFact(tab, 'agent_created'), input_recovery: this.inputRecovery.facts(workspace.windowRef) };
+    }
     if (kind === 'endpoints') {
       const endpoints = this.repositories.logical.listEndpoints({ limit: 200 }).items;
       const conditions = Array.isArray(view.conditions) ? view.conditions : [];
@@ -2498,7 +2655,7 @@ export class OctopusBroker implements ExtensionEventSink {
     const tabs = this.repositories.logical.listWorkspaceTabs(workspace.workspaceRef).filter((tab) => tab.lifecycle === 'active');
     const connection = this.repositories.logical.getCurrentConnection(workspace.endpointRef);
     const condition = workspace.lifecycle === 'ended' ? 'terminated'
-      : workspace.pauseCauses.length > 0 ? 'paused'
+      : workspace.pauseCauses.length > 0 || this.inputRecovery.get(workspace.windowRef)?.pauseReason ? 'paused'
         : connection ? 'ready' : 'unavailable';
     return {
       workspace_ref: workspace.workspaceRef,
@@ -2506,6 +2663,7 @@ export class OctopusBroker implements ExtensionEventSink {
       window_ref: workspace.windowRef,
       parent_workspace_ref: workspace.parentWorkspaceRef,
       condition,
+      input_recovery: this.inputRecovery.facts(workspace.windowRef),
       automation_pause_reasons: workspace.pauseCauses.filter((cause) => cause === 'manual_workspace_stop' || cause === 'endpoint_killed'),
       owner_session_ref: workspace.ownerSessionRef,
       lineage_ref: workspace.lineageRef,
@@ -2523,6 +2681,7 @@ export class OctopusBroker implements ExtensionEventSink {
       adoption_source: adoptionSource,
       title: tab.title ?? '',
       url: tab.url ?? '',
+      interaction_policy: this.policyFact(tab.url ?? ''),
       active: tab.lifecycle === 'active',
       initial_event_cursor: this.activeStream(tab.tabRef).initialCursorRef
     };

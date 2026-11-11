@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:octopus-browser-relay:mcp-contract:v4",
-  "title": "Tabro MCP contract version 5",
-  "description": "Eighteen tools: thirteen durable asynchronous operations, four reads and terminal request closure. Extension-registered Profiles have broker/user launch ownership; lifecycle tickets retain authenticated requester authority. Pairing aliases are the sole public Profile names.",
+  "$id": "urn:octopus-browser-relay:mcp-contract:v6",
+  "title": "Tabro MCP contract version 6",
+  "description": "Twenty-two tools include sixteen durable asynchronous operations, five reads, and one terminal request closure. Extension-registered Profiles have broker/user launch ownership, and lifecycle tickets retain authenticated requester authority. Pairing aliases are the sole public Profile names.",
   "$defs": {
     "broker_issued_ref": {
       "type": "string",
@@ -168,6 +168,13 @@
       "properties": {
         "code": {
           "enum": [
+            "INPUT_ONLY_REQUIRED",
+            "BROWSER_RULES_INVALID",
+            "INPUT_POLICY_UNSUPPORTED",
+            "INPUT_POLICY_STALE",
+            "INPUT_BUSY",
+            "INPUT_RECOVERY_REQUIRED",
+            "INPUT_STATE_UNCERTAIN",
             "PROXY_UNSUPPORTED",
             "PROXY_BUSY",
             "PROXY_REVISION_CONFLICT",
@@ -307,6 +314,12 @@
         },
         "observed_at": {
           "$ref": "#/$defs/timestamp"
+        },
+        "rules_diagnostic": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -609,6 +622,16 @@
         },
         "updated_at": {
           "$ref": "#/$defs/timestamp"
+        },
+        "input_recovery": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/input_recovery"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -657,6 +680,9 @@
         },
         "initial_event_cursor": {
           "$ref": "#/$defs/broker_issued_cursor"
+        },
+        "interaction_policy": {
+          "$ref": "#/$defs/interaction_policy"
         }
       },
       "required": [
@@ -1061,6 +1087,26 @@
             "cursor"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "tab"
+            },
+            "workspace_ref": {
+              "$ref": "#/$defs/broker_issued_ref"
+            },
+            "tab_ref": {
+              "$ref": "#/$defs/broker_issued_ref"
+            }
+          },
+          "required": [
+            "kind",
+            "workspace_ref",
+            "tab_ref"
+          ],
+          "additionalProperties": false
         }
       ]
     },
@@ -1312,6 +1358,33 @@
             "page"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "view_kind": {
+              "const": "tab"
+            },
+            "tab": {
+              "$ref": "#/$defs/tab_fact"
+            },
+            "input_recovery": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/input_recovery"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "view_kind",
+            "tab",
+            "input_recovery"
+          ],
+          "additionalProperties": false
         }
       ]
     },
@@ -1331,7 +1404,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "5"
+          "const": "6"
         },
         "disposition": {
           "enum": [
@@ -2267,7 +2340,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "5"
+          "const": "6"
         },
         "disposition": {
           "enum": [
@@ -2785,7 +2858,33 @@
       "additionalProperties": false
     },
     "resume_workspace_automation_input": {
-      "$ref": "#/$defs/stop_workspace_automation_input"
+      "type": "object",
+      "properties": {
+        "workspace_ref": {
+          "$ref": "#/$defs/broker_issued_ref"
+        },
+        "input_recovery": {
+          "type": "object",
+          "properties": {
+            "recovery_ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "user_confirmed_released": {
+              "const": true
+            }
+          },
+          "required": [
+            "recovery_ref",
+            "user_confirmed_released"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "workspace_ref"
+      ],
+      "additionalProperties": false
     },
     "workspace_resume_facts": {
       "type": "object",
@@ -2973,7 +3072,8 @@
             "extension_disconnected",
             "user_confirmation_required",
             "manual_workspace_stop",
-            "endpoint_killed"
+            "endpoint_killed",
+            "input_recovery_required"
           ]
         },
         "paused_at": {
@@ -4820,7 +4920,7 @@
       "description": "Accepted means durable admission, not execution success. The ticket response must be delivered before dispatch; delivery failure means no dispatch and is an immediate transport bug. Rejected submissions contain no ticket or request_ref. No asynchronous input carries an agent deadline, no public tool cancels one ticket, and the broker applies no elapsed-time terminal timeout.",
       "properties": {
         "contract_version": {
-          "const": "5"
+          "const": "6"
         },
         "disposition": {
           "enum": [
@@ -7286,6 +7386,114 @@
           }
         }
       ]
+    },
+    "interaction_policy": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "standard",
+            "input_only",
+            "unavailable"
+          ]
+        },
+        "domain": {
+          "type": "string"
+        },
+        "matched_rule": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "matched_domain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "diagnostic": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "mode",
+        "domain",
+        "matched_rule",
+        "matched_domain",
+        "revision",
+        "diagnostic"
+      ],
+      "additionalProperties": false
+    },
+    "input_recovery": {
+      "type": "object",
+      "properties": {
+        "recovery_ref": {
+          "type": "string"
+        },
+        "workspace_ref": {
+          "$ref": "#/$defs/broker_issued_ref"
+        },
+        "tab_ref": {
+          "$ref": "#/$defs/broker_issued_ref"
+        },
+        "owner_session_ref": {
+          "$ref": "#/$defs/broker_issued_ref"
+        },
+        "status": {
+          "enum": [
+            "held",
+            "paused",
+            "uncertain"
+          ]
+        },
+        "pause_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "held_inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "last_confirmed_step": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pending_request_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "recovery_ref",
+        "workspace_ref",
+        "tab_ref",
+        "owner_session_ref",
+        "status",
+        "pause_reason",
+        "held_inputs",
+        "last_confirmed_step",
+        "pending_request_ref"
+      ],
+      "additionalProperties": false
     }
   }
 }

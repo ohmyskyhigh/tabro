@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MCP_ASYNC_TOOL_NAMES,
+  MCP_CONTRACT_VERSION,
   MCP_CONTRACT_SCHEMA_BUNDLE,
   MCP_IMMEDIATE_CONTROL_TOOL_NAMES,
   MCP_READ_TOOL_NAMES,
@@ -79,7 +80,7 @@ const payloadTooLargeProblem = {
 
 function rejectedOutput() {
   return {
-    contract_version: '5',
+    contract_version: '6',
     disposition: 'rejected',
     observed_at: '2026-08-31T00:00:00.000Z',
     caller,
@@ -91,7 +92,7 @@ function rejectedOutput() {
 
 function acceptedWorkspaceOutput(requestTool = 'request_browser_workspace') {
   return {
-    contract_version: '5',
+    contract_version: '6',
     disposition: 'accepted',
     observed_at: '2026-08-31T00:00:00.000Z',
     caller,
@@ -130,7 +131,10 @@ function acceptedWorkspaceOutput(requestTool = 'request_browser_workspace') {
   };
 }
 
-describe('canonical MCP contract version 5', () => {
+describe('canonical MCP contract version 6', () => {
+  it('identifies the schema bundle with the active wire version', () => {
+    expect(MCP_CONTRACT_SCHEMA_BUNDLE.$id).toBe(`urn:octopus-browser-relay:mcp-contract:v${MCP_CONTRACT_VERSION}`);
+  });
   it('publishes exactly twenty-two tools and forty-four validator roots', () => {
     expect(MCP_TOOL_NAMES).toHaveLength(22);
     expect(new Set(MCP_TOOL_NAMES).size).toBe(22);

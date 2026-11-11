@@ -66,7 +66,7 @@ export class TabGroupOperations {
     const tab = await this.api.tabs.create({
       windowId: input.window.windowId,
       url: safeUrl(input.url),
-      active: input.active ?? true,
+      active: input.active ?? false,
       ...(input.index === undefined ? {} : { index: input.index })
     });
     if (tab.id === undefined) throw new ExtensionAdapterError('TAB_ID_MISSING', 'Chrome created a tab without an identifier.');

@@ -37,6 +37,7 @@ import type { RelayRepositories, StoredTarget } from '../storage/index.js';
 import { ConnectionRegistry, type LiveExtensionConnection } from './connection-registry.js';
 import type { BootstrapGrants, ManagedConnectionClaim } from '../profiles/bootstrap-grants.js';
 import { MANAGED_EXTENSION_ID } from '../profiles/runtime-config.js';
+import { DASHBOARD_CAPABILITY_ID, type DashboardCommand } from '../../../shared/protocol/src/dashboard.js';
 
 interface BrowserHelloFacts {
   product: string;
@@ -45,7 +46,9 @@ interface BrowserHelloFacts {
 }
 
 interface PendingSocketState {
+  dashboard?: boolean;
   profileProxy?: boolean;
+  browserInputPolicy?: boolean;
   managedClaim?: ManagedConnectionClaim | undefined;
   protocolVersion?: 1 | 2;
   targetId?: string;
@@ -103,6 +106,8 @@ export interface ExtensionGatewayOptions {
  * extension port used by OctopusBroker.
  */
 export class ExtensionGateway implements CommandTransport, OctopusExtensionPort {
+  private dashboardHandler: ((endpointRef: string, command: DashboardCommand) => RelayV2PayloadByType['DASHBOARD_RESULT']['result']) | null = null;
+  setDashboardHandler(handler: (endpointRef: string, command: DashboardCommand) => RelayV2PayloadByType['DASHBOARD_RESULT']['result']): void { this.dashboardHandler = handler; }
   private readonly registry = new ConnectionRegistry();
   private readonly httpServer: Server;
   private readonly wsServer: WebSocketServer;
@@ -200,6 +205,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       connectionGeneration: connection.epoch,
       inventoryGeneration: connection.inventoryGeneration,
       profileProxy: connection.profileProxy === true,
+      browserInputPolicy: connection.browserInputPolicy === true,
       connected: connection.socket.readyState === WebSocket.OPEN
     };
   }
@@ -408,6 +414,21 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     }
     connection.lastHeartbeatAt = Date.now();
     switch (envelope.type) {
+      case 'DASHBOARD_REQUEST': {
+        const payload = (envelope as RelayV2Envelope<'DASHBOARD_REQUEST'>).payload;
+        let result: RelayV2PayloadByType['DASHBOARD_RESULT']['result'] = null;
+        let error: { code: string; message: string } | null = null;
+        try {
+          if (payload.connectionGeneration !== connection.epoch) throw new Error('STALE_CONNECTION: Reconnect before managing the Broker.');
+          if (!this.dashboardHandler) throw new Error('DASHBOARD_UNAVAILABLE: Update the local Broker to use its dashboard.');
+          result = this.dashboardHandler(connection.endpointRef!, payload.command);
+        } catch (failure) {
+          const message = failure instanceof Error ? failure.message : 'The Broker could not complete this action.';
+          error = { code: /^[A-Z_]+:/u.exec(message)?.[0].slice(0, -1) ?? 'DASHBOARD_ERROR', message: message.slice(0, 4096) };
+        }
+        this.sendV2(connection, 'DASHBOARD_RESULT', { requestId: payload.requestId, connectionGeneration: connection.epoch, result, error });
+        break;
+      }
       case 'HEARTBEAT':
         this.handleV2Heartbeat(connection, (envelope as RelayV2Envelope<'HEARTBEAT'>).payload);
         break;
@@ -448,6 +469,8 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     if (socket.readyState !== WebSocket.OPEN) return;
     state.managedClaim = payload.managedClaim;
     state.profileProxy = payload.profileProxy === 1;
+    state.browserInputPolicy = payload.browserInputPolicy === 1;
+    state.dashboard = payload.capabilityManifestIds.includes(DASHBOARD_CAPABILITY_ID);
     negotiateRelayProtocol(payload.supportedProtocolVersions);
     const browserMajorMatch = payload.browser.version.match(/\d+/);
     const selection = selectCapabilityManifest({
@@ -591,6 +614,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       endpointRef: state.endpointRef,
       protocolVersion: 2,
       profileProxy: state.profileProxy === true,
+      browserInputPolicy: state.browserInputPolicy === true,
       epoch: state.epoch,
       socket,
       connectedAt: Date.now(),
@@ -610,6 +634,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       protocolVersion: RELAY_PROTOCOL_V2
     });
     this.sendV2(connection, 'READY', {
+      ...(state.dashboard ? { dashboardVersion: 1 as const } : {}),
       endpointId: state.endpointId,
       nickname: state.alias,
       connectionGeneration: state.epoch,
