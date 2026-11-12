@@ -1,6 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/client';
@@ -271,6 +271,32 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
   } catch (error) {
     report.status = 'failed'; report.error = error instanceof Error ? error.stack : String(error);
     report.browserLog = browserLog;
+    try {
+      const data = resolve(install, 'data');
+      const config = JSON.parse(readFileSync(resolve(data, 'managed-profiles.json'), 'utf8')) as { root: string };
+      const profilesRoot = resolve(config.root, 'profiles');
+      const diagnostics: unknown[] = [];
+      report.managedExtensionDiagnostics = diagnostics;
+      for (const name of existsSync(profilesRoot) ? readdirSync(profilesRoot) : []) {
+        const portFile = resolve(profilesRoot, name, 'user-data', 'DevToolsActivePort');
+        if (!existsSync(portFile)) continue;
+        const [port, path] = readFileSync(portFile, 'utf8').trim().split(/\r?\n/u);
+        if (!/^\d+$/u.test(port ?? '') || !/^\/devtools\/browser\/[\w-]+$/u.test(path ?? '')) continue;
+        let managed: ChromeManagementConnection | undefined;
+        try {
+          managed = await ChromeManagementConnection.connect(`ws://127.0.0.1:${port}${path}`);
+          const { targetId } = await managed.send('Target.createTarget', { url: `chrome-extension://${MANAGED_EXTENSION_ID}/options.html` });
+          try {
+            const { sessionId } = await managed.send('Target.attachToTarget', { targetId, flatten: true });
+            const status = await managed.send('Runtime.evaluate', {
+              expression: "chrome.storage.local.get(['connectionStatus', 'lastError', 'transportKind'])", awaitPromise: true, returnByValue: true
+            }, String(sessionId));
+            diagnostics.push({ name, status });
+          } finally { await managed.send('Target.closeTarget', { targetId }); }
+        } catch (diagnosticError) { diagnostics.push({ name, error: String(diagnosticError) }); }
+        finally { await managed?.disconnect(); }
+      }
+    } catch (diagnosticError) { report.managedExtensionDiagnosticError = String(diagnosticError); }
     if (control) {
       try {
         const { targetId } = await control.send('Target.createTarget', { url: `chrome-extension://${MANAGED_EXTENSION_ID}/options.html` });
