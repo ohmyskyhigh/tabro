@@ -92,6 +92,7 @@ jobs:
         run: |
           $env:TABRO_QUALIFY_PACKAGE = Join-Path $env:RUNNER_TEMP 'tabro-package'
           Expand-Archive -Path "artifacts/release/$env:TABRO_ASSET.zip" -DestinationPath $env:TABRO_QUALIFY_PACKAGE
+          "TABRO_QUALIFY_PACKAGE=$env:TABRO_QUALIFY_PACKAGE" >> $env:GITHUB_ENV
           pnpm exec vitest run tests/real-world/portable-installation.test.ts
       - name: Extract the Unix archive for qualification
         if: runner.os != 'Windows'
