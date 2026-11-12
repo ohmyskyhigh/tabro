@@ -93,27 +93,6 @@ jobs:
           $env:TABRO_QUALIFY_PACKAGE = Join-Path $env:RUNNER_TEMP 'tabro-package'
           Expand-Archive -Path "artifacts/release/$env:TABRO_ASSET.zip" -DestinationPath $env:TABRO_QUALIFY_PACKAGE
           pnpm exec vitest run tests/real-world/portable-installation.test.ts
-      - name: Qualify the Hermes catalog package against the release binary
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $archive = Join-Path $env:RUNNER_TEMP 'tabro-package'
-          $version = node -p "require('./package.json').version"
-          $name = "tabro-hermes-v$version-windows-x64"
-          pnpm stage:hermes "--catalog-from=$archive" "--output=$name"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $env:TABRO_TEST_HERMES_INSTALL = '1'
-          $env:TABRO_TEST_HERMES_PACKAGE = "artifacts/release/$name"
-          $env:TABRO_TEST_HERMES_NATIVE_HOST = (Resolve-Path "artifacts/release/tabro-native-host-v$version-windows-x64.exe").Path
-          $prior = '6b0b7e526cb6d85dc3fb3d0eae63d051b5be127a'
-          git fetch --depth=1 origin refs/tags/hermes-v0.4.2
-          if ($LASTEXITCODE -ne 0 -or (git rev-parse 'FETCH_HEAD^{commit}') -cne $prior) { throw 'Unexpected Hermes preview commit.' }
-          $preview = Join-Path $env:RUNNER_TEMP 'tabro-preview'
-          git archive --format=zip "--output=$preview.zip" $prior integrations/hermes
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Expand-Archive -LiteralPath "$preview.zip" -DestinationPath $preview
-          $env:TABRO_TEST_HERMES_PRIOR_PACKAGE = Join-Path $preview 'integrations/hermes'
-          pnpm exec vitest run tests/real-world/hermes-plugin-installation.test.ts
       - name: Extract the Unix archive for qualification
         if: runner.os != 'Windows'
         shell: bash
@@ -152,6 +131,27 @@ jobs:
         run: |
           pnpm exec vitest run tests/real-world/input-only-recovery.test.ts
           node -e 'const fs=require("node:fs"); const p="artifacts/qualification/"+process.platform+"-"+process.arch+"-input-only.json"; if(JSON.parse(fs.readFileSync(p)).status!=="passed") process.exit(1)'
+      - name: Qualify the Hermes catalog package against the release binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'tabro-package'
+          $version = node -p "require('./package.json').version"
+          $name = "tabro-hermes-v$version-windows-x64"
+          pnpm stage:hermes "--catalog-from=$archive" "--output=$name"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:TABRO_TEST_HERMES_INSTALL = '1'
+          $env:TABRO_TEST_HERMES_PACKAGE = "artifacts/release/$name"
+          $env:TABRO_TEST_HERMES_NATIVE_HOST = (Resolve-Path "artifacts/release/tabro-native-host-v$version-windows-x64.exe").Path
+          $prior = '6b0b7e526cb6d85dc3fb3d0eae63d051b5be127a'
+          git fetch --depth=1 origin refs/tags/hermes-v0.4.2
+          if ($LASTEXITCODE -ne 0 -or (git rev-parse 'FETCH_HEAD^{commit}') -cne $prior) { throw 'Unexpected Hermes preview commit.' }
+          $preview = Join-Path $env:RUNNER_TEMP 'tabro-preview'
+          git archive --format=zip "--output=$preview.zip" $prior integrations/hermes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive -LiteralPath "$preview.zip" -DestinationPath $preview
+          $env:TABRO_TEST_HERMES_PRIOR_PACKAGE = Join-Path $preview 'integrations/hermes'
+          pnpm exec vitest run tests/real-world/hermes-plugin-installation.test.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

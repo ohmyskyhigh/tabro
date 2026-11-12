@@ -53,10 +53,10 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
   beforeAll(async () => {
     mkdirSync(base, { recursive: true });
     fixture = mkdtempSync(resolve(base, 'multi profile-'));
-    const localAppData = resolve(fixture, 'Local AppData');
+    const localAppData = resolve(fixture, 'Local AppData 测试');
     install = customRoot ? resolve(fixture, 'Custom runtime 测试') : resolve(localAppData, 'Tabro');
     for (const label of ['tabro-one', 'research-two']) {
-      const home = resolve(fixture, 'Hermes homes 测试', label);
+      const home = resolve(fixture, 'Hermes homes', label);
       const directory = resolve(home, 'plugins/tabro');
       const data = resolve(home, 'plugin-data/tabro-fixture');
       cpSync(plugin, directory, { recursive: true });
