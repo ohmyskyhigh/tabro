@@ -39,6 +39,12 @@ try {
     const inherited = new Set(['path', 'systemroot', 'windir', 'comspec', 'pathext', 'temp', 'tmp', 'userprofile', 'localappdata', 'appdata', 'programfiles', 'programfiles(x86)', 'programw6432', 'psmodulepath', 'username', 'userdomain', 'homedrive', 'homepath', 'home', 'user', 'logname', 'tmpdir', 'display', 'wayland_display', 'xauthority', 'xdg_runtime_dir', 'xdg_config_home', 'xdg_data_home', 'dbus_session_bus_address', 'lang', 'lc_all']);
     for (const [key, value] of Object.entries(state.desktopEnvironment ?? {})) if (inherited.has(key.toLowerCase()) && typeof value === 'string') environment[key] = value;
     for (const [key, value] of Object.entries(process.env)) if (inherited.has(key.toLowerCase())) environment[key] = value;
+    // MCP stdio clients can omit ComSpec. Chromium needs it when launching a
+    // Native Messaging host through the Windows command processor.
+    if (process.platform === 'win32' && !Object.keys(environment).some(key => key.toLowerCase() === 'comspec')) {
+      const systemRoot = process.env.SystemRoot || process.env.WINDIR;
+      if (systemRoot) environment.ComSpec = resolve(systemRoot, 'System32', 'cmd.exe');
+    }
     Object.assign(environment, { RELAY_DB_PATH: resolve(data, 'relay.sqlite'), RELAY_HOST: '127.0.0.1', RELAY_MCP_PORT: '0', RELAY_WS_PORT: '0',
       RELAY_LOG_LEVEL: 'info', TABRO_RUNTIME_FILE: runtimeFile, TABRO_NATIVE_RUNTIME_FILE: process.platform === 'win32'
         ? resolve(runtime, dirname(state.nativeHostEntry), 'relay-runtime.json') : runtimeFile, NODE_NO_WARNINGS: '1' });
