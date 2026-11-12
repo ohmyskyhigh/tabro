@@ -32,9 +32,9 @@ const setup = (profile = hermesProfiles[0]!, directory = profile.plugin, target?
   if (!nativeHost) return run('powershell.exe', ['-NoProfile', '-File', file, ...(target ? ['-InstallRoot', target] : []),
     '-NodePath', process.execPath, '-SkipNativeRegistration'], options);
   // Substitute the transport only. Setup still verifies the pinned URL, length and digest.
-  Object.assign(env, { TABRO_FIXTURE_SETUP: file, TABRO_FIXTURE_ROOT: target ?? '', TABRO_FIXTURE_NODE: process.execPath,
-    TABRO_FIXTURE_NATIVE_HOST: nativeHost });
-  return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `
+  const literal = (value: string) => "'" + value.replaceAll("'", "''") + "'";
+  const script = `
+    $env:TABRO_FIXTURE_NATIVE_HOST = ${literal(nativeHost)}
     function curl.exe {
       if ($args[-1] -cnotmatch '^https://github[.]com/ohmyskyhigh/tabro/releases/download/v[0-9.]+/tabro-native-host-v[0-9.]+-windows-x64[.]exe$') {
         throw 'Unexpected Native Host URL in test.'
@@ -42,8 +42,11 @@ const setup = (profile = hermesProfiles[0]!, directory = profile.plugin, target?
       Copy-Item -LiteralPath $env:TABRO_FIXTURE_NATIVE_HOST -Destination $args[([array]::IndexOf($args, '--output') + 1)] -ErrorAction Stop
       $global:LASTEXITCODE = 0
     }
-    & $env:TABRO_FIXTURE_SETUP -InstallRoot $env:TABRO_FIXTURE_ROOT -NodePath $env:TABRO_FIXTURE_NODE -SkipNativeRegistration
-  `], options);
+    & ${literal(file)} -InstallRoot ${literal(target ?? '')} -NodePath ${literal(process.execPath)} -SkipNativeRegistration
+  `;
+  // Windows PowerShell accepts a UTF-16LE command, independent of the console code page.
+  return run('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+    Buffer.from(script, 'utf16le').toString('base64')], options);
 };
 
 describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
