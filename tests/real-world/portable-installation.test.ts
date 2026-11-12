@@ -168,7 +168,11 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
   }
   try {
     installation = setup();
-    if (windows) expect(realpathSync(installation.mcp.env!.TABRO_INSTALL_ROOT!).toLowerCase()).toBe(realpathSync(install).toLowerCase());
+    if (windows) {
+      // The native resolver expands Windows 8.3 aliases before comparing the install roots.
+      expect(realpathSync.native(installation.mcp.env!.TABRO_INSTALL_ROOT!).toLowerCase())
+        .toBe(realpathSync.native(install).toLowerCase());
+    }
     const rulesPath = resolve(install, 'data/browser-rules.json');
     let savedRules = JSON.stringify({ schemaVersion: 1, rules: [
       { id: 'preserved', domain: 'preserved.example', mode: 'input_only' },
