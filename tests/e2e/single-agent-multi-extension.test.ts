@@ -44,7 +44,8 @@ describe('one Agent with three simulated extensions', () => {
     expect(new Set(app.store.canonical.logical.scanLogicalRecovery().activeWorkspaces.map(w => w.ownerSessionRef)).size).toBe(1);
     expect(app.store.canonical.logical.scanLogicalRecovery().activeWorkspaces).toHaveLength(3);
     expect(resolved.slice(0,2).map(r => r.workspace.workspace_ref).sort()).toEqual(preserved.sort());
-    extensions[1]!.cdpDelayMs = 800;
+    let releaseCdp!: () => void;
+    extensions[1]!.cdpGate = new Promise<void>(resolve => { releaseCdp = resolve; });
     const args = (i: number) => ({ workspace_ref: resolved[i]!.workspace.workspace_ref, target: { kind: 'tab', tab_ref: resolved[i]!.tabs[0]!.tab_ref }, method: 'Runtime.evaluate', params: { expression: 'document.title' } });
     const receipts = await Promise.all([0,1,2].map(i => call(client, 'send_cdp_command', args(i))));
     const bSecond = await call(client, 'send_cdp_command', args(1));
@@ -52,6 +53,7 @@ describe('one Agent with three simulated extensions', () => {
     expect(finished.map(t => t.state)).toEqual(['succeeded','succeeded']);
     expect(app.store.canonical.requests.getRequest(ticketRef(receipts[1]!))?.state).toBe('running');
     expect(extensions[1]!.executedCdp).toHaveLength(1);
+    releaseCdp();
     await waitTicket(client, ticketRef(bSecond)); expect(extensions[1]!.executedCdp).toHaveLength(2);
     const mixed = await call(client, 'send_cdp_command', { ...args(0), target: args(1).target });
     expect(mixed.disposition).toBe('rejected');

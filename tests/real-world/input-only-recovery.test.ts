@@ -39,12 +39,13 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   writeFileSync(rulesFile, JSON.stringify(rules));
   const token = randomBytes(32).toString('base64url');
   const trace: Json[] = [];
+  const connections: Json[] = [];
   const events: Json[] = [];
   const effects: string[] = [];
   const report: Json = { status: 'running', os: process.platform, arch: process.arch, contract: MCP_CONTRACT_VERSION,
     startedAt: new Date().toISOString(), sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceHasLocalChanges: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
-    packageManifestSha256: createHash('sha256').update(readFileSync(join(packageRoot, 'runtime-manifest.json'))).digest('hex'), checks: [] };
+    packageManifestSha256: createHash('sha256').update(readFileSync(join(packageRoot, 'runtime-manifest.json'))).digest('hex'), checks: [], connections };
   const pass = (check: string) => { (report.checks as string[]).push(check); };
   let broker: ChildProcess | null = null;
   let browser: ChildProcess | null = null;
@@ -59,6 +60,11 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   const attempts = new Map<string, Json>();
   const sockets = new Set<WebSocket>();
   let logs = '';
+  let browserLog = '';
+  const connectionEvent = (event: Json) => {
+    connections.push({ at: new Date().toISOString(), ...event });
+    if (connections.length > 200) connections.shift();
+  };
 
   const site = createServer((req, res) => {
     if (req.url === '/redirect') { res.writeHead(302, { location: `http://other.test:${sitePort}/` }).end(); return; }
@@ -97,13 +103,15 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   const workerPath = join(extensionPath, 'service-worker.js');
   writeFileSync(workerPath, `chrome.storage.local.set(${JSON.stringify({ transportMode: 'websocket', brokerUrl: `ws://127.0.0.1:${(bridge.address() as { port: number }).port}/relay` })}).then(() => {\n${readFileSync(workerPath, 'utf8')}\n});`);
   bridge.on('connection', (socket, request) => {
+    connectionEvent({ event: 'extension_connected' });
     sockets.add(socket);
     const upstream = new WebSocket(String(runtime.relayUrl), { headers: { origin: request.headers.origin ?? 'chrome-extension://caekiojlchhifdomfghejkbfpmaklafe' } });
     sockets.add(upstream);
     const waiting: string[] = [];
-    upstream.on('open', () => { for (const message of waiting.splice(0)) upstream.send(message); });
+    upstream.on('open', () => { connectionEvent({ event: 'broker_connected' }); for (const message of waiting.splice(0)) upstream.send(message); });
     socket.on('message', data => {
       const message = object(JSON.parse(data.toString()));
+      connectionEvent({ direction: 'extension_to_broker', type: message.type });
       if (message.type === 'INVENTORY_SNAPSHOT') inventoriesReceived++;
       const payload = object(message.payload);
       const command = attempts.get(String(payload.attemptId));
@@ -116,12 +124,14 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     });
     upstream.on('message', data => {
       const message = object(JSON.parse(data.toString()));
+      connectionEvent({ direction: 'broker_to_extension', type: message.type });
       if (message.type === 'SEND_CDP') { const payload = object(message.payload); trace.push(payload); attempts.set(String(payload.attemptId), payload); }
       if (socket.readyState === WebSocket.OPEN) socket.send(data.toString());
     });
-    socket.on('close', () => { sockets.delete(socket); upstream.close(); });
-    upstream.on('close', () => { sockets.delete(upstream); socket.close(); });
-    upstream.on('error', () => socket.close()); socket.on('error', () => upstream.close());
+    socket.on('close', (code, reason) => { connectionEvent({ event: 'extension_closed', code, reason: reason.toString() }); sockets.delete(socket); upstream.close(); });
+    upstream.on('close', (code, reason) => { connectionEvent({ event: 'broker_closed', code, reason: reason.toString() }); sockets.delete(upstream); socket.close(); });
+    upstream.on('error', error => { connectionEvent({ event: 'broker_error', message: error.message }); socket.close(); });
+    socket.on('error', error => { connectionEvent({ event: 'extension_error', message: error.message }); upstream.close(); });
   });
 
   async function startBroker() {
@@ -198,7 +208,8 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     await startBroker(); await connect('codex');
     browser = spawn(browserPath, [`--user-data-dir=${userData}`, '--no-first-run', '--no-default-browser-check', '--disable-background-mode',
       '--headless=new', '--window-size=1280,900', '--no-proxy-server', '--host-resolver-rules=MAP *.test 127.0.0.1', '--remote-debugging-address=127.0.0.1',
-      '--remote-debugging-port=0', '--enable-unsafe-extension-debugging', 'about:blank'], { stdio: 'ignore' });
+      '--remote-debugging-port=0', '--enable-unsafe-extension-debugging', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    browser.stderr?.on('data', data => { browserLog = (browserLog + String(data)).slice(-32_768); });
     const portFile = join(userData, 'DevToolsActivePort');
     await expect.poll(() => existsSync(portFile), { timeout: 15000 }).toBe(true);
     const [port, path] = readFileSync(portFile, 'utf8').trim().split(/\r?\n/u);
@@ -215,6 +226,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     let nickname = '';
     await expect.poll(async () => {
       const profiles = object((await call('list_browser_profiles', {})).facts).profiles as Json[];
+      report.startupProfiles = profiles;
       nickname = String(profiles.find(profile => profile.ready)?.endpoint_nickname ?? ''); return !!nickname;
     }, { timeout: 25000 }).toBe(true);
     const allocated = await execute('request_browser_workspace', { required_workspace_count: 1, designated_endpoints: [{ endpoint_nickname: nickname }] });
@@ -342,6 +354,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     report.status = 'passed';
   } catch (error) {
     report.status = 'failed'; report.error = error instanceof Error ? error.stack : String(error);
+    report.browserLog = browserLog;
     if (control && workerSession) {
       try { report.extensionStatus = await worker("chrome.storage.local.get(['connectionStatus', 'lastError', 'transportKind'])"); }
       catch (statusError) { report.extensionStatusError = String(statusError); }

@@ -63,10 +63,12 @@ describe('multi-agent / multi-extension canonical real transport path', () => {
     }
 
     for (const client of clients) {
-      const listed = await call(client, 'list_browser_profiles', {});
-      const profiles = (listed.facts as { profiles: { endpoint_nickname: string; ownership: string; ready: boolean }[] }).profiles;
-      expect(profiles.map(profile => profile.endpoint_nickname).sort()).toEqual([...aliases].sort());
-      expect(profiles.every(profile => profile.ownership === 'user' && profile.ready)).toBe(true);
+      await expect.poll(async () => {
+        const listed = await call(client, 'list_browser_profiles', {});
+        return (listed.facts as { profiles: { endpoint_nickname: string; ownership: string; ready: boolean }[] }).profiles
+          .map(({ endpoint_nickname, ownership, ready }) => ({ endpoint_nickname, ownership, ready }))
+          .sort((a, b) => a.endpoint_nickname.localeCompare(b.endpoint_nickname));
+      }, { timeout: 8_000 }).toEqual([...aliases].sort().map(endpoint_nickname => ({ endpoint_nickname, ownership: 'user', ready: true })));
     }
 
     const workspaceTickets = await Promise.all(aliases.map((alias, index) => call(

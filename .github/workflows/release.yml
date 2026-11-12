@@ -101,17 +101,37 @@ jobs:
           mkdir -p "$RUNNER_TEMP/tabro-package"
           tar -xzf "artifacts/release/$TABRO_ASSET.tar.gz" -C "$RUNNER_TEMP/tabro-package"
           echo "TABRO_QUALIFY_PACKAGE=$RUNNER_TEMP/tabro-package" >> "$GITHUB_ENV"
-      - name: Qualify Chrome and Keychain on macOS
+      - name: Qualify Chrome, Keychain and interrupted input on macOS
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          keychain="$RUNNER_TEMP/tabro-qualification.keychain-db"
-          security create-keychain -p tabro-fixture "$keychain"
-          trap 'security delete-keychain "$keychain"' EXIT
-          security list-keychains -d user -s "$keychain"
-          security default-keychain -s "$keychain"
-          security unlock-keychain -p tabro-fixture "$keychain"
-          TABRO_QUALIFY_CREDENTIALS=1 pnpm exec vitest run tests/integration/proxy-credentials.test.ts tests/real-world/portable-installation.test.ts
+          python3 - <<'PY'
+          import json, os, pathlib, shlex, subprocess
+          def security(*args):
+              return subprocess.check_output(['/usr/bin/security', *args], text=True)
+          previous_default = shlex.split(security('default-keychain', '-d', 'user'))
+          previous_search = shlex.split(security('list-keychains', '-d', 'user'))
+          keychain = str(pathlib.Path(os.environ['RUNNER_TEMP']) / 'tabro-qualification.keychain-db')
+          security('create-keychain', '-p', 'tabro-fixture', keychain)
+          try:
+              security('list-keychains', '-d', 'user', '-s', keychain, *previous_search)
+              security('default-keychain', '-d', 'user', '-s', keychain)
+              security('unlock-keychain', '-p', 'tabro-fixture', keychain)
+              security('set-keychain-settings', '-lut', '1800', keychain)
+              # Chrome also uses the default Keychain during network initialization.
+              subprocess.run(['pnpm', 'exec', 'vitest', 'run',
+                  'tests/integration/proxy-credentials.test.ts',
+                  'tests/real-world/portable-installation.test.ts',
+                  'tests/real-world/input-only-recovery.test.ts', '--maxWorkers=1'],
+                  env={**os.environ, 'TABRO_QUALIFY_CREDENTIALS': '1'}, check=True)
+              reports = list(pathlib.Path('artifacts/qualification').glob('darwin-*-input-only.json'))
+              assert len(reports) == 1 and json.loads(reports[0].read_text())['status'] == 'passed'
+          finally:
+              # Restore both settings before deleting the fixture, including on test failure.
+              security('default-keychain', '-d', 'user', '-s', *previous_default)
+              security('list-keychains', '-d', 'user', '-s', *previous_search)
+              security('delete-keychain', keychain)
+          PY
       - name: Qualify Chrome and Secret Service on Linux
         if: runner.os == 'Linux'
         shell: bash
@@ -128,6 +148,7 @@ jobs:
             TABRO_QUALIFY_CREDENTIALS=1 xvfb-run -a pnpm exec vitest run tests/integration/proxy-credentials.test.ts tests/real-world/portable-installation.test.ts
           '
       - name: Qualify domain rules and interrupted input in real Chrome
+        if: runner.os != 'macOS'
         shell: bash
         run: |
           pnpm exec vitest run tests/real-world/input-only-recovery.test.ts

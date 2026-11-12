@@ -33,19 +33,21 @@ function nextMessage(socket: WebSocket): Promise<RelayEnvelope> {
   });
 }
 
-function nextV2Message(socket: WebSocket): Promise<RelayV2Envelope> {
+function nextV2Message(socket: WebSocket, type?: RelayV2Envelope['type']): Promise<RelayV2Envelope> {
   return new Promise((resolve, reject) => {
     const onMessage = (data: WebSocket.RawData) => {
-      cleanup();
-      try { resolve(parseRelayV2Envelope(JSON.parse(data.toString()) as unknown)); }
-      catch (error) { reject(error); }
+      try {
+        const message = parseRelayV2Envelope(JSON.parse(data.toString()) as unknown);
+        if (type && message.type !== type) return;
+        cleanup(); resolve(message);
+      } catch (error) { cleanup(); reject(error); }
     };
     const onClose = () => { cleanup(); reject(new Error('Socket closed before relay-v2 message.')); };
     const cleanup = () => {
       socket.off('message', onMessage);
       socket.off('close', onClose);
     };
-    socket.once('message', onMessage);
+    socket.on('message', onMessage);
     socket.once('close', onClose);
   });
 }
@@ -187,8 +189,7 @@ describe('extension WebSocket gateway', () => {
       ok: true,
       output: { tabs: [{ title: 'fixture-a' }] }
     })));
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(broker.getCommand(admin.principal, bindingRef, receipt.commandId).state).toBe('SUCCEEDED');
+    await expect.poll(() => broker.getCommand(admin.principal, bindingRef, receipt.commandId).state).toBe('SUCCEEDED');
 
     const reconnect = new WebSocket(`ws://127.0.0.1:${port}/relay`);
     await new Promise<void>((resolve, reject) => { reconnect.once('open', () => resolve()); reconnect.once('error', reject); });
@@ -254,7 +255,8 @@ describe('extension WebSocket gateway', () => {
       Buffer.from(challenge.payload.nonce),
       { key: keys.privateKey, dsaEncoding: 'ieee-p1363' }
     ).toString('base64url');
-    const readyMessage = nextV2Message(socket);
+    const readyMessage = nextV2Message(socket, 'READY');
+    const startupInventory = nextV2Message(socket, 'INVENTORY_REQUEST');
     socket.send(JSON.stringify(createRelayV2Envelope('AUTH', {
       endpointId: paired.payload.endpointId,
       signature,
@@ -270,6 +272,12 @@ describe('extension WebSocket gateway', () => {
       requiredExtensionVersion: '0.3.0-test',
       reloadExtension: false
     });
+    const startup = await startupInventory as RelayV2Envelope<'INVENTORY_REQUEST'>;
+    socket.send(JSON.stringify(createRelayV2Envelope('INVENTORY_SNAPSHOT', {
+      attemptId: startup.payload.attemptId, connectionGeneration: ready.payload.connectionGeneration,
+      inventoryGeneration: 1, capturedAt: new Date().toISOString(),
+      browser: { product: 'Chrome', version: '140.0.0.0', userAgent: null }, windows: []
+    })));
 
     const dashboard = vi.fn(() => ({ profiles: [], marker: 'authenticated' }));
     gateway.setDashboardHandler(dashboard);
@@ -301,10 +309,7 @@ describe('extension WebSocket gateway', () => {
     const pingReceived = new Promise<void>((resolve) => socket!.once('ping', () => resolve()));
     gateway.sweepHeartbeat(10_000);
     await pingReceived;
-    for (let attempt = 0; attempt < 20 && live.lastHeartbeatAt < Date.now() - 1_000; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    expect(live.lastHeartbeatAt).toBeGreaterThan(Date.now() - 1_000);
+    await expect.poll(() => live.lastHeartbeatAt > Date.now() - 1_000).toBe(true);
     expect(socket.readyState).toBe(WebSocket.OPEN);
 
     socket.send(JSON.stringify(createRelayV2Envelope('INVENTORY_SNAPSHOT', {
@@ -324,8 +329,7 @@ describe('extension WebSocket gateway', () => {
         tabs: []
       }]
     })));
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(store.canonical.logical.listWindows(endpoint!.endpointRef)).toHaveLength(1);
+    await expect.poll(() => store.canonical.logical.listWindows(endpoint!.endpointRef)).toHaveLength(1);
     expect(gateway.connection(endpoint!.endpointRef)?.inventoryGeneration).toBe(3);
 
     const inventoryPromise = gateway.requestInventory(endpoint!.endpointRef, 3);
@@ -618,13 +622,11 @@ describe('extension WebSocket gateway', () => {
       reason: 'canceled_by_user',
       detachedAt: new Date().toISOString()
     })));
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(seen).toMatchObject({ cdp: 1, detached: 1 });
+    await expect.poll(() => seen).toMatchObject({ cdp: 1, detached: 1 });
 
     await new Promise<void>((resolve) => { socket!.once('close', resolve); socket!.close(1000, 'test complete'); });
     socket = null;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(seen.disconnected).toBe(1);
+    await expect.poll(() => seen.disconnected).toBe(1);
     expect(store.canonical.logical.getCurrentConnection(
       store.canonical.logical.getEndpointByNickname('calmreef')!.endpointRef
     )).toBeNull();

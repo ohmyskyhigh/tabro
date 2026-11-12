@@ -13,7 +13,7 @@ export async function probeDashboard(control: ChromeManagementConnection, extens
   const session = String(sessionId);
   const send = (method: string, params: Record<string, unknown> = {}) => control.send(method, params as never, session);
   const read = async (expression: string): Promise<unknown> => {
-    const result = await send('Runtime.evaluate', { expression, returnByValue: true });
+    const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     expect(result.exceptionDetails, JSON.stringify(result)).toBeUndefined();
     return (result.result as { value: unknown }).value;
   };
@@ -29,6 +29,7 @@ export async function probeDashboard(control: ChromeManagementConnection, extens
   };
   const type = async (selector: string, text: string) => {
     await click(selector);
+    await expect.poll(() => read(`document.activeElement === document.querySelector(${JSON.stringify(selector)})`)).toBe(true);
     const length = Number(await read(`document.querySelector(${JSON.stringify(selector)}).value.length`));
     // Plain keys work even when a background macOS test window does not receive menu shortcuts.
     for (const [key, code, virtualKey] of [['ArrowRight', 'ArrowRight', 39], ['Backspace', 'Backspace', 8]] as const) {
@@ -99,11 +100,17 @@ export async function probeDashboard(control: ChromeManagementConnection, extens
     expect(rules()).toEqual(original);
     checks.push('dashboard rejects stale saves without overwriting external edits and preserves the typed draft');
 
+    const desktopSize = await read('[innerWidth, innerHeight]');
     await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    await expect.poll(() => read('[innerWidth, innerHeight]')).toEqual([390, 844]);
     expect(await read('document.documentElement.scrollWidth <= innerWidth')).toBe(true);
     await screenshot('narrow');
     await send('Emulation.clearDeviceMetricsOverride');
+    await expect.poll(() => read('[innerWidth, innerHeight]')).toEqual(desktopSize);
+    // The compositor must apply the restored viewport before coordinates are used.
+    await read('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))');
     await click('#tab-connection');
+    await expect.poll(() => read('document.querySelector("#panel-connection").hidden')).toBe(false);
     await type('#pairing-code', 'CALM-REED');
     await click('#save-settings');
     await expect.poll(() => read('document.querySelector("#status").textContent'), { timeout: 15000 }).toBe('Connected');

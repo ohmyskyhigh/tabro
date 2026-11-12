@@ -34,7 +34,7 @@ export class SimulatedV2Extension {
   private readonly tabs = new Map<number, SimulatedTab>();
   private groupTitle = '';
   readonly executedCdp: string[] = [];
-  cdpDelayMs = 0;
+  cdpGate: Promise<void> | null = null;
   disconnectBeforeNextTab = false;
   private readonly keys = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   private readonly droppedAttempts = new Set<string>();
@@ -87,6 +87,8 @@ export class SimulatedV2Extension {
     });
     const challenge = await challengeNext as RelayV2Envelope<'CHALLENGE'>;
     this.connectionGeneration = challenge.payload.connectionGeneration;
+    // READY and the first inventory request can arrive in the same socket read.
+    this.socket.on('message', (data) => this.onMessage(data));
     const readyNext = this.nextMessage();
     this.send('AUTH', {
       endpointId: this.endpointId,
@@ -100,7 +102,6 @@ export class SimulatedV2Extension {
     const ready = await readyNext;
     expect(ready.type).toBe('READY');
 
-    this.socket.on('message', (data) => this.onMessage(data));
     this.sendInventory(randomUUID());
   }
 
@@ -202,7 +203,7 @@ export class SimulatedV2Extension {
         tabGeneration: message.payload.tab.tabGeneration,
         attachmentGeneration: message.payload.expected.attachmentGeneration ?? 1
       });
-      if (this.cdpDelayMs) setTimeout(respond, this.cdpDelayMs); else respond();
+      if (this.cdpGate) void this.cdpGate.then(respond); else respond();
     }
   }
 
