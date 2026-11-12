@@ -1,9 +1,11 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ChromeLauncher, matchesInstance, processUsesDataDir, type ChromeProcessIdentity } from '../../apps/broker/src/profiles/chrome-launcher.js';
+import { ChromeLauncher, chromeProcesses, matchesInstance, processUsesDataDir, type ChromeProcessIdentity } from '../../apps/broker/src/profiles/chrome-launcher.js';
 import { containedPath, profileLayout, type ProfileRuntimeConfig } from '../../apps/broker/src/profiles/runtime-config.js';
 import type { ManagedBrowserInstance, ManagedProfile } from '../../apps/broker/src/profiles/types.js';
 
@@ -26,6 +28,22 @@ describe('managed Chrome ownership', () => {
     expect(processUsesDataDir({ ...processIdentity, commandLine: 'chrome.exe --user-data-dir="C:\\Profile Data"' }, 'C:\\Profile Data')).toBe(true);
     expect(processUsesDataDir({ ...processIdentity, commandLine: 'chrome.exe --user-data-dir=C:\\Profile' }, 'C:\\Profile')).toBe(true);
   });
+  it.runIf(process.platform === 'win32')('preserves Unicode profile paths in Windows process discovery', async () => {
+    const dataDir = resolve('Tabro 装', 'Profile');
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', '--', `--user-data-dir=${dataDir}`],
+      { stdio: 'ignore', windowsHide: true });
+    await once(child, 'spawn');
+    try {
+      const identity = (await chromeProcesses()).find(row => row.pid === child.pid);
+      expect(identity).toBeDefined();
+      expect(processUsesDataDir(identity!, dataDir)).toBe(true);
+    } finally {
+      const exited = once(child, 'exit');
+      child.kill();
+      await exited;
+    }
+  }, 20_000);
+
   it('requires PID, process creation, executable and exact data directory together', () => {
     expect(matchesInstance(processIdentity, instance)).toBe(true);
     expect(matchesInstance({ ...processIdentity, createdAt: 'time2' }, instance)).toBe(false);

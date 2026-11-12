@@ -46,7 +46,8 @@ export async function chromeProcesses(): Promise<ChromeProcessIdentity[]> {
   }
   // Include Chromium derivatives and renamed executables. Ownership still
   // requires the PID, creation time, full executable path and exact data dir.
-  const script = "@(Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%--user-data-dir=%'\" | ForEach-Object { @{pid=$_.ProcessId;createdAt=$_.CreationDate.ToUniversalTime().ToString('o');executablePath=$_.ExecutablePath;commandLine=$_.CommandLine} }) | ConvertTo-Json -Compress";
+  // Windows PowerShell otherwise encodes piped JSON using the runner's console code page.
+  const script = "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); @(Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%--user-data-dir=%'\" | ForEach-Object { @{pid=$_.ProcessId;createdAt=$_.CreationDate.ToUniversalTime().ToString('o');executablePath=$_.ExecutablePath;commandLine=$_.CommandLine} }) | ConvertTo-Json -Compress";
   const { stdout } = await runFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
   const value: unknown = JSON.parse(stdout.trim() || '[]');
   const rows = Array.isArray(value) ? value : [value];
