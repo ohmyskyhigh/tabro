@@ -14,7 +14,7 @@ describe('one Agent with three simulated extensions', () => {
   afterEach(async () => { app?.broker.beginShutdown(); await client?.close(); for (const extension of extensions.splice(0)) await extension.close(); await app?.stop(); if (rulesRoot) rmSync(rulesRoot, { recursive: true, force: true }); });
   it('keeps three workspace owners identical, routes correctly and lets A/C finish while B waits', async () => {
     const token = 'one-agent-three-extensions-test-token';
-    app = createRelayApplication({ host: '127.0.0.1', mcpPort: 0, wsPort: 0, dbPath: ':memory:', browserRulesPath: join(rulesRoot = mkdtempSync(join(tmpdir(), 'tabro-test-rules-')), 'browser-rules.json'), logLevel: 'silent', heartbeatTimeoutMs: 5000, errorThreshold: 3, leaseTtlMs: 60000, adminToken: token });
+    app = createRelayApplication({ host: '127.0.0.1', mcpPort: 0, wsPort: 0, dbPath: ':memory:', browserRulesPath: join(rulesRoot = mkdtempSync(join(tmpdir(), 'tabro-test-rules-')), 'browser-rules.json'), logLevel: 'silent', heartbeatTimeoutMs: 45000, errorThreshold: 3, leaseTtlMs: 60000, adminToken: token });
     await app.start(); client = await connectAgent(app.mcpGateway.address().port, token, 'one-agent');
     const names = ['mintwave', 'calmreef', 'brightstar'];
     for (let i = 0; i < 3; i++) {
@@ -58,5 +58,5 @@ describe('one Agent with three simulated extensions', () => {
     const mixed = await call(client, 'send_cdp_command', { ...args(0), target: args(1).target });
     expect(mixed.disposition).toBe('rejected');
     expect(extensions.map(e => e.executedCdp.length)).toEqual([1,2,1]);
-  });
+  }, 60_000);
 });

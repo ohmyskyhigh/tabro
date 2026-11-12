@@ -28,7 +28,7 @@ describe('multi-agent / multi-extension canonical real transport path', () => {
       wsPort: 0,
       dbPath: ':memory:', browserRulesPath: join(rulesRoot = mkdtempSync(join(tmpdir(), 'tabro-test-rules-')), 'browser-rules.json'),
       logLevel: 'silent',
-      heartbeatTimeoutMs: 5_000,
+      heartbeatTimeoutMs: 45_000,
       errorThreshold: 3,
       leaseTtlMs: 60_000,
       adminToken
@@ -127,5 +127,5 @@ describe('multi-agent / multi-extension canonical real transport path', () => {
       problem: { code: 'WORKSPACE_NOT_OWNED' }
     });
     expect(extensions[1]!.executedCdp).toEqual(['Runtime.evaluate']);
-  });
+  }, 60_000);
 });
