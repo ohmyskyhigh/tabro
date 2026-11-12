@@ -34,7 +34,7 @@ function Get-TabroChild([string]$Root, [string]$Relative) {
 
 function Get-TabroPackage {
   $file = Join-Path $TabroPluginRoot 'runtime-manifest.json'
-  $manifest = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+  $manifest = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($manifest.schemaVersion -ne 1 -or $manifest.platform -ne 'windows-x64' -or @('5', '6') -notcontains $manifest.contractVersion) { throw 'Unsupported Tabro runtime manifest.' }
   return @{ manifest = $manifest; digest = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
@@ -42,7 +42,7 @@ function Get-TabroPackage {
 function Read-TabroState([string]$Root) {
   $file = Get-TabroChild $Root 'installation.json'
   if (-not (Test-Path -LiteralPath $file)) { throw "Tabro setup is required. Run the plugin's setup.ps1 first. Install directory: $Root" }
-  $state = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+  $state = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
   $package = Get-TabroPackage
   if ($state.schemaVersion -ne 1 -or $state.packageDigest -ne $package.digest) { throw 'Tabro plugin and installed runtime differ. Finish active browser work, stop the installed Broker and run setup.ps1 for this plugin version.' }
   $runtime = Get-TabroChild $Root ([string]$state.runtimeDirectory)
@@ -64,7 +64,7 @@ function Start-TabroRuntime($Installation) {
     $bootstrap = Start-Process -FilePath $Installation.node -ArgumentList $arguments -WindowStyle Hidden -PassThru
     if (-not $bootstrap.WaitForExit(30000)) { throw 'Tabro startup did not finish; inspect the installation logs before retrying.' }
     if (-not (Test-Path -LiteralPath $resultFile)) { throw 'Tabro startup produced no result; check the Node installation.' }
-    $result = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+    $result = Get-Content -LiteralPath $resultFile -Raw -Encoding UTF8 | ConvertFrom-Json
     Remove-Item -LiteralPath $resultFile
     if ($result.status -eq 'error') { throw $result.message }
     return $result

@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'browser-runtime.ps1')
 $data = [IO.Path]::GetFullPath($DataRoot)
 $configPath = Join-Path $data 'managed-profiles.json'
-$existingConfig = if (Test-Path -LiteralPath $configPath) { Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json } else { $null }
+$existingConfig = if (Test-Path -LiteralPath $configPath) { Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
 $configuredPath = if ($existingConfig) { [string]$existingConfig.executablePath } else { '' }
 $browser = Resolve-TabroBrowser -BrowserPath $BrowserPath -ConfiguredPath $configuredPath
 $extension = [IO.Path]::GetFullPath($ExtensionPath)

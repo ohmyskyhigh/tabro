@@ -187,7 +187,11 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     ] }, null, 2);
     expect(JSON.parse(readFileSync(rulesPath, 'utf8'))).toEqual({ schemaVersion: 1, rules: [] });
     writeFileSync(rulesPath, savedRules);
+    const managedConfigPath = resolve(install, 'data/managed-profiles.json');
+    const readManagedConfig = () => JSON.parse(readFileSync(managedConfigPath, 'utf8')) as { root: string; executablePath: string };
+    const previousConfig = readManagedConfig();
     expect(setup().broker.processId).toBe(installation.broker.processId);
+    expect(readManagedConfig()).toMatchObject({ root: previousConfig.root, executablePath: previousConfig.executablePath });
     expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
     passed('installer initializes rules and preserves edited rules on repeated setup');
     const state = JSON.parse(readFileSync(resolve(install, 'installation.json'), 'utf8')) as { runtimeDirectory: string; nodePath: string; contractVersion: string };

@@ -9,11 +9,11 @@ try {
   if (-not $locked) { throw 'Another Tabro setup or startup is in progress.' }
   $recordFile = Get-TabroChild $root 'data\runtime.json'
   if (-not (Test-Path -LiteralPath $recordFile)) { '{"status":"NOT_RUNNING"}'; return }
-  $record = Get-Content -LiteralPath $recordFile -Raw | ConvertFrom-Json
+  $record = Get-Content -LiteralPath $recordFile -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($record.schemaVersion -ne 1 -or [int]$record.processId -le 0) { throw 'Invalid runtime discovery record.' }
   $process = Get-CimInstance Win32_Process -Filter ('ProcessId=' + [int]$record.processId)
   if (-not $process) { '{"status":"NOT_RUNNING"}'; return }
-  $state = Get-Content -LiteralPath (Get-TabroChild $root 'installation.json') -Raw | ConvertFrom-Json
+  $state = Get-Content -LiteralPath (Get-TabroChild $root 'installation.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   $runtime = Get-TabroChild $root ([string]$state.runtimeDirectory)
   $entry = Join-Path $runtime 'broker\main.js'
   if ($process.Name -ne 'node.exe' -or $process.ExecutablePath -ne $state.nodePath -or -not $process.CommandLine -or $process.CommandLine.IndexOf($entry, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'Recorded PID is not this installation''s Broker; refusing to stop it.' }

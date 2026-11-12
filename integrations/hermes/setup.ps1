@@ -54,11 +54,11 @@ try {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fact.sha256) { throw "Package integrity check failed: $($fact.path)" }
   }
   if (Test-Path -LiteralPath $stateFile) {
-    $previousState = Get-Content -LiteralPath $stateFile -Raw
+    $previousState = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8
     $old = $previousState | ConvertFrom-Json
     $runtimeFile = Join-Path $data 'runtime.json'
     if ($old.packageDigest -ne $package.digest -and (Test-Path -LiteralPath $runtimeFile)) {
-      $record = Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json
+      $record = Get-Content -LiteralPath $runtimeFile -Raw -Encoding UTF8 | ConvertFrom-Json
       if (Get-Process -Id $record.processId -ErrorAction SilentlyContinue) { throw 'A different Tabro release is running. Finish browser work and stop it before setup.' }
     }
   }
@@ -72,10 +72,10 @@ try {
   }
   . (Join-Path $source 'helpers\browser-runtime.ps1')
   $configFile = Join-Path $data 'managed-profiles.json'
-  $configuredPath = if (Test-Path -LiteralPath $configFile) { [string](Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json).executablePath } else { '' }
+  $configuredPath = if (Test-Path -LiteralPath $configFile) { [string](Get-Content -LiteralPath $configFile -Raw -Encoding UTF8 | ConvertFrom-Json).executablePath } else { '' }
   $browser = Resolve-TabroBrowser -BrowserPath $BrowserPath -ConfiguredPath $configuredPath
   if ($configuredPath -and $browser.path -ne $configuredPath -and (Test-Path -LiteralPath (Join-Path $data 'runtime.json'))) {
-    $record = Get-Content -LiteralPath (Join-Path $data 'runtime.json') -Raw | ConvertFrom-Json
+    $record = Get-Content -LiteralPath (Join-Path $data 'runtime.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if (Get-Process -Id $record.processId -ErrorAction SilentlyContinue) { throw 'Stop the shared Broker before changing its browser executable.' }
   }
   foreach ($dir in @($install, $data, (Split-Path -Parent $nativeManifest))) { [void](New-Item -ItemType Directory -Path $dir -Force) }
