@@ -48,12 +48,19 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     const receipt = await call(client, tool, args);
     expect(receipt.disposition, JSON.stringify(receipt)).toBe('accepted');
     const request_ref = ticketRef(receipt);
-    let ticket: { state: string; failure: unknown; result: { facts: T } } | undefined;
-    await expect.poll(async () => {
-      const status = await call(client, 'get_browser_request', { request_ref });
-      ticket = (status.facts as { ticket: NonNullable<typeof ticket> }).ticket;
-      return ticket.state;
-    }, { timeout: 45_000, interval: 250 }).toMatch(/^(succeeded|failed|cancelled)$/u);
+    let ticket: { state: string; phase?: string; failure: unknown; result: { facts: T } } | undefined;
+    // A profile launch can take 30s for Chrome and another 120s for extension readiness.
+    const timeout = /^(create|open|stop)_browser_profile$/u.test(tool) ? 165_000 : 45_000;
+    try {
+      await expect.poll(async () => {
+        const status = await call(client, 'get_browser_request', { request_ref });
+        ticket = (status.facts as { ticket: NonNullable<typeof ticket> }).ticket;
+        return ticket.state;
+      }, { timeout, interval: 250 }).toMatch(/^(succeeded|failed|cancelled|uncertain)$/u);
+    } catch (error) {
+      report.pendingRequest = { tool, state: ticket?.state, phase: ticket?.phase };
+      throw error;
+    }
     await call(client, 'close_browser_request', { request_ref });
     if (failureCode) {
       expect(ticket!.state).toBe('failed');
@@ -317,4 +324,4 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     }
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
   }
-}, 240_000);
+}, 420_000);
