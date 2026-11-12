@@ -81,9 +81,11 @@ export class ChromeLauncher {
     const paths = profileLayout(this.config.root, profile.dataDirKey);
     mkdirSync(paths.dataDir, { recursive: true }); mkdirSync(paths.extensionDir, { recursive: true });
     if (process.platform === 'win32') {
-      const owner = /S-1-5-[\d-]+/u.exec(execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true }))?.[0];
+      // Git Bash can put its own whoami.exe ahead of the Windows utility.
+      const system32 = resolve(process.env.SystemRoot ?? process.env.WINDIR ?? 'C:/Windows', 'System32');
+      const owner = /S-1-5-[\d-]+/u.exec(execFileSync(resolve(system32, 'whoami.exe'), ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true }))?.[0];
       if (!owner) throw new ProfileError('PROFILE_PATH_INVALID');
-      execFileSync('icacls.exe', [paths.directory, '/inheritance:r', '/grant:r', `*${owner}:(OI)(CI)F`, '*S-1-5-18:(OI)(CI)F'], { windowsHide: true, stdio: 'ignore', timeout: 10_000 });
+      execFileSync(resolve(system32, 'icacls.exe'), [paths.directory, '/inheritance:r', '/grant:r', `*${owner}:(OI)(CI)F`, '*S-1-5-18:(OI)(CI)F'], { windowsHide: true, stdio: 'ignore', timeout: 10_000 });
     } else {
       privateDirectory(paths.directory);
       const manifest = this.config.nativeHostManifest!;
