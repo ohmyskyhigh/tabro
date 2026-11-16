@@ -160,7 +160,8 @@ async function install(root: string, source: string, browser?: string, customUse
   const stateFile = containedPath(root, stateName);
   const previous = existsSync(stateFile) ? readInstallation(root) : undefined;
   const desktopEnvironment = { ...previous?.desktopEnvironment };
-  for (const key of ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']) {
+  // MCP clients omit locale variables; Chrome needs the desktop locale to resolve Unicode paths on Linux.
+  for (const key of ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'LANG', 'LC_ALL', 'LC_CTYPE']) {
     if (process.env[key]) desktopEnvironment[key] = process.env[key];
   }
   const state: Installation = { schemaVersion: 1, version: manifest.version, contractVersion: manifest.contractVersion, packageDigest: hash,

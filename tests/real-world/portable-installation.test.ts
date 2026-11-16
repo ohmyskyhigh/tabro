@@ -255,6 +255,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     if (proxy) {
       await verifyBrowser(opened.profile, 'http://tabro-qualification.test/', 'Tabro authenticated proxy');
       expect(proxy.count()).toBeGreaterThan(0);
+      passed('managed Chrome sends authenticated proxy traffic using the OS credential vault');
     }
     await request('stop_browser_profile', { profile_ref });
     profile = undefined;
@@ -268,6 +269,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     await expect.poll(async () => (await profiles()).profiles.some(item => item.ownership === 'user' && item.ready), { timeout: 35_000 }).toBe(true);
     ({ profile } = await request<{ profile: Profile }>('open_browser_profile', { profile_ref }));
     expect(profile).toMatchObject({ endpoint_nickname: opened.profile.endpoint_nickname, ready: true });
+    if (proxy) await verifyBrowser(profile, 'http://tabro-qualification.test/', 'Tabro authenticated proxy');
     await request('stop_browser_profile', { profile_ref });
     profile = undefined;
     passed('Broker restart preserves rules and reconnects both user-owned and Broker-owned profiles');

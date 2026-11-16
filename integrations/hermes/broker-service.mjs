@@ -36,7 +36,7 @@ try {
     report({ status: 'already_running', ...current });
   } else {
     const environment = {};
-    const inherited = new Set(['path', 'systemroot', 'windir', 'comspec', 'pathext', 'temp', 'tmp', 'userprofile', 'localappdata', 'appdata', 'programfiles', 'programfiles(x86)', 'programw6432', 'psmodulepath', 'username', 'userdomain', 'homedrive', 'homepath', 'home', 'user', 'logname', 'tmpdir', 'display', 'wayland_display', 'xauthority', 'xdg_runtime_dir', 'xdg_config_home', 'xdg_data_home', 'dbus_session_bus_address', 'lang', 'lc_all']);
+    const inherited = new Set(['path', 'systemroot', 'windir', 'comspec', 'pathext', 'temp', 'tmp', 'userprofile', 'localappdata', 'appdata', 'programfiles', 'programfiles(x86)', 'programw6432', 'psmodulepath', 'username', 'userdomain', 'homedrive', 'homepath', 'home', 'user', 'logname', 'tmpdir', 'display', 'wayland_display', 'xauthority', 'xdg_runtime_dir', 'xdg_config_home', 'xdg_data_home', 'dbus_session_bus_address', 'lang', 'lc_all', 'lc_ctype']);
     for (const [key, value] of Object.entries(state.desktopEnvironment ?? {})) if (inherited.has(key.toLowerCase()) && typeof value === 'string') environment[key] = value;
     for (const [key, value] of Object.entries(process.env)) if (inherited.has(key.toLowerCase())) environment[key] = value;
     // MCP stdio clients can omit ComSpec. Chromium needs it when launching a
