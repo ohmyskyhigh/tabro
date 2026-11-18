@@ -35,12 +35,11 @@ interface IdentityCandidate {
   runtime: string;
 }
 
-const SESSION_CANDIDATES: readonly IdentityCandidate[] = [
+const NATIVE_SESSION_CANDIDATES: readonly IdentityCandidate[] = [
   { key: 'CODEX_THREAD_ID', source: 'codex-thread', runtime: 'codex' },
   { key: 'CODEX_SESSION_ID', source: 'codex-session', runtime: 'codex' },
   { key: 'HERMES_SESSION_ID', source: 'hermes-session', runtime: 'hermes' },
-  { key: 'HERMES_AGENT_SESSION_ID', source: 'hermes-agent-session', runtime: 'hermes' },
-  { key: 'OCTOPUS_RUNTIME_SESSION', source: 'explicit', runtime: 'mcp-agent' }
+  { key: 'HERMES_AGENT_SESSION_ID', source: 'hermes-agent-session', runtime: 'hermes' }
 ];
 
 const CODEX_PARENT_SESSION_KEYS = ['CODEX_PARENT_THREAD_ID', 'CODEX_PARENT_SESSION_ID'] as const;
@@ -68,33 +67,33 @@ export function resolveAdapterIdentity(
   createRandomId: () => string = randomUUID
 ): StdioAdapterIdentity {
   const explicitRuntime = valueOf(environment, 'OCTOPUS_RUNTIME');
-  const runtimeCandidates = explicitRuntime === 'codex'
-    ? SESSION_CANDIDATES.filter(({ runtime }) => runtime === 'codex' || runtime === 'mcp-agent')
-    : explicitRuntime === 'hermes'
-      ? SESSION_CANDIDATES.filter(({ runtime }) => runtime === 'hermes' || runtime === 'mcp-agent')
-      : SESSION_CANDIDATES;
-  const candidate = runtimeCandidates.find(({ key }) => valueOf(environment, key) !== undefined);
-  const runtimeSessionKey = candidate
-    ? valueOf(environment, candidate.key)!
-    : `stdio-${createRandomId()}`;
-  const detectedRuntime = candidate?.runtime ?? 'mcp-agent';
-  const runtimeName = explicitRuntime ?? detectedRuntime;
-  const runtimeParentKeys = explicitRuntime === 'codex'
+  // A host that explicitly supplies both values controls this chat's identity.
+  // A session value from an older configuration remains a fallback.
+  const hostSession = explicitRuntime ? valueOf(environment, 'TABRO_RUNTIME_SESSION') : undefined;
+  const candidate = hostSession ? undefined : NATIVE_SESSION_CANDIDATES.find(({ key, runtime }) =>
+    (explicitRuntime === undefined || explicitRuntime === runtime) && valueOf(environment, key) !== undefined
+  );
+  const session = candidate
+    ? valueOf(environment, candidate.key)
+    : hostSession ?? valueOf(environment, 'OCTOPUS_RUNTIME_SESSION');
+  const runtimeName = explicitRuntime ?? candidate?.runtime ?? 'mcp-agent';
+  const runtimeParentKeys = runtimeName === 'codex'
     ? CODEX_PARENT_SESSION_KEYS
-    : explicitRuntime === 'hermes'
+    : runtimeName === 'hermes'
       ? HERMES_PARENT_SESSION_KEYS
-      : [...CODEX_PARENT_SESSION_KEYS, ...HERMES_PARENT_SESSION_KEYS];
-  const parentRuntimeSessionKey = [...runtimeParentKeys, 'OCTOPUS_PARENT_RUNTIME_SESSION']
+      : [];
+  const nativeParent = hostSession ? undefined : runtimeParentKeys
     .map((key) => valueOf(environment, key))
     .find((value) => value !== undefined);
+  const parentRuntimeSessionKey = nativeParent ?? valueOf(environment, 'OCTOPUS_PARENT_RUNTIME_SESSION');
 
   return {
     runtimeName: assertHeaderValue('runtime name', runtimeName, SAFE_RUNTIME_NAME),
-    runtimeSessionKey: assertHeaderValue('runtime session key', runtimeSessionKey, SAFE_SESSION_KEY),
+    runtimeSessionKey: assertHeaderValue('runtime session key', session ?? `stdio-${createRandomId()}`, SAFE_SESSION_KEY),
     ...(parentRuntimeSessionKey === undefined
       ? {}
       : { parentRuntimeSessionKey: assertHeaderValue('parent runtime session key', parentRuntimeSessionKey, SAFE_SESSION_KEY) }),
-    source: candidate?.source ?? 'process'
+    source: candidate?.source ?? (session ? 'explicit' : 'process')
   };
 }
 

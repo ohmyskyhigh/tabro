@@ -1,0 +1,9 @@
+{
+  "name": "tabro",
+  "description": "Connect Claude Code chats to Tabro with their own browser workspace.",
+  "version": "0.6.0",
+  "author": {
+    "name": "Runkun Miao",
+    "url": "https://github.com/ohmyskyhigh"
+  }
+}

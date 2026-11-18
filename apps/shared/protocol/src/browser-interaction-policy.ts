@@ -18,7 +18,7 @@ export const BrowserRulesSchema = z.strictObject({
       try { return normalizeRuleDomain(value); }
       catch (error) { context.addIssue({ code: 'custom', message: (error as Error).message }); return z.NEVER; }
     }),
-    mode: z.literal('input_only')
+    mode: z.enum(['human_simulation', 'input_only']).transform(() => 'human_simulation' as const)
   })).max(1000)
 }).superRefine((value, context) => {
   for (const field of ['id', 'domain'] as const) {
@@ -40,7 +40,7 @@ export function effectiveBrowserPolicy(url: string, configuration: BrowserRules)
   try { domain = new URL(url).hostname.toLowerCase().replace(/\.$/u, ''); } catch { /* Unknown inventory URL. */ }
   const rule = configuration.rules.filter(candidate => domain === candidate.domain || domain.endsWith(`.${candidate.domain}`))
     .sort((a, b) => b.domain.length - a.domain.length)[0];
-  return { mode: rule ? 'input_only' as const : 'standard' as const, domain, matched_rule: rule?.id ?? null, matched_domain: rule?.domain ?? null };
+  return { mode: rule ? 'human_simulation' as const : 'standard' as const, domain, matched_rule: rule?.id ?? null, matched_domain: rule?.domain ?? null };
 }
 
 // Every baseline method is explicitly classified. Unknown methods fail closed.
@@ -67,7 +67,7 @@ export const isBrowserInput = (method: string): boolean => BROWSER_METHOD_POLICY
 export class BrowserPolicyError extends Error {
   readonly code = 'INPUT_ONLY_REQUIRED';
   constructor(method: string, domain: string, detail?: string) {
-    super(`${domain || 'This tab'} requires input-only manipulation. ${method}: ${detail ?? 'This method or parameter can change page state.'} Observe with DOM.getDocument, DOM.querySelector, DOM.getBoxModel, Accessibility.getFullAXTree or Page.captureScreenshot; act with Input.dispatchMouseEvent, Input.dispatchKeyEvent or Input.insertText. Do not repeat the blocked command. File pickers and unsupported clipboard/composition require user handoff.`);
+    super(`${domain || 'This tab'} is using Human Simulation Mode. ${method}: ${detail ?? 'This method or parameter can change page state.'} Inspect the page with Page.captureScreenshot. For a specific element use DOM.querySelector, DOM.describeNode or DOM.getBoxModel; act with Input.dispatchMouseEvent, Input.dispatchKeyEvent or Input.insertText. Do not repeat the blocked command. File pickers and unsupported clipboard/composition require user handoff.`);
   }
 }
 
@@ -92,4 +92,34 @@ export function guardedBrowserCommand(method: string, params: Record<string, unk
 export function isSideEffectRefusal(result: object): boolean {
   const exception = (result as { exceptionDetails?: unknown }).exceptionDetails;
   return exception !== undefined && /(?:possible side.effect|side.effect check|side effects? cannot|side.effect-free)/iu.test(JSON.stringify(exception));
+}
+
+/** Human Simulation relies on visual observations and read-only element inspection. */
+export function humanSimulationCommand(method: string, params: Record<string, unknown>, domain: string): Record<string, unknown> {
+  const kind = BROWSER_METHOD_POLICY[method];
+  if (kind !== 'input' && kind !== 'navigation' && !HUMAN_OBSERVATIONS.has(method)) {
+    throw new BrowserPolicyError(method, domain, 'Use a screenshot or targeted element inspection.');
+  }
+  if (method === 'DOM.getDocument' || method === 'DOM.describeNode') return { ...params, depth: Math.min(typeof params.depth === 'number' && params.depth >= 0 ? params.depth : 1, 1), pierce: false };
+  return guardedBrowserCommand(method, params, domain);
+}
+
+const HUMAN_OBSERVATIONS = new Set([
+  'Page.captureScreenshot', 'Page.getLayoutMetrics', 'Page.getFrameTree', 'Page.enable', 'Page.disable',
+  'DOM.enable', 'DOM.disable', 'DOM.getDocument', 'DOM.querySelector', 'DOM.querySelectorAll',
+  'DOM.describeNode', 'DOM.getBoxModel',
+  'Accessibility.enable', 'Accessibility.disable', 'Accessibility.getPartialAXTree', 'Accessibility.queryAXTree'
+]);
+
+/** Minimum time before the next control event in this tab. Reads bypass this timer. */
+export function humanControlInterval(method: string, params: Record<string, unknown>): number {
+  if (BROWSER_METHOD_POLICY[method] === 'navigation') return 220;
+  if (method === 'Input.dispatchMouseEvent') {
+    if (params.type === 'mouseMoved') return 32;
+    if (params.type === 'mousePressed') return 72;
+    if (params.type === 'mouseWheel') return 90;
+    return 150;
+  }
+  if (method === 'Input.dispatchKeyEvent') return params.type === 'keyUp' ? 100 : 64;
+  return method === 'Input.insertText' ? 160 : 0;
 }

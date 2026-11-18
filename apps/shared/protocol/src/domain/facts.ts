@@ -127,7 +127,7 @@ export interface TabFacts {
 }
 
 export interface InteractionPolicyFacts {
-  readonly mode: 'standard' | 'input_only' | 'unavailable';
+  readonly mode: 'standard' | 'human_simulation' | 'unavailable';
   readonly domain: string;
   readonly matched_rule: string | null;
   readonly matched_domain: string | null;

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:octopus-browser-relay:mcp-contract:v6",
-  "title": "Tabro MCP contract version 6",
+  "$id": "urn:octopus-browser-relay:mcp-contract:v7",
+  "title": "Tabro MCP contract version 7",
   "description": "Twenty-two tools include sixteen durable asynchronous operations, five reads, and one terminal request closure. Extension-registered Profiles have broker/user launch ownership, and lifecycle tickets retain authenticated requester authority. Pairing aliases are the sole public Profile names.",
   "$defs": {
     "broker_issued_ref": {
@@ -1404,7 +1404,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "6"
+          "const": "7"
         },
         "disposition": {
           "enum": [
@@ -2340,7 +2340,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "6"
+          "const": "7"
         },
         "disposition": {
           "enum": [
@@ -4907,7 +4907,35 @@
       "type": "object",
       "properties": {
         "ticket": {
-          "$ref": "#/$defs/queued_request_ticket"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/queued_request_ticket"
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/request_ticket"
+                },
+                {
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "running",
+                        "uncertain"
+                      ]
+                    },
+                    "request": {
+                      "properties": {
+                        "tool": {
+                          "const": "request_browser_workspace"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
         }
       },
       "required": [
@@ -4920,7 +4948,7 @@
       "description": "Accepted means durable admission, not execution success. The ticket response must be delivered before dispatch; delivery failure means no dispatch and is an immediate transport bug. Rejected submissions contain no ticket or request_ref. No asynchronous input carries an agent deadline, no public tool cancels one ticket, and the broker applies no elapsed-time terminal timeout.",
       "properties": {
         "contract_version": {
-          "const": "6"
+          "const": "7"
         },
         "disposition": {
           "enum": [
@@ -7393,7 +7421,7 @@
         "mode": {
           "enum": [
             "standard",
-            "input_only",
+            "human_simulation",
             "unavailable"
           ]
         },

@@ -183,11 +183,11 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       rmSync(operation);
     }
   }
-  async function connect(runtimeName: 'codex' | 'hermes') {
-    await client?.close(); client = new Client({ name: `input-qualification-${runtimeName}`, version: '1' });
+  async function connect(runtimeName: 'codex' | 'hermes', session: string = runtimeName) {
+    await client?.close(); client = new Client({ name: `input-qualification-${session}`, version: '1' });
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(installedRuntime, 'adapter/main.js')],
       env: { ...getDefaultEnvironment(), TABRO_RUNTIME_FILE: runtimeFile, TABRO_TOKEN: token,
-        TABRO_RUNTIME: runtimeName, TABRO_RUNTIME_SESSION: `input-qualification-${runtimeName}` }, stderr: 'pipe' }));
+        TABRO_RUNTIME: runtimeName, TABRO_RUNTIME_SESSION: `input-qualification-${session}` }, stderr: 'pipe' }));
     const tools = await client.listTools();
     expect(tools.tools.find(tool => tool.name === 'send_cdp_command')?.description).toContain('INPUT_ONLY_REQUIRED');
   }
@@ -210,7 +210,10 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     const ticket = await cdp(method, params); return object(object(object(object(ticket.result).facts).command).result);
   }
   async function read(expression: string): Promise<unknown> {
-    const result = await raw('Runtime.evaluate', { expression, returnByValue: true });
+    // The test harness reads actual browser state outside the Tabro action path.
+    const browserTab = object(trace.at(-1)?.tab).tabId;
+    expect(typeof browserTab).toBe('number');
+    const result = object(await worker(`chrome.debugger.sendCommand({tabId:${Number(browserTab)}},'Runtime.evaluate',${JSON.stringify({ expression, returnByValue: true, throwOnSideEffect: true })})`));
     expect(result.exceptionDetails, JSON.stringify(result)).toBeUndefined();
     return object(result.result).value;
   }
@@ -327,6 +330,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     const pausedBrowserTabId = object(trace[beforeCrash - 1]!.tab).tabId;
     for (const separateWorkspace of [false, true]) {
       if (separateWorkspace) {
+        await connect('codex', 'independent-workspace');
         const allocation = await execute('request_browser_workspace', { required_workspace_count: 1,
           designated_endpoints: [{ endpoint_nickname: nickname, window_ref: object(resolved.workspace).window_ref }] });
         const next = (object(object(allocation.result).facts).resolved as Json[])[0]!;
@@ -343,7 +347,10 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       await click('#button'); expect(await read('fixture.clicks')).toBe(1);
       await click('#text'); await cdp('Input.insertText', { text: 'new tab works' });
       expect(await read('document.querySelector("#text").value')).toBe('new tab works');
-      if (separateWorkspace) await execute('terminate_workspace', { workspace_ref: workspace });
+      if (separateWorkspace) {
+        await execute('terminate_workspace', { workspace_ref: workspace });
+        await connect('codex');
+      }
       workspace = pausedWorkspace; tab = pausedTab;
       expect((await context()).input_recovery).toEqual(recovery);
       expect((await call('send_cdp_command', { workspace_ref: workspace, target: { kind: 'tab', tab_ref: tab },

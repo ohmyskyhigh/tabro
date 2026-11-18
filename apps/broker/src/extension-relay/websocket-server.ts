@@ -499,7 +499,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     if (socket.readyState !== WebSocket.OPEN) return;
     state.managedClaim = payload.managedClaim;
     state.profileProxy = payload.profileProxy === 1;
-    state.browserInputPolicy = payload.browserInputPolicy === 1;
+    state.browserInputPolicy = payload.browserInputPolicy === 2;
     state.dashboard = payload.capabilityManifestIds.includes(DASHBOARD_CAPABILITY_ID);
     negotiateRelayProtocol(payload.supportedProtocolVersions);
     const browserMajorMatch = payload.browser.version.match(/\d+/);

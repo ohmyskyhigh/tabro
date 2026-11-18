@@ -297,10 +297,12 @@ export class McpGateway {
       if (acceptedRequestRef !== null) this.queueAcknowledgement(acceptedRequestRef);
       return result;
     } catch (error) {
-      if (acceptedRequestRef !== null) this.broker.confirmAcknowledgement(acceptedRequestRef, false);
+      if (acceptedRequestRef !== null && !this.queuedDeliveries.has(acceptedRequestRef)) this.broker.confirmAcknowledgement(acceptedRequestRef, false);
       throw error;
     }
   }
+
+  private readonly queuedDeliveries = new Map<string, number>();
 
   private queueAcknowledgement(requestRef: string): void {
     const context = this.delivery.getStore();
@@ -308,6 +310,7 @@ export class McpGateway {
       throw new Error('Accepted MCP ticket was constructed outside an HTTP response delivery context.');
     }
     context.acknowledgements.push({ requestRef });
+    this.queuedDeliveries.set(requestRef, (this.queuedDeliveries.get(requestRef) ?? 0) + 1);
   }
 
   private confirmAfterResponseHandoff(response: ServerResponse, acknowledgements: PendingAcknowledgement[]): void {
@@ -330,7 +333,11 @@ export class McpGateway {
   private confirmAll(acknowledgements: PendingAcknowledgement[], delivered: boolean): void {
     for (const acknowledgement of acknowledgements) {
       try {
-        this.broker.confirmAcknowledgement(acknowledgement.requestRef, delivered);
+        const { requestRef } = acknowledgement;
+        const remaining = (this.queuedDeliveries.get(requestRef) ?? 1) - 1;
+        if (remaining > 0) this.queuedDeliveries.set(requestRef, remaining);
+        else this.queuedDeliveries.delete(requestRef);
+        if (delivered || remaining === 0) this.broker.confirmAcknowledgement(requestRef, delivered);
       } catch (error) {
         this.reportError(error instanceof Error ? error : new Error('Unknown acknowledgement error.'));
       }

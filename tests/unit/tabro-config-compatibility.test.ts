@@ -32,7 +32,7 @@ describe('Tabro configuration compatibility', () => {
       writeFileSync(tokenFile, 'file-token-long-enough');
       expect(loadStdioAdapterConfig({ OCTOPUS_BROWSER_RELAY_TOKEN_FILE: tokenFile, TABRO_TOKEN: 'inherited-token-long-enough' }).bearerToken)
         .toBe('file-token-long-enough');
-      expect(resolveAdapterIdentity({ TABRO_RUNTIME: 'hermes', CODEX_THREAD_ID: 'inherited-codex', HERMES_SESSION_ID: 'hermes-owner', TABRO_RUNTIME_SESSION: 'fallback' }))
+      expect(resolveAdapterIdentity({ TABRO_RUNTIME: 'hermes', CODEX_THREAD_ID: 'inherited-codex', HERMES_SESSION_ID: 'hermes-owner', OCTOPUS_RUNTIME_SESSION: 'fallback' }))
         .toMatchObject({ runtimeName: 'hermes', runtimeSessionKey: 'hermes-owner', source: 'hermes-session' });
     } finally {
       rmSync(root, { recursive: true, force: true });

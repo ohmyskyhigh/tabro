@@ -402,7 +402,7 @@ export class RelayClient {
     }
     this.sendEnvelope(createRelayV2Envelope('HELLO', {
       profileProxy: 1,
-      browserInputPolicy: 1,
+      browserInputPolicy: 2,
       ...(this.managedClaim ? { managedClaim: this.managedClaim } : {}),
       ...(identity.endpointId ? { endpointId: identity.endpointId } : {}),
       ...(identity.pairingCode ? { pairingCode: identity.pairingCode } : {}),

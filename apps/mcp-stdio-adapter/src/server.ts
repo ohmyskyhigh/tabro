@@ -8,6 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import {
   MCP_TOOL_CATALOG,
   MCP_CONTRACT_VERSION,
+  MCP_TOOL_NAMES,
   mcpToolInputJsonSchemas,
   mcpToolOutputJsonSchemas,
   parseMcpToolInput,
@@ -38,16 +39,7 @@ const objectRootOutputSchema = (tool: McpToolName): Record<string, unknown> => (
   type: 'object'
 });
 
-/**
- * Bridges one agent-owned stdio MCP process to the local HTTP broker. The
- * remote HTTP acknowledgement proves delivery to this adapter process; MCP
- * has no transaction spanning that handoff and the subsequent stdout write.
- * Consequently, a process crash in that narrow interval can dispatch a ticket
- * whose acknowledgement the agent runtime did not receive. The broker-issued
- * request_ref remains the only request identity and is never synthesized here.
- */
-export async function startStdioAdapter(config: StdioAdapterConfig): Promise<RunningStdioAdapter> {
-  const trace = createDemoTrace(config.demoTrace, config.identity.runtimeSessionKey, config.bearerToken);
+function brokerConnection(config: StdioAdapterConfig) {
   const requestHeaders: Record<string, string> = {
     'x-octopus-contract-version': MCP_CONTRACT_VERSION,
     ...(config.machineSecret ? {} : { Authorization: `Bearer ${config.bearerToken}` }),
@@ -98,7 +90,43 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
     })();
     try { await connecting; } finally { connecting = undefined; }
   };
-  await ensureConnection();
+  return {
+    connect: ensureConnection,
+    callTool: async (name: McpToolName, args: Record<string, unknown>) => {
+      await ensureConnection();
+      return remoteClient!.callTool({ name, arguments: args });
+    },
+    close: async () => { await remoteClient?.close(); }
+  };
+}
+
+export async function callTabro(config: StdioAdapterConfig, name: string, input: unknown): Promise<unknown> {
+  if (config.identity.source === 'process') {
+    throw new Error('A one-shot Tabro call requires an identity from the current chat.');
+  }
+  if (!MCP_TOOL_NAMES.includes(name as McpToolName)) throw new Error(`Unknown Tabro tool: ${name}`);
+  const tool = name as McpToolName;
+  const args = parseMcpToolInput(tool, input) as Record<string, unknown>;
+  const broker = brokerConnection(config);
+  try {
+    const result = await broker.callTool(tool, args);
+    if (result.isError) throw new Error(JSON.stringify(result.content));
+    return parseMcpToolOutput(tool, result.structuredContent);
+  } finally { await broker.close(); }
+}
+
+/**
+ * Bridges one agent-owned stdio MCP process to the local HTTP broker. The
+ * remote HTTP acknowledgement proves delivery to this adapter process; MCP
+ * has no transaction spanning that handoff and the subsequent stdout write.
+ * Consequently, a process crash in that narrow interval can dispatch a ticket
+ * whose acknowledgement the agent runtime did not receive. The broker-issued
+ * request_ref remains the only request identity and is never synthesized here.
+ */
+export async function startStdioAdapter(config: StdioAdapterConfig): Promise<RunningStdioAdapter> {
+  const trace = createDemoTrace(config.demoTrace, config.identity.runtimeSessionKey, config.bearerToken);
+  const broker = brokerConnection(config);
+  await broker.connect();
 
   const server = new McpServer({
     name: 'tabro',
@@ -115,11 +143,7 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
       const callId = randomUUID();
       trace?.({ kind: 'call', callId, tool: definition.name, input });
       // Reconnect before dispatch when discovery changes. Never retry a dispatched mutation.
-      await ensureConnection();
-      const result = await remoteClient!.callTool({
-        name: definition.name,
-        arguments: input as Record<string, unknown>
-      });
+      const result = await broker.callTool(definition.name, input as Record<string, unknown>);
       try { trace?.({ kind: 'result', callId, tool: definition.name, result: result.structuredContent ?? null, isError: result.isError ?? false }); }
       catch (error) { console.error('Demo trace write failed after MCP execution:', error instanceof Error ? error.message : String(error)); }
       if (!result.isError && result.structuredContent !== undefined) {
@@ -140,14 +164,14 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
   try {
     await server.connect(stdioTransport);
   } catch (error) {
-    await remoteClient!.close();
+    await broker.close();
     throw error;
   }
 
   let closing: Promise<void> | null = null;
   return {
     close: () => {
-      closing ??= Promise.allSettled([server.close(), remoteClient!.close()]).then((results) => {
+      closing ??= Promise.allSettled([server.close(), broker.close()]).then((results) => {
         const rejection = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
         if (rejection) throw rejection.reason;
       });

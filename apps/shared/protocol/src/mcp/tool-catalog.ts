@@ -1,4 +1,4 @@
-export const MCP_CONTRACT_VERSION = '6' as const;
+export const MCP_CONTRACT_VERSION = '7' as const;
 
 export const MCP_ASYNC_TOOL_NAMES = [
   'set_browser_proxy',
@@ -79,9 +79,9 @@ const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
   open_browser_profile: 'Ensure one broker-owned Profile is running and its authenticated extension is ready. User-owned Profiles must be opened manually, then accessed through a workspace.',
   stop_browser_profile: 'Normally close a broker-owned Profile after checking active work, retaining its browser data and identity. Does not close user-owned Chrome.',
   get_browser_context: 'Read one narrow, paginated broker, endpoint, window, capability, workspace, tab, or request-summary view.',
-  request_browser_workspace: 'Acquire an exact number of logical workspaces on distinct eligible browser-profile endpoints. Initial tabs open in the background; prefer reusing the workspace. Explicit Page.bringToFront remains available when the website needs foreground activation.',
+  request_browser_workspace: 'Acquire an exact number of logical workspaces on distinct eligible browser-profile endpoints. Initial tabs open in the background; Codex, CC and DSH chats reuse one workspace. Explicit Page.bringToFront remains available when the website needs foreground activation.',
   create_browser_tab: 'Create and register one managed tab in an owned workspace without selecting it, even when another tab requires input recovery. Background work is preferred; use Page.bringToFront explicitly when needed.',
-  send_cdp_command: 'Submit one supported CDP command to a managed tab. Prefer background work; explicitly use Page.bringToFront when the website needs activation or foreground input, avoiding repeated activation or automatic focus restoration. On configured input-only domains, observe using guarded JavaScript, DOM, accessibility or screenshots; manipulate with Input.dispatchMouseEvent, Input.dispatchKeyEvent or Input.insertText. INPUT_ONLY_REQUIRED supplies alternatives. Input recovery restricts only the affected tab to guarded observations; other tabs remain usable. Never replay an uncertain gesture or automatically release held input.',
+  send_cdp_command: 'Submit one supported CDP command to a managed tab. Prefer background work; explicitly use Page.bringToFront when the website needs activation or foreground input, avoiding repeated activation or automatic focus restoration. On Human Simulation Mode domains, use screenshots for context and read-only DOM commands only to inspect specific elements. Tabro paces Input.dispatchMouseEvent, Input.dispatchKeyEvent and Input.insertText. Use separate move, press and release events. INPUT_ONLY_REQUIRED supplies alternatives. Input recovery restricts only the affected tab to guarded observations; other tabs remain usable. Never replay an uncertain gesture or automatically release held input.',
   read_cdp_events: 'Read retained raw CDP events from a required broker-issued tab cursor.',
   get_browser_request: 'Read one authority-visible request ticket by its broker-issued reference.',
   take_over_workspace: 'Transfer one exactly identified workspace and its owner-governed public tickets.',

@@ -178,7 +178,7 @@ const DebuggerErrorSchema = z.strictObject({
 export const relayV2PayloadSchemas = {
   HELLO: z.strictObject({
     profileProxy: z.literal(1).optional(),
-    browserInputPolicy: z.literal(1).optional(),
+    browserInputPolicy: z.union([z.literal(1), z.literal(2)]).optional(),
     managedClaim: z.strictObject({
       instanceRef: z.string().regex(/^ins_[0-9a-f-]{36}$/u),
       generation: PositiveGenerationSchema,

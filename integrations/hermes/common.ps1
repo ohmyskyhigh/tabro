@@ -55,7 +55,7 @@ function Get-TabroChild([string]$Root, [string]$Relative) {
 function Get-TabroPackage {
   $file = Join-Path $TabroPluginRoot 'runtime-manifest.json'
   $manifest = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($manifest.schemaVersion -ne 1 -or $manifest.platform -ne 'windows-x64' -or @('5', '6') -notcontains $manifest.contractVersion) { throw 'Unsupported Tabro runtime manifest.' }
+  if ($manifest.schemaVersion -ne 1 -or $manifest.platform -ne 'windows-x64' -or @('5', '6', '7') -notcontains $manifest.contractVersion) { throw 'Unsupported Tabro runtime manifest.' }
   return @{ manifest = $manifest; digest = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
 

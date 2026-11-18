@@ -31,7 +31,7 @@ describe('domain input-only policy', () => {
   it('classifies every advertised method and refuses unknown mutations', () => {
     expect(Object.keys(BROWSER_METHOD_POLICY).sort()).toEqual(CONSERVATIVE_CAPABILITY_MANIFEST.cdpMethods.map(item => item.method).sort());
     for (const method of ['DOM.focus', 'DOM.setFileInputFiles', 'DOM.setAttributeValue', 'Input.setIgnoreInputEvents', 'Network.setCacheDisabled', 'Emulation.setDeviceMetricsOverride', 'Unknown.execute']) {
-      expect(() => guardedBrowserCommand(method, {}, 'example.com')).toThrow(/input-only/u);
+      expect(() => guardedBrowserCommand(method, {}, 'example.com')).toThrow(/Human Simulation Mode/u);
     }
   });
   it('forces observation guards and refuses action-like parameters', () => {

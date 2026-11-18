@@ -10,7 +10,7 @@ The adapter publishes the canonical twenty-two Tabro tools over stdio and forwar
 
 ### Runtime session evidence prefers host IDs and otherwise lasts for one process
 
-Session lookup prefers `CODEX_THREAD_ID`, `CODEX_SESSION_ID`, `HERMES_SESSION_ID`, and `HERMES_AGENT_SESSION_ID`, in that order. `TABRO_RUNTIME_SESSION` is an explicit fallback. If none exists, the adapter creates a random value once at startup and retains it for that process lifetime. Parent-session equivalents are forwarded when present.
+A host can set `TABRO_RUNTIME` and `TABRO_RUNTIME_SESSION` together to identify the active chat. That pair takes precedence over inherited native IDs. Without the pair, the adapter prefers matching Codex and Hermes session IDs, then an explicit fallback, then a process-local identity. For Codex, CC and DSH, the Broker reuses one workspace per chat across adapter processes. [Host integrations](../../GETTING_STARTED.md#codex-claude-code-and-dsh-pass-a-real-chat-id-to-the-shared-broker) pass the real ID outside tool arguments.
 
 ## Configuration
 

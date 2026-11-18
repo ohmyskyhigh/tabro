@@ -15,7 +15,7 @@ describe('one Agent with three simulated extensions', () => {
   it('keeps three workspace owners identical, routes correctly and lets A/C finish while B waits', async () => {
     const token = 'one-agent-three-extensions-test-token';
     app = createRelayApplication({ host: '127.0.0.1', mcpPort: 0, wsPort: 0, dbPath: ':memory:', browserRulesPath: join(rulesRoot = mkdtempSync(join(tmpdir(), 'tabro-test-rules-')), 'browser-rules.json'), logLevel: 'silent', heartbeatTimeoutMs: 45000, errorThreshold: 3, leaseTtlMs: 60000, adminToken: token });
-    await app.start(); client = await connectAgent(app.mcpGateway.address().port, token, 'one-agent');
+    await app.start(); client = await connectAgent(app.mcpGateway.address().port, token, 'one-agent', 'mcp-agent');
     const names = ['mintwave', 'calmreef', 'brightstar'];
     for (let i = 0; i < 3; i++) {
       const extension = new SimulatedV2Extension(['A','B','C'][i]!, 100 + i, 200 + i, 300 + i * 10);
@@ -35,6 +35,7 @@ describe('one Agent with three simulated extensions', () => {
     expect((await waitTicket(client, ticketRef(await call(client, 'terminate_workspace', { workspace_ref: duplicateWorkspace.workspaceRef })))).state).toBe('succeeded');
     extensions[2]!.disconnectBeforeNextTab = true;
     const accepted = await call(client, 'request_browser_workspace', { required_workspace_count: 3, designated_endpoints: names.map(endpoint_nickname => ({ endpoint_nickname })) });
+    expect(accepted.disposition, JSON.stringify(accepted)).toBe('accepted');
     await waitFor(() => app.store.canonical.requests.getRequest(ticketRef(accepted))?.pauseCondition === 'extension_disconnected');
     const preserved = app.store.canonical.logical.scanLogicalRecovery().activeWorkspaces.filter(w => w.endpointRef !== app.store.canonical.logical.getEndpointByNickname(names[2]!)!.endpointRef).map(w => w.workspaceRef);
     expect(preserved).toHaveLength(2);

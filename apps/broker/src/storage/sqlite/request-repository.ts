@@ -120,6 +120,13 @@ export class SqliteRequestRepository implements RequestRepository {
     return row ? toRequest(row) : null;
   }
 
+  pendingWorkspaceRequest(sessionRef: string): StoredRequestTicket | null {
+    const row = this.db.prepare(`SELECT * FROM request_tickets WHERE requester_session_ref = ?
+      AND tool_name = 'request_browser_workspace' AND publicly_visible = 1
+      AND state IN ('queued','running','uncertain') ORDER BY accepted_at, request_ref LIMIT 1`).get(sessionRef) as Row | undefined;
+    return row ? toRequest(row) : null;
+  }
+
   listVisibleRequests(input: Parameters<RequestRepository['listVisibleRequests']>[0]): Page<StoredRequestTicket> {
     const limit = pageLimit(input.page.limit);
     const clauses = [`authority_lineage_ref = ?`, `publicly_visible = 1`, `closed_at IS NULL`, `request_ref > ?`];

@@ -275,12 +275,12 @@ dist/                   生成的构建输出
 
 ### 指定域名可要求输入操作并保留页面观察能力
 
-契约 6 的源码实现支持持久化 `data/browser-rules.json`，由 Codex 和 Hermes 共用。域名自动覆盖子域名和全部路径；页面操作使用鼠标和键盘输入，观察可使用受保护的 JavaScript、DOM、辅助功能树和截图。配置格式见 [设置说明](./GETTING_STARTED.md#domain-rules)，发布验收状态见 [实施计划](./doc/80-Plans/domain-input-only-rules-2026-11-10/README.md)。
+为域名打开 **Human Simulation Mode** 后，Tabro 会给同一标签页的 CDP 控制事件留出间隔。先用截图观察，需要检查特定元素时再查询只读 DOM。已有的 `input_only` 规则仍覆盖原有域名、子域名和路径。[规则配置](./GETTING_STARTED.md#domain-rules) · [Codex、CC 和 DSH 接入](./GETTING_STARTED.md#codex-claude-code-and-dsh-pass-a-real-chat-id-to-the-shared-broker)
 
 ## 扩展控制面板
 
 ### 从扩展查看连接信息、Profile 状态和网站规则
 
-点击 **Tabro 工具栏图标**或打开**扩展选项**即可进入控制面板。**Connection** 显示配对码、Profile 别名和实时连接状态，可修改连接设置并重连。**Broker management** 只读展示 Profile 列表和状态，并支持新增、编辑、删除 input-only 域名规则。规则与 Codex、Hermes 共用同一持久化文件；发生编辑冲突时，须刷新后再保存。操作见[控制面板设置](./GETTING_STARTED.md#extension-dashboard)。此功能已加入源码构建；对应安装包发布后须一起升级 Broker 和扩展。
+点击 **Tabro 工具栏图标**或打开**扩展选项**即可进入控制面板。**Connection** 显示配对码、Profile 别名和实时连接状态，可修改连接设置并重连。**Broker management** 只读展示 Profile 列表和状态，并支持新增、编辑、删除 Human Simulation Mode 域名规则。规则与 Codex、Hermes 共用同一持久化文件；发生编辑冲突时，须刷新后再保存。操作见[控制面板设置](./GETTING_STARTED.md#extension-dashboard)。此功能已加入源码构建；对应安装包发布后须一起升级 Broker 和扩展。
 
-Profile 列表分别显示 **Connection** 和 **Automation**：连接正常时自动化仍可能暂停，连接失败会显示错误。新标签页默认在后台打开；网站需要前台才能启动或接收输入时，Agent 可显式激活标签页。后台运行是软性偏好，input-only 规则仍然生效。
+Profile 列表分别显示 **Connection** 和 **Automation**：连接正常时自动化仍可能暂停，连接失败会显示错误。新标签页默认在后台打开；网站需要前台才能启动或接收输入时，Agent 可显式激活标签页。后台运行是软性偏好，Human Simulation Mode 规则仍然生效。

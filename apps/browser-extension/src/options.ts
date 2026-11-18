@@ -121,7 +121,7 @@ function renderBroker(data: DashboardSnapshot): void {
   element('rules-table').hidden = rules.length === 0; message('rules-diagnostic', data.rules.diagnostic);
   const ruleRows = element('rule-rows'); ruleRows.replaceChildren();
   for (const rule of rules) {
-    const tr = node('tr'); const mode = node('td'); mode.append(node('span', 'Input only', 'mode-label'));
+    const tr = node('tr'); const mode = node('td'); mode.append(node('span', 'Human Simulation Mode', 'mode-label'));
     const actions = node('td'); const buttons = node('div', undefined, 'row-actions');
     const edit = node('button', 'Edit'); edit.type = 'button'; edit.setAttribute('aria-label', `Edit rule for ${rule.domain}`); edit.onclick = () => openRule(rule.id);
     const remove = node('button', 'Remove', 'remove'); remove.type = 'button'; remove.setAttribute('aria-label', `Remove rule for ${rule.domain}`);
@@ -226,7 +226,7 @@ element<HTMLFormElement>('rule-form').addEventListener('submit', event => {
       const id = editor!.id ?? `rule-${crypto.randomUUID()}`;
       const rules = editor!.configuration.rules.filter(rule => rule.id !== id);
       if (rules.some(rule => rule.domain === domain)) throw new Error('A rule for this domain already exists.');
-      rules.push({ id, domain, mode: 'input_only' });
+      rules.push({ id, domain, mode: 'human_simulation' });
       await saveRules({ schemaVersion: 1, rules }, editor!.revision); ruleDialog.close(); notice(`Input-only rule saved for ${domain}.`);
     } catch (error) { message('rule-error', `${errorText(error)}${stale ? ' Close this editor and refresh before saving again.' : ''}`); }
   })();

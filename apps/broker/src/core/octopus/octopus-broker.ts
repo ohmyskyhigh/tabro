@@ -1,7 +1,8 @@
-import { effectiveBrowserPolicy, isRecoveryObservation, isBrowserInput, type BrowserPolicySnapshot } from '../../../../shared/protocol/src/browser-interaction-policy.js';
+import { effectiveBrowserPolicy, humanControlInterval, isRecoveryObservation, isBrowserInput, type BrowserPolicySnapshot } from '../../../../shared/protocol/src/browser-interaction-policy.js';
 import type { BrowserRulesSource } from '../../runtime/browser-rules.js';
 import { InputRecovery } from './input-recovery.js';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { ProfileManager } from '../../profiles/profile-manager.js';
 import type { ProfileNetworkService } from '../../proxy/profile-network-service.js';
 import { isProxyOperation } from '../../proxy/types.js';
@@ -44,6 +45,8 @@ import {
 import { RandomReferenceFactory, type ReferenceFactory } from './reference-factory.js';
 
 type AsyncInput = JsonObject;
+
+const SINGLE_WORKSPACE_RUNTIMES = new Set(['codex', 'cc', 'dsh']);
 
 interface CursorEntry {
   callerSessionRef: string;
@@ -88,6 +91,7 @@ export class OctopusBroker implements ExtensionEventSink {
   private readonly inputRecovery: InputRecovery;
   private readonly browserRules: BrowserRulesSource | null;
   private readonly syncedPolicies = new Map<string, string>();
+  private readonly nextHumanControlAt = new Map<string, number>();
   private readonly inventories = new Map<string, RelayV2PayloadByType['INVENTORY_SNAPSHOT']>();
   private readonly syncingPolicies = new Set<string>();
   private profileManager: ProfileManager | null = null;
@@ -151,7 +155,7 @@ export class OctopusBroker implements ExtensionEventSink {
     if (!snapshot) throw new OctopusBrokerError(problem('BROWSER_RULES_INVALID', this.browserRules.diagnostic ?? 'Repair browser-rules.json before browser dispatch.'));
     const connection = this.extensionPort?.connection(endpointRef);
     if (snapshot.configuration.rules.length && connection?.connected && !connection.browserInputPolicy) {
-      throw new OctopusBrokerError(problem('INPUT_POLICY_UNSUPPORTED', 'The running Tabro extension did not advertise browserInputPolicy=1. Reload the extension in this Chrome profile; updating files on disk or seeing the same version number does not confirm the loaded code supports domain rules.'));
+      throw new OctopusBrokerError(problem('INPUT_POLICY_UNSUPPORTED', 'The running Tabro extension did not advertise Human Simulation Mode support (browserInputPolicy=2). Reload the extension in this Chrome profile; updating files on disk or seeing the same version number does not confirm the loaded code supports domain rules.'));
     }
     return snapshot;
   }
@@ -301,7 +305,12 @@ export class OctopusBroker implements ExtensionEventSink {
         if (!this.profileRequests) throw new ProfileError('PROFILE_MANAGEMENT_UNAVAILABLE');
         return this.profileRequests.submit(tool, input, evidence.managementAuthority, caller);
       }
-      const accepted = this.admit(tool, input, caller);
+      const oneChatWorkspace = SINGLE_WORKSPACE_RUNTIMES.has(evidence.runtimeName);
+      if (oneChatWorkspace && tool === 'request_browser_workspace') {
+        const pending = this.pendingChatWorkspace(input, caller);
+        if (pending) return acceptedSubmission(caller, pending);
+      }
+      const accepted = this.admit(tool, input, caller, oneChatWorkspace);
       return acceptedSubmission(caller, accepted);
     } catch (error) {
       const rejectedProblem = error instanceof OctopusBrokerError
@@ -643,7 +652,34 @@ export class OctopusBroker implements ExtensionEventSink {
     this.closeEndpointConnection(endpointRef, connectionGeneration, reason);
   }
 
-  private admit(tool: McpAsyncToolName, input: AsyncInput, caller: StoredCallerSession): StoredRequestTicket {
+  private chatWorkspace(caller: StoredCallerSession): StoredWorkspace | undefined {
+    return this.repositories.logical.listActiveWorkspaces({ ownerSessionRef: caller.sessionRef })
+      .find(workspace => workspace.parentWorkspaceRef === null);
+  }
+
+  private checkChatSelection(input: AsyncInput, nickname: string, windowRef?: string, workspaceRef?: string): void {
+    const selections = Array.isArray(input.designated_endpoints) ? input.designated_endpoints : [];
+    if (selections.some(selection => !isObject(selection) || selection.endpoint_nickname !== nickname ||
+      (selection.window_ref !== undefined && selection.window_ref !== windowRef))) {
+      throw new OctopusBrokerError(problem('INVALID_ARGUMENT', 'This chat already has a workspace on another profile or window. Reuse it or end it before selecting another.', false,
+        { endpoint_nickname: nickname, ...(workspaceRef ? { workspace_ref: workspaceRef } : {}) }));
+    }
+  }
+
+  private pendingChatWorkspace(input: AsyncInput, caller: StoredCallerSession): StoredRequestTicket | null {
+    if (input.required_workspace_count !== 1) throw new TypeError('This runtime uses one workspace per chat. Set required_workspace_count to 1.');
+    const pending = this.repositories.requests.pendingWorkspaceRequest(caller.sessionRef);
+    if (!pending) return null;
+    const workspace = this.chatWorkspace(caller);
+    const selections = this.requestArguments(pending).designated_endpoints;
+    const first = Array.isArray(selections) && isObject(selections[0]) ? selections[0] : null;
+    const endpoint = workspace ? this.repositories.logical.getEndpoint(workspace.endpointRef) : null;
+    if (endpoint) this.checkChatSelection(input, endpoint.nickname, workspace?.windowRef, workspace?.workspaceRef);
+    else if (first) this.checkChatSelection(input, String(first.endpoint_nickname), typeof first.window_ref === 'string' ? first.window_ref : undefined);
+    return pending;
+  }
+
+  private admit(tool: McpAsyncToolName, input: AsyncInput, caller: StoredCallerSession, oneChatWorkspace: boolean): StoredRequestTicket {
     let normalized = { ...input };
     let endpointRef: string | undefined;
     let workspaceRef: string | undefined;
@@ -660,9 +696,19 @@ export class OctopusBroker implements ExtensionEventSink {
         .filter(isObject)
         .map((entry) => entry.endpoint_nickname)
         .filter((value): value is string => typeof value === 'string'));
-      normalized = this.normalizeWorkspaceRequest(input);
+      const existing = oneChatWorkspace ? this.chatWorkspace(caller) : undefined;
+      if (existing) {
+        const endpoint = this.repositories.logical.getEndpoint(existing.endpointRef);
+        if (!endpoint) throw new Error('The chat workspace profile is missing.');
+        this.checkChatSelection(input, endpoint.nickname, existing.windowRef, existing.workspaceRef);
+        normalized = { ...input, designated_endpoints: [{ endpoint_nickname: endpoint.nickname, window_ref: existing.windowRef }] };
+      } else {
+        normalized = this.normalizeWorkspaceRequest(input);
+      }
       const normalizedSelections = Array.isArray(normalized.designated_endpoints) ? normalized.designated_endpoints : [];
       privateAdmissionDetails = {
+        ...(oneChatWorkspace ? { one_chat_workspace: true } : {}),
+        ...(existing ? { reuse_workspace_ref: existing.workspaceRef } : {}),
         assigned_endpoint_nicknames: normalizedSelections
           .filter(isObject)
           .map((entry) => entry.endpoint_nickname)
@@ -716,7 +762,10 @@ export class OctopusBroker implements ExtensionEventSink {
           throw new OctopusBrokerError(problem('CDP_METHOD_UNSUPPORTED_BY_EXTENSION', `${method} is not in the active extension capability profile.`, false, { workspace_ref: workspaceRef, tab_ref: tabRef }));
         }
       }
-      if (tool === 'take_over_workspace') authorityScope = 'requester';
+      if (tool === 'take_over_workspace') {
+        authorityScope = 'requester';
+        if (oneChatWorkspace) privateAdmissionDetails.one_chat_workspace = true;
+      }
     }
 
     const acceptedAt = new Date().toISOString();
@@ -1075,6 +1124,28 @@ export class OctopusBroker implements ExtensionEventSink {
     const count = Number(args.required_workspace_count);
     const selections = Array.isArray(args.designated_endpoints) ? args.designated_endpoints : [];
     const admissionDetails = isObject(ticket.checkpoint.details) ? ticket.checkpoint.details : {};
+    if (admissionDetails.one_chat_workspace === true) {
+      const caller = this.sessionForTicket(ticket);
+      const workspace = this.chatWorkspace(caller);
+      if (workspace) {
+        const endpoint = this.repositories.logical.getEndpoint(workspace.endpointRef);
+        if (!endpoint) throw new Error('The chat workspace profile is missing.');
+        this.checkChatSelection(args, endpoint.nickname, workspace.windowRef, workspace.workspaceRef);
+        const tabs = this.repositories.logical.listWorkspaceTabs(workspace.workspaceRef).filter(tab => tab.lifecycle === 'active');
+        if (!tabs.length) throw new OctopusBrokerError(problem('WORKSPACE_UNAVAILABLE', 'The chat workspace has no active tab. Inspect or end it before requesting another.', true, { workspace_ref: workspace.workspaceRef }));
+        const page = this.paginate(tabs, { page_size: this.maxPageSize }, caller, `workspace:${workspace.workspaceRef}`, tab => tab.tabRef);
+        this.succeedTicket(ticket, { tool: 'request_browser_workspace', disposition: 'complete', facts: {
+          requested_workspace_count: 1, resolved: [{ endpoint_nickname: endpoint.nickname,
+            allocation_source: 'assigned', window_selection: 'designated', workspace_result: 'resumed', ended_workspace: null,
+            workspace: this.workspaceFact(workspace, caller),
+            tabs: page.items.map(tab => this.tabFact(tab, tab.openerTabRef ? 'same_window_child' : 'agent_created')), tab_page: page.fact }]
+        } });
+        return;
+      }
+      if (admissionDetails.reuse_workspace_ref) {
+        throw new OctopusBrokerError(problem('WORKSPACE_TERMINATED', 'The chat workspace ended before it could be reused. Request it again to open a new group.', true));
+      }
+    }
     const assignedNicknames = new Set(Array.isArray(admissionDetails.assigned_endpoint_nicknames)
       ? admissionDetails.assigned_endpoint_nicknames.filter((value): value is string => typeof value === 'string')
       : []);
@@ -1568,14 +1639,31 @@ export class OctopusBroker implements ExtensionEventSink {
       if (inputState?.held.length && !isBrowserInput(method)) this.inputRecovery.pause(tab.tabRef, 'target_change_during_input');
       this.inputRecovery.assertAvailable(tab.tabRef, ticket.requesterSessionRef);
     }
-    const policy = await this.synchronizePolicy(workspace.endpointRef);
+    let policy = await this.synchronizePolicy(workspace.endpointRef);
+    const params = isObject(args.params) ? args.params : {};
+    const interval = humanControlInterval(method, params);
+    const humanDomain = (url: string): boolean => policy !== null && effectiveBrowserPolicy(url, policy.configuration).mode === 'human_simulation';
+    const currentUrl = this.repositories.logical.getTab(workspace.workspaceRef, tab.tabRef)?.url ?? tab.url ?? '';
+    if (interval > 0 && humanDomain(currentUrl)) {
+      const remaining = (this.nextHumanControlAt.get(tab.tabRef) ?? 0) - performance.now();
+      if (remaining > 0) await delay(Math.ceil(remaining));
+      if (remaining > 0) policy = await this.synchronizePolicy(workspace.endpointRef);
+      const current = this.repositories.requests.getRequest(ticket.requestRef);
+      if (this.shuttingDown || current?.state !== 'running' || current.pauseCondition !== null || current.claimGeneration !== ticket.claimGeneration) return;
+      if (!this.isEndpointReady(workspace.endpointRef) || this.requireConnection(workspace.endpointRef).connectionGeneration !== connection.connectionGeneration) {
+        return this.pauseTicket(ticket, 'extension_disconnected');
+      }
+      if (this.requireTab(workspace, tab.tabRef).locatorGeneration !== tab.locatorGeneration) {
+        throw new OctopusBrokerError(problem('CONTROL_RACE_LOST', 'Tab identity changed during input pacing.'));
+      }
+    }
     inputState = this.inputRecovery.get(tab.tabRef);
     if (!observation) this.inputRecovery.assertAvailable(tab.tabRef, ticket.requesterSessionRef);
     if (((inputState && observation) || this.isRecoveryRead(ticket)) && !this.requireExtensionConnection(workspace.endpointRef).browserInputPolicy) {
       throw new OctopusBrokerError(problem('INPUT_POLICY_UNSUPPORTED', 'Update the extension before guarded recovery observation.'));
     }
     const currentWorkspace = this.requireWorkspaceForTicket(ticket);
-    if (currentWorkspace.ownerEpoch !== ticket.acceptedOwnerEpoch || currentWorkspace.pauseCauses.length) {
+    if (currentWorkspace.ownerEpoch !== ticket.acceptedOwnerEpoch || currentWorkspace.controlEpoch !== workspace.controlEpoch || currentWorkspace.pauseCauses.length) {
       throw new OctopusBrokerError(problem('CONTROL_RACE_LOST', 'Workspace control changed while synchronizing browser rules.'));
     }
     const attemptId = randomUUID();
@@ -1595,6 +1683,11 @@ export class OctopusBroker implements ExtensionEventSink {
       requests.markAttemptDispatched(prepared.attemptRef);
       return prepared;
     });
+    if (interval > 0) {
+      const now = performance.now();
+      for (const [tabRef, deadline] of this.nextHumanControlAt) if (deadline <= now) this.nextHumanControlAt.delete(tabRef);
+      this.nextHumanControlAt.set(tab.tabRef, now + interval);
+    }
     let result: RelayV2PayloadByType['OPERATION_RESULT'];
     try {
       result = await this.requireExtensionPort().execute(workspace.endpointRef, 'SEND_CDP', {
@@ -1755,6 +1848,10 @@ export class OctopusBroker implements ExtensionEventSink {
   private executeTakeover(ticket: StoredRequestTicket): void {
     const workspace = this.requireWorkspaceForTicket(ticket);
     const caller = this.sessionForTicket(ticket);
+    if (isObject(ticket.checkpoint.details) && ticket.checkpoint.details.one_chat_workspace === true &&
+      (this.chatWorkspace(caller) || this.repositories.requests.pendingWorkspaceRequest(caller.sessionRef))) {
+      throw new OctopusBrokerError(problem('INVALID_ARGUMENT', 'End the existing chat workspace before taking over another.'));
+    }
     const args = this.requestArguments(ticket);
     const previousOwner = asString(args.previous_owner_session_ref, 'previous_owner_session_ref');
     const updated = this.repositories.transaction(({ logical, events }) => {

@@ -111,7 +111,7 @@ describe('extension CDP adapter', () => {
   });
 
   const policy: BrowserPolicySnapshot = { revision: 'a'.repeat(64), generation: 1,
-    configuration: { schemaVersion: 1, rules: [{ id: 'protected', domain: 'example.test', mode: 'input_only' }] } };
+    configuration: { schemaVersion: 1, rules: [{ id: 'protected', domain: 'example.test', mode: 'human_simulation' }] } };
   async function policyFixture() {
     let url = 'https://example.test/a';
     const inventory = new BrowserInventory({ ...browserApi, tabs: { get: async () => ({ ...tab, url }) } });
@@ -142,11 +142,10 @@ describe('extension CDP adapter', () => {
     await expect(f.executor.execute({ ...f.input, method: 'DOM.getDocument' })).rejects.toMatchObject({ code: 'INPUT_POLICY_STALE' });
   });
 
-  it('maps guarded JavaScript refusal into the same cached error and permits geometry fallback', async () => {
+  it('blocks even read-only JavaScript before dispatch and permits geometry and screenshots', async () => {
     const f = await policyFixture();
-    f.api.sendCommand.mockResolvedValueOnce({ exceptionDetails: { exception: { description: 'EvalError: Possible side-effect in debug-evaluate' } } });
-    await expect(f.executor.execute({ ...f.input, method: 'Runtime.evaluate', params: { expression: 'document.body.click()' } })).rejects.toMatchObject({ code: 'INPUT_ONLY_REQUIRED' });
-    expect(f.api.sendCommand).toHaveBeenCalledWith({ tabId: 10 }, 'Runtime.evaluate', expect.objectContaining({ throwOnSideEffect: true, timeout: 1000 }));
+    await expect(f.executor.execute({ ...f.input, method: 'Runtime.evaluate', params: { expression: 'document.title' } })).rejects.toMatchObject({ code: 'INPUT_ONLY_REQUIRED' });
+    expect(f.api.sendCommand).not.toHaveBeenCalled();
     expect(await f.attempts.getForReconciliation({ attemptId: f.input.attemptId })).toMatchObject({ ok: false, error: { code: 'INPUT_ONLY_REQUIRED' } });
     await f.executor.execute({ ...f.input, attemptId: crypto.randomUUID(), method: 'DOM.getBoxModel', params: { nodeId: 1 } });
     expect(f.api.sendCommand).toHaveBeenLastCalledWith({ tabId: 10 }, 'DOM.getBoxModel', { nodeId: 1 });
@@ -169,21 +168,21 @@ describe('extension CDP adapter', () => {
   });
 
   it('preserves ordinary script exceptions instead of labelling them policy refusals', async () => {
-    const f = await policyFixture();
+    const f = await policyFixture(); f.navigate('https://unlisted.test/');
     const rawResult = { exceptionDetails: { exception: { description: 'ReferenceError: missingName is not defined' } } };
     f.api.sendCommand.mockResolvedValueOnce(rawResult);
     expect(await f.executor.execute({ ...f.input, method: 'Runtime.evaluate', params: { expression: 'missingName' } })).toMatchObject({ rawResult });
   });
 
   it('bounds a guarded function observation without sending a mouse or key release', async () => {
-    const f = await policyFixture();
+    const f = await policyFixture(); f.navigate('https://unlisted.test/');
     vi.useFakeTimers();
     try {
       let finishTermination!: (value: object) => void;
       const termination = new Promise<object>(resolve => { finishTermination = resolve; });
       f.api.sendCommand.mockImplementation(async (_target, method) => method === 'Runtime.callFunctionOn'
         ? await new Promise<object>(() => {}) : await termination);
-      const pending = f.executor.execute({ ...f.input, method: 'Runtime.callFunctionOn', params: { functionDeclaration: 'function(){while(true){}}', objectId: 'node' } });
+      const pending = f.executor.execute({ ...f.input, method: 'Runtime.callFunctionOn', recoveryObservation: true, params: { functionDeclaration: 'function(){while(true){}}', objectId: 'node' } });
       let settled = false;
       void pending.then(() => { settled = true; }, () => { settled = true; });
       const refusal = expect(pending).rejects.toMatchObject({ code: 'OBSERVATION_TIMEOUT' });

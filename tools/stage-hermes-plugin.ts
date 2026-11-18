@@ -94,6 +94,9 @@ async function stageStandalone(): Promise<void> {
     cpSync(resolve(sourcePlugin, 'broker-service.mjs'), resolve(runtime, 'broker-service.mjs'));
     cpSync(resolve(root, 'tools/provision-machine-registration.mjs'), resolve(plugin, 'provision-machine-registration.mjs'));
   }
+  for (const client of ['codex', 'claude-code', 'dsh']) {
+    cpSync(resolve(root, 'integrations', client), resolve(plugin, 'clients', client), { recursive: true });
+  }
   cpSync(resolve(root, 'tools/managed-upgrade-snapshot.mjs'), resolve(runtime, 'managed-upgrade-snapshot.mjs'));
   const sourceSha = (file: string): string => createHash('sha256').update(readFileSync(file, 'utf8').replace(/\r\n/gu, '\n')).digest('hex');
   const inputNames = new Set<string>();

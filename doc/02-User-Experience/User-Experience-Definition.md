@@ -546,9 +546,9 @@ Parent: [`02-User-Experience`](./_MOC.md).
 
 ## Domain interaction
 
-### Agents discover input-only rules through context and actionable errors
+### Agents discover Human Simulation Mode through tab context
 
-Operators edit `data/browser-rules.json` or explicitly ask a host agent to edit it. Valid edits apply automatically; upgrades preserve the file. Domains cover themselves, nested subdomains and all paths. Agents inspect the effective policy through workspace/tab context. `INPUT_ONLY_REQUIRED` identifies the rejected method and gives observation and input alternatives. Agents must not remove a rule to recover from a rejection.
+Operators edit `data/browser-rules.json` or explicitly ask a host agent to edit it. Valid edits apply automatically; upgrades preserve the file. Domains cover themselves, nested subdomains and all paths. Agents inspect the effective policy through workspace/tab context. On ruled sites, start with a screenshot, use DOM reads to inspect specific elements, and perform changes with paced CDP input. `INPUT_ONLY_REQUIRED` identifies the rejected method and gives observation and input alternatives. Agents must not remove a rule to recover from a rejection.
 
 ### Recovery observations can pass a paused mutation without advancing it
 
@@ -566,4 +566,4 @@ The profile table presents Connection and Automation separately: a connected bro
 
 New managed tabs start in the background. Agents prefer background observations and navigation, reuse task workspaces, and explicitly bring a page forward only when the website needs it. Foreground activation remains allowed without a new per-action approval flow. Repeated activation and automatic focus restoration should be avoided; an interrupted held gesture still follows the existing recovery procedure.
 
-Connection shows live status, pairing code and alias, with save/reconnect, copy and reset controls. Broker management shows registered profiles and the shared input-only rules. Users can add, edit or remove a domain; each domain includes nested subdomains and all paths. A changed revision rejects a stale save and asks the user to reload. Disconnection disables Broker actions without discarding an unsaved domain edit. The profile list is read-only; this version has no profile lifecycle controls.
+Connection shows live status, pairing code and alias, with save/reconnect, copy and reset controls. Broker management shows registered profiles and shared website rules for Human Simulation Mode. Users can add, edit or remove a domain; each domain includes nested subdomains and all paths. A changed revision rejects a stale save and asks the user to reload. Disconnection disables Broker actions without discarding an unsaved domain edit. The profile list is read-only; this version has no profile lifecycle controls.

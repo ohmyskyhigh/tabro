@@ -156,7 +156,7 @@ $TabroTokenFile = Join-Path $TabroRoot 'data\admin-token.txt'
 
 The following configurations use those paths. The token stays in its local file. The runtime record supplies the current Broker address, so you do not need to copy port numbers.
 
-### Codex connects through its stdio MCP registration
+### Codex can register the adapter for native stdio MCP
 
 With the variables above still set, run:
 
@@ -192,6 +192,37 @@ Merge the generated `tabro` entry into your agent's MCP settings. If its UI asks
 Each independent agent session needs its own adapter process when the host supplies no session identity. A single adapter shared by unidentified agents also shares its workspace authority.
 
 Keep the Broker running. These direct adapter configurations connect to an existing Broker; after restarting Windows, rerun the matching package's setup to start it again. After a runtime update, regenerate the paths and update these MCP entries because the adapter lives in a versioned directory.
+
+
+### Codex, Claude Code and DSH pass a real chat ID to the shared Broker
+
+Set `TABRO_ADAPTER_ENTRY` to the absolute path of the installed `adapter/main.js`
+before starting the harness. The Windows example above provides `$TabroAdapter`.
+On macOS and Linux, read `runtimeDirectory` from the installation's `installation.json`
+and append `adapter/main.js` to that directory under the installation root. Keep
+the local Broker running and use the refreshed adapter path after an upgrade.
+The standalone installer archive includes the integrations under `clients/`.
+
+- **Codex:** install the `clients/codex/tabro` skill in your Codex skills directory.
+  In the Codex shell, the skill forwards `CODEX_THREAD_ID` explicitly. Native
+  stdio registration is suitable when its launcher actually supplies the
+  current thread ID. A static `env_vars` list cannot create one.
+- **Claude Code:** start Claude Code with `--plugin-dir <absolute-path-to-clients/claude-code>`.
+  Its `SessionStart` hook copies the runtime's session ID into its per-session Bash
+  environment. Use the plugin's Tabro skill through Bash. Start a new session
+  or resume one with the plugin enabled.
+- **DSH:** from the standalone archive, run `npm pack ./clients/dsh` and add the
+  resulting tarball with `dsh plugin --profile <name> add <absolute-tarball-path>`.
+  Start or reload the profile with `TABRO_ADAPTER_ENTRY` set. The native
+  `tabro` tool uses the session from DSH's tool execution context. Its
+  `list_tools` operation describes the underlying Tabro tool arguments.
+
+Each route passes a runtime label and the current chat ID outside the tool
+arguments. The three harnesses can use one profile simultaneously. For these
+runtimes, request one workspace. A repeat while the first request is pending
+returns the same ticket. A repeat after completion returns the existing group.
+Use `create_browser_tab` to add a tab to it. End the existing workspace before
+requesting another profile or browser window.
 
 ## Browser connection
 
@@ -288,7 +319,7 @@ The dashboard is part of the current source build. Use its matching Broker and e
 
 Saved rules apply across this Broker's profiles and Codex/Hermes clients. The dashboard uses the extension's authenticated connection; no Broker token is copied into the page. On disconnection, displayed data is marked stale and rule changes are disabled. If another window or file editor changes the rules, your save is rejected and your typed domain is retained; close the editor, refresh, review the current rules and retry. An invalid rule file must be repaired before dashboard editing resumes.
 
-New workspace, additional and replacement tabs open in the background. This is a soft preference: agents can explicitly use `Page.bringToFront` when a website needs activation to start or receive input, including on input-only domains. Reuse the workspace and avoid repeatedly selecting its tab or restoring focus after the user switches away. Interrupted gestures still follow input recovery.
+New workspace, additional and replacement tabs open in the background. This is a soft preference: agents can explicitly use `Page.bringToFront` when a website needs activation to start or receive input, including on Human Simulation Mode domains. Reuse the workspace and avoid repeatedly selecting its tab or restoring focus after the user switches away. Interrupted gestures still follow input recovery.
 
 ## Domain rules
 
@@ -296,17 +327,17 @@ New workspace, additional and replacement tabs open in the background. This is a
 
 Add domains through **Broker management → Website rules**, or edit the file directly using the format below.
 
-The source implementation uses MCP contract 6; install a qualified contract-6 package and reload its extension before using these rules. The Broker initializes `<Tabro installation>/data/browser-rules.json` with an empty list. It is shared across that Broker's profiles and Codex/Hermes clients. Default locations are `%LOCALAPPDATA%\Tabro\data\browser-rules.json` on Windows, `~/Library/Application Support/Tabro/data/browser-rules.json` on macOS, and `${XDG_DATA_HOME:-~/.local/share}/tabro/data/browser-rules.json` on Linux. Custom installations use their own data folder; source runs default to `.relay-data/browser-rules.json`. `TABRO_BROWSER_RULES_PATH` can select a different host file.
+Install the contract-7 runtime and reload its extension before using Human Simulation Mode. The Broker initializes `<Tabro installation>/data/browser-rules.json` with an empty list. It is shared across that Broker's profiles and Codex/Hermes clients. Default locations are `%LOCALAPPDATA%\Tabro\data\browser-rules.json` on Windows, `~/Library/Application Support/Tabro/data/browser-rules.json` on macOS, and `${XDG_DATA_HOME:-~/.local/share}/tabro/data/browser-rules.json` on Linux. Custom installations use their own data folder; source runs default to `.relay-data/browser-rules.json`. `TABRO_BROWSER_RULES_PATH` can select a different host file.
 
 ```json
 {
   "schemaVersion": 1,
   "rules": [
-    { "id": "example-input-only", "domain": "example.com", "mode": "input_only" }
+    { "id": "example-human-simulation", "domain": "example.com", "mode": "human_simulation" }
   ]
 }
 ```
 
 Save the file to apply a valid revision automatically. Each hostname covers itself, nested subdomains and all paths; do not enter a scheme, path, IP address or wildcard. Remove an entry to remove its restriction, provided no matching parent rule remains. Saving `"rules": []` removes all domain restrictions. Invalid live edits retain the previous valid rules and report a diagnostic; a missing or malformed file after initialization blocks browser dispatch on restart until repaired. Upgrades preserve the file.
 
-An agent may edit this file when the user asks it to add or remove domains. It must not weaken a rule to get past a blocked browser command. Read `get_browser_context` with `view: {kind: "tab", workspace_ref, tab_ref}` to verify the effective policy and matching hostname. The Broker view exposes configuration diagnostics. Matching is checked again against the current top-level URL at execution. Observations remain available; manipulation uses supported browser input.
+An agent may edit this file when the user asks it to add or remove domains. It must not weaken a rule to get past a blocked browser command. Read `get_browser_context` with `view: {kind: "tab", workspace_ref, tab_ref}` to verify the effective policy and matching hostname. The Broker view exposes configuration diagnostics. Matching is checked again against the current top-level URL at execution. Use screenshots to observe the page, then read the DOM only for specific element inspection. Tabro spaces control events per tab. Existing input_only rules are accepted and shown as Human Simulation Mode.

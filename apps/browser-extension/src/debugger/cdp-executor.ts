@@ -1,5 +1,5 @@
 import { ExtensionAdapterError, type PrivateTabLocator } from '../browser/inventory.js';
-import { BrowserPolicyError, effectiveBrowserPolicy, guardedBrowserCommand, isBrowserInput, isRecoveryObservation, isSideEffectRefusal,
+import { BrowserPolicyError, effectiveBrowserPolicy, guardedBrowserCommand, humanSimulationCommand, isBrowserInput, isRecoveryObservation, isSideEffectRefusal,
   type BrowserPolicySnapshot } from '../../../shared/protocol/src/browser-interaction-policy.js';
 import type {
   RecentAttemptCache,
@@ -78,8 +78,11 @@ export class CdpExecutor {
       if (tab && typeof tab.url !== 'string') throw new ExtensionAdapterError('INPUT_POLICY_STALE', 'The current top-level tab URL is unavailable.');
       const effective = policy ? effectiveBrowserPolicy(tab!.url!, policy.snapshot.configuration) : null;
       if (input.recoveryObservation && !isRecoveryObservation(input.method)) throw new ExtensionAdapterError('INPUT_RECOVERY_REQUIRED', 'Only guarded observations can run during input recovery.');
-      const guarded = effective?.mode === 'input_only' || input.recoveryObservation === true;
-      const params = guarded ? guardedBrowserCommand(input.method, input.params ?? {}, effective?.domain ?? '') : input.params;
+      const humanSimulation = effective?.mode === 'human_simulation';
+      const guarded = humanSimulation || input.recoveryObservation === true;
+      const params = humanSimulation
+        ? humanSimulationCommand(input.method, input.params ?? {}, effective.domain)
+        : guarded ? guardedBrowserCommand(input.method, input.params ?? {}, effective?.domain ?? '') : input.params;
       // No await between this revision check and dispatch: a newly synchronized policy fences older queued commands.
       if (this.policy !== policy) throw new ExtensionAdapterError('INPUT_POLICY_STALE', 'The browser rules changed before execution.');
       dispatched = true;

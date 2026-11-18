@@ -20,6 +20,7 @@ const observed = {
 class FakeExtensionPort implements OctopusExtensionPort {
   browserInputPolicy = true;
   tabActive = true;
+  readonly controlTimes: number[] = [];
   readonly inputTrace: Array<RelayV2PayloadByType['SEND_CDP']> = [];
   readonly createTrace: Array<RelayV2PayloadByType['CREATE_TAB']> = [];
   private lostCdpResult: 'cached' | 'missing' | null = null;
@@ -201,6 +202,7 @@ class FakeExtensionPort implements OctopusExtensionPort {
       result = { attachmentGeneration: 1, protocolVersion: '1.3' };
     } else if (type === 'SEND_CDP') {
       this.cdpCalls += 1;
+      this.controlTimes.push(performance.now());
       this.inputTrace.push(payload as RelayV2PayloadByType['SEND_CDP']);
       result = { result: { result: { type: 'number', value: 4 } }, sessionId: null };
       if (this.lostCdpResult) {
@@ -504,11 +506,39 @@ describe('canonical Tabro broker', () => {
       expect(extension.inputTrace).toHaveLength(1);
     });
 
+
+  it('spaces CDP input and fences the next input when the workspace stops', async () => {
+    const scope = await recoveryWorkspace();
+    broker.beginShutdown(); await broker.waitForIdle();
+    const snapshot = { revision: 'a'.repeat(64), generation: 1, configuration: { schemaVersion: 1 as const,
+      rules: [{ id: 'paced', domain: 'example.test', mode: 'human_simulation' as const }] } };
+    broker = new OctopusBroker(store.canonical, { browserRules: { diagnostic: null, refresh: () => snapshot } });
+    broker.setExtensionPort(extension);
+    // about:blank in the fake inventory is superseded by the ruled test URL.
+    const snapshotFn = extension.requestInventory.bind(extension);
+    vi.spyOn(extension, 'requestInventory').mockImplementation(async ref => {
+      const next = await snapshotFn(ref);
+      next.windows[0]!.tabs[0]!.url = 'https://example.test/';
+      return next;
+    });
+    const mouse = (type: string) => ({ ...scope, method: 'Input.dispatchMouseEvent', params: { type, button: 'left', x: 20, y: 20 } });
+    const down = accept('send_cdp_command', mouse('mousePressed'));
+    const up = accept('send_cdp_command', mouse('mouseReleased'));
+    expect((await terminal(down)).state).toBe('succeeded');
+    expect((await terminal(up)).state).toBe('succeeded');
+    expect(extension.controlTimes[1]! - extension.controlTimes[0]!).toBeGreaterThanOrEqual(70);
+    const pending = accept('send_cdp_command', mouse('mouseMoved'));
+    await eventuallyMatching(() => broker.getBrowserRequest({ request_ref: pending }, caller),
+      value => (value.facts as { ticket: { state: string } }).ticket.state === 'running', 'paced running');
+    expect((await terminal(accept('stop_workspace_automation', { workspace_ref: scope.workspace_ref }))).state).toBe('succeeded');
+    await broker.waitForIdle();
+    expect(extension.inputTrace.map(item => item.params.type)).toEqual(['mousePressed', 'mouseReleased']);
+  });
   it('requires explicit extension policy support and sends the accepted revision with the command', async () => {
     const scope = await recoveryWorkspace();
     broker.beginShutdown(); await broker.waitForIdle();
     const snapshot = { revision: 'a'.repeat(64), generation: 1, configuration: { schemaVersion: 1 as const,
-      rules: [{ id: 'protected', domain: 'example.test', mode: 'input_only' as const }] } };
+      rules: [{ id: 'protected', domain: 'example.test', mode: 'human_simulation' as const }] } };
     broker = new OctopusBroker(store.canonical, { browserRules: { diagnostic: null, refresh: () => snapshot } });
     broker.setExtensionPort(extension);
     extension.browserInputPolicy = false;

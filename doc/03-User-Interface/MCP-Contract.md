@@ -185,13 +185,19 @@ Get can read saved facts for either ownership. Set, clear and exit checks requir
 
 Parent: [`User Interface MOC`](./_MOC.md).
 
+## Chat workspaces
+
+### Codex, CC and DSH reuse one active workspace per caller session
+
+For these runtime labels, request_browser_workspace requires a count of one. Matching calls during allocation receive the same ticket. After allocation, repeated calls return a ticket with an existing workspace and workspace_result set to resumed. Calls that select another profile or window are refused until the current workspace ends. Add tabs in the group with create_browser_tab.
+
 ## Domain interaction
 
-### Contract 6 exposes domain policy and input recovery through the existing tools
+### Contract 7 reports Human Simulation Mode through the existing tools
 
-The twenty-two-tool catalog is unchanged. `get_browser_context` includes a targeted `tab` view with `workspace_ref` and `tab_ref`; tab facts expose `interaction_policy`, and workspace facts expose `input_recovery`. Policy facts contain mode, current observed hostname, matching rule/domain, revision and configuration diagnostic. The extension rechecks the current URL at execution, so inventory context is observational.
+The twenty-two-tool catalog is unchanged. `get_browser_context` includes a targeted `tab` view with `workspace_ref` and `tab_ref`; tab facts expose `interaction_policy`, and workspace facts expose `input_recovery`. Policy facts contain mode (including human_simulation), current observed hostname, matching rule/domain, revision and configuration diagnostic. The extension rechecks the current URL at execution, so inventory context is observational.
 
-`send_cdp_command` returns `INPUT_ONLY_REQUIRED` for forbidden methods/parameters or JavaScript side-effect refusals, including usable alternatives. A rejection before acceptance creates no ticket; rejection during execution produces a failed ticket. Repeating the identical command is not retryable. `BROWSER_RULES_INVALID`, `INPUT_POLICY_UNSUPPORTED` and `INPUT_POLICY_STALE` report configuration/capability prerequisites. `INPUT_BUSY`, `INPUT_RECOVERY_REQUIRED` and `INPUT_STATE_UNCERTAIN` distinguish reserved, paused and uncertain input.
+`send_cdp_command` returns `INPUT_ONLY_REQUIRED` for forbidden methods or parameters, with usable alternatives. On ruled sites, use screenshots to observe, read-only DOM queries for specific elements and paced CDP input for mouse and keyboard actions. Arbitrary JavaScript is refused. A rejection before acceptance creates no ticket; rejection during execution produces a failed ticket. Repeating the identical command is not retryable. `BROWSER_RULES_INVALID`, `INPUT_POLICY_UNSUPPORTED` and `INPUT_POLICY_STALE` report configuration/capability prerequisites. `INPUT_BUSY`, `INPUT_RECOVERY_REQUIRED` and `INPUT_STATE_UNCERTAIN` distinguish reserved, paused and uncertain input.
 
 ### Recovery acknowledgement and website-effect resolution remain distinct
 
@@ -203,7 +209,7 @@ A successful `take_over_workspace` updates the recovery owner and recovery refer
 
 ### Human management uses a private extension interface while MCP retains twenty-two tools
 
-The profile table separates Connection and Automation and exposes known failure diagnostics. New workspace, additional and replacement tabs default to inactive. Tool guidance recommends background work; `Page.bringToFront` remains an explicitly requested supported CDP operation, including on input-only sites. This clarification adds no tool, wire field, hard foreground error or approval gate.
+The profile table separates Connection and Automation and exposes known failure diagnostics. New workspace, additional and replacement tabs default to inactive. Tool guidance recommends background work; `Page.bringToFront` remains an explicitly requested supported CDP operation, including on sites with Human Simulation Mode. This clarification adds no tool, wire field, hard foreground error or approval gate.
 
 After input release is confirmed, explicit `terminate_workspace` may abandon a `send_cdp_command` waiting for website-effect confirmation. Its terminal result is `failed` with `WORKSPACE_TERMINATED` and `known_facts.effect_may_have_occurred: true`, never a fabricated successful result. Existing generic failure facts carry this information; no new tool or input field is required. Held, pending or uncertain input still blocks termination.
 

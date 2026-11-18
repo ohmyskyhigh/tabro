@@ -294,13 +294,13 @@ export class SimulatedV2Extension {
   }
 }
 
-export async function connectAgent(port: number, token: string, session: string): Promise<Client> {
+export async function connectAgent(port: number, token: string, session: string, runtime = 'codex'): Promise<Client> {
   const client = new Client({ name: session, version: '0.3.0-test' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
     requestInit: {
       headers: {
-        'x-octopus-contract-version': '6', Authorization: `Bearer ${token}`,
-        'x-octopus-runtime': 'codex',
+        'x-octopus-contract-version': '7', Authorization: `Bearer ${token}`,
+        'x-octopus-runtime': runtime,
         'x-octopus-runtime-session': session
       }
     }

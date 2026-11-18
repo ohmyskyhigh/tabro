@@ -171,9 +171,27 @@ globalThis.fetch = async (input, init) => {
         return failureCode ? result : result.command.result;
       } catch (error) { entry.outcome = 'failed'; throw error; }
     };
-    const read = async (expression: string) => {
-      const result = await cdp('Runtime.evaluate', { expression, returnByValue: true }) as { exceptionDetails?: unknown; result: { value: unknown } };
-      expect(result.exceptionDetails).toBeUndefined(); return result.result.value;
+    const findElement = async (selector: string) => {
+      const document = await cdp('DOM.getDocument', {}) as { root: { nodeId: number } };
+      return (await cdp('DOM.querySelector', { nodeId: document.root.nodeId, selector }) as { nodeId: number }).nodeId;
+    };
+    const describeElement = async (selector: string) => {
+      const nodeId = await findElement(selector);
+      if (!nodeId) return null;
+      return (await cdp('DOM.describeNode', { nodeId, depth: 1 }) as { node: { nodeName: string; attributes?: string[]; children?: { nodeValue: string }[] } }).node;
+    };
+    const elementText = async (selector: string) => (await describeElement(selector))?.children?.map(node => node.nodeValue).join('');
+    const elementState = async (selector: string, key: string) => {
+      const nodeId = await findElement(selector);
+      const result = await cdp('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false }) as
+        { nodes: { value?: { value?: unknown }; properties?: { name: string; value: { value?: unknown } }[] }[] };
+      const node = result.nodes[0];
+      return key === 'value' ? node?.value?.value : node?.properties?.find(property => property.name === key)?.value.value;
+    };
+    const focused = async () => {
+      const node = await describeElement(':focus');
+      const index = node?.attributes?.indexOf('name') ?? -1;
+      return index === -1 ? node?.nodeName : node?.attributes?.[index + 1];
     };
     const mouse = async (type: string, x: number, y: number) => cdp('Input.dispatchMouseEvent', {
       type, x, y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 })
@@ -194,39 +212,38 @@ globalThis.fetch = async (input, init) => {
       writeFileSync(resolve(evidenceRoot, `${process.platform}-${process.arch}-${name}.png`), Buffer.from(result.data, 'base64'));
     };
     await cdp('Page.navigate', { url: report.website }); await cdp('Page.bringToFront', {});
-    await expect.poll(() => read('document.title'), { timeout: 30000 }).toBe('Web form');
-    await expect.poll(() => read('document.readyState'), { timeout: 30000 }).toBe('complete');
+    await expect.poll(() => elementText('title'), { timeout: 30000 }).toBe('Web form');
     const context = await call(client, 'get_browser_context', { view: { kind: 'tab', workspace_ref, tab_ref } });
-    expect(context).toMatchObject({ facts: { tab: { interaction_policy: { mode: 'input_only', matched_domain: 'selenium.dev' } } } });
+    expect(context).toMatchObject({ facts: { tab: { interaction_policy: { mode: 'human_simulation', matched_domain: 'selenium.dev' } } } });
     report.policy = context.facts;
     await cdp('Runtime.evaluate', { expression: 'document.querySelector("#my-text-id").value="forbidden"' }, 'INPUT_ONLY_REQUIRED');
     await cdp('Runtime.evaluate', { expression: 'document.querySelector("#my-check-2").click()' }, 'INPUT_ONLY_REQUIRED');
-    expect(await read('document.querySelector("#my-text-id").value')).toBe('');
-    expect(await read('document.querySelector("#my-check-2").checked')).toBe(false);
+    expect(await elementState('#my-text-id', 'value')).toBe('');
+    expect(await elementState('#my-check-2', 'checked')).toBe('false');
     passed('public website: scripted value assignment and click refused with unchanged controls');
     await click('#my-text-id'); await cdp('Input.insertText', { text: 'Tabro end-to-end 世界' });
     await click('[name="my-textarea"]'); await cdp('Input.insertText', { text: 'Tested through MCP, Broker, Native companion and Chrome.' });
     await click('#my-check-2'); await click('#my-radio-2');
-    expect(await read('document.querySelector("#my-text-id").value')).toBe('Tabro end-to-end 世界');
-    expect(await read('document.querySelector("#my-check-2").checked')).toBe(true);
-    expect(await read('document.querySelector("#my-radio-2").checked')).toBe(true);
+    expect(await elementState('#my-text-id', 'value')).toBe('Tabro end-to-end 世界');
+    expect(await elementState('#my-check-2', 'checked')).toBe('true');
+    expect(await elementState('#my-radio-2', 'checked')).toBe('true');
     passed('public website: real pointer input, Unicode typing, textarea, checkbox and radio readback');
     // Keep the native popup closed: focus through normal Tab navigation and use
     // the select control's keyboard type-ahead behavior.
     await click('[name="my-textarea"]');
     const focusTrail: unknown[] = [];
-    for (let index = 0; index < 8 && await read('document.activeElement?.name') !== 'my-select'; index++) {
-      await key('Tab', 9); focusTrail.push(await read('document.activeElement?.name || document.activeElement?.tagName'));
+    for (let index = 0; index < 8 && await focused() !== 'my-select'; index++) {
+      await key('Tab', 9); focusTrail.push(await focused());
     }
     report.focusTrail = focusTrail;
-    expect(await read('document.activeElement?.name')).toBe('my-select');
+    expect(await focused()).toBe('my-select');
     await cdp('Input.dispatchKeyEvent', { type: 'keyDown', code: 'KeyT', key: 't', text: 't', windowsVirtualKeyCode: 84 });
     await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code: 'KeyT', key: 't', windowsVirtualKeyCode: 84 });
-    expect(await read('document.querySelector("[name=my-select]").value')).toBe('2');
+    expect(await elementState('[name=my-select]', 'value')).toBe('Two');
     passed('public website: native select focused with Tab and selected Two through keyboard type-ahead');
     await screenshot('selenium-form-filled');
     await click('button[type="submit"]');
-    await expect.poll(() => read('document.querySelector("#message")?.textContent'), { timeout: 30000 }).toBe('Received!');
+    await expect.poll(() => elementText('#message'), { timeout: 30000 }).toBe('Received!');
     const frames = await cdp('Page.getFrameTree', {}) as { frameTree: { frame: { url: string } } };
     // Parse outside the website: Chrome's side-effect guard may refuse URL helpers
     // even when the caller only intends to observe.
@@ -331,7 +348,7 @@ globalThis.fetch = async (input, init) => {
         const scope = { workspace_ref: workspace!.workspace.workspace_ref, target: { kind: 'tab', tab_ref: workspace!.tabs[0]!.tab_ref } };
         const url = new URL(fixture.url); url.hostname = 'fixture.test';
         await request('send_cdp_command', { ...scope, method: 'Page.navigate', params: { url: url.toString() } });
-        await expect.poll(async () => JSON.stringify(await request('send_cdp_command', { ...scope, method: 'Runtime.evaluate', params: { expression: 'document.title', returnByValue: true } }))).toContain('Tabro managed profile probe');
+        await expect.poll(async () => JSON.stringify(await request('send_cdp_command', { ...scope, method: 'Page.getFrameTree', params: {} }))).toContain('fixture.test');
         await request('send_cdp_command', { ...scope, method: 'Runtime.evaluate', params: { expression: 'document.body.setAttribute("data-test","blocked")' } }, 'INPUT_ONLY_REQUIRED');
         await request('terminate_workspace', { workspace_ref: scope.workspace_ref }); workspace = undefined;
       });

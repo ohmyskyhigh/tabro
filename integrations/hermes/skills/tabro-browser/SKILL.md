@@ -57,7 +57,7 @@ Use an operator-provisioned `credential_ref` for username/password authenticatio
 
 Use `get_browser_context` with the `tab` view (`workspace_ref`, `tab_ref`) to inspect `interaction_policy` and `input_recovery`. The user edits `data/browser-rules.json` or explicitly asks a host agent to edit it. Each domain includes itself, nested subdomains and all paths. The current top-level URL selects the rule. Do not remove or weaken a rule merely because a browser command is rejected.
 
-On `input_only` sites, use guarded JavaScript, DOM/accessibility reads and screenshots for observation. Use `Input.dispatchMouseEvent`, `Input.dispatchKeyEvent` and `Input.insertText` for manipulation. Scripts must not click, focus, scroll, write values, dispatch synthetic events or issue action requests. If guarded JavaScript is refused, follow `INPUT_ONLY_REQUIRED` alternatives such as `DOM.getBoxModel`; do not retry with the guard disabled. Use user handoff for file pickers and unsupported clipboard/composition.
+On Human Simulation Mode sites, start with a screenshot and use read-only DOM queries for specific elements. Use Input.dispatchMouseEvent, Input.dispatchKeyEvent and Input.insertText for manipulation. Tabro spaces the events. If a command returns INPUT_ONLY_REQUIRED, follow its observation or input alternative. Use user handoff for file pickers and unsupported clipboard or composition.
 
 ### Native dropdowns need verified keyboard selection and guarded reads may need simpler alternatives
 

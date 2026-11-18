@@ -1,0 +1,22 @@
+{
+  "name": "@tabro/dsh",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "dsh": "0.2.1-rc.5"
+  },
+  "exports": {
+    ".": "./runtime.js"
+  },
+  "files": [
+    "runtime.js",
+    "session-tool.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

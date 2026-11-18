@@ -1,6 +1,6 @@
 # Real-world Chrome, AdsPower, Codex, and Hermes runbook
 
-This runbook covers the packaged installer matrix and the Windows source/Demo procedure for MCP contract v6 with twenty-two tools and shared dynamic discovery.
+This runbook covers the packaged installer matrix and the Windows source/Demo procedure for MCP contract v7 with twenty-two tools and shared dynamic discovery.
 
 This runbook proves physical behavior separately from simulated tests. A failed checkpoint is evidence of a runtime or setup gap; it must not be rewritten as a pass because a lower-level unit or integration test succeeded.
 
@@ -76,7 +76,7 @@ The command writes local generated state below `.relay-data/`. Keep the final JS
 
 ### A GitHub Release installation keeps one extension path across updates
 
-Use [packaged installation](#packaged-installation) to qualify standalone archives. The [historical updater example](../../README.md#github-releases-provide-verified-installation-and-updates) reproduces the Windows `v0.3.0` fourteen-tool package. The Windows legacy updater requires a discovery-capable package to exercise contract v6 with shared discovery.
+Use [packaged installation](#packaged-installation) to qualify standalone archives. The [historical updater example](../../README.md#github-releases-provide-verified-installation-and-updates) reproduces the Windows `v0.3.0` fourteen-tool package. The Windows legacy updater requires a discovery-capable package to exercise contract v7 with shared discovery.
 
 Load the reported stable extension directory once in each intended browser profile. On update, verify the selected Broker version, reload the extension from its existing location, and confirm that each intended endpoint reconnects under its original alias.
 

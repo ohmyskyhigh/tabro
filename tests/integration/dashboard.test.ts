@@ -41,7 +41,7 @@ it('lists registered profiles, saves shared rules and exposes no profile lifecyc
     expect(state.profiles[0]).toMatchObject({ endpoint_nickname: 'mintwave', ownership: 'user' });
     expect(state.currentProfileRef).toBe(endpoint.endpointRef);
     expect(JSON.stringify(state)).not.toMatch(/adminToken|publicKey|privateKey|credential|relay\.sqlite/u);
-    const configuration = { schemaVersion: 1 as const, rules: [{ id: 'test', domain: 'example.com', mode: 'input_only' as const }] };
+    const configuration = { schemaVersion: 1 as const, rules: [{ id: 'test', domain: 'example.com', mode: 'human_simulation' as const }] };
     const saved = service.handle(endpoint.endpointRef, { action: 'rules.save', expectedRevision: state.rules.revision!, configuration });
     expect(saved.rules.configuration).toEqual(configuration);
     expect(JSON.parse(readFileSync(rules.path, 'utf8'))).toEqual(configuration);

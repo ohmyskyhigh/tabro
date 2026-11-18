@@ -565,6 +565,7 @@ export interface RequestRepository {
     at?: string;
   }): StoredRequestTicket;
   getRequest(requestRef: string): StoredRequestTicket | null;
+  pendingWorkspaceRequest(sessionRef: string): StoredRequestTicket | null;
   listVisibleRequests(input: {
     authorityLineageRef: string;
     authoritySessionRef?: string;
