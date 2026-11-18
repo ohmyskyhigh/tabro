@@ -51,6 +51,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   expect(existsSync(browserPath), 'A native Chrome installation is required').toBe(true);
   const rules = { schemaVersion: 1, rules: [{ id: 'fixture', domain: 'fixture.test', mode: 'input_only' }] };
   const token = readFileSync(join(install, 'data/admin-token.txt'), 'utf8').trim();
+  const runId = randomBytes(8).toString('hex');
   const trace: Json[] = [];
   const connections: Json[] = [];
   const events: Json[] = [];
@@ -64,11 +65,14 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   let browser: ChildProcess | null = null;
   let control: ChromeManagementConnection | null = null;
   let client: Client | null = null;
+  const additionalClients: Client[] = [];
   let runtime: Json = {};
   let workerSession = '';
   let workspace = '';
   let tab = '';
   let lostNextType: string | null = null;
+  let holdNextControlResult = false;
+  let releaseControlResult: (() => void) | null = null;
   let inventoriesReceived = 0;
   const attempts = new Map<string, Json>();
   const sockets = new Set<WebSocket>();
@@ -135,6 +139,11 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       if (message.type === 'INVENTORY_SNAPSHOT') inventoriesReceived++;
       const payload = object(message.payload);
       const command = attempts.get(String(payload.attemptId));
+      if (message.type === 'OPERATION_RESULT' && command && holdNextControlResult) {
+        holdNextControlResult = false;
+        releaseControlResult = () => { if (upstream.readyState === WebSocket.OPEN) upstream.send(data.toString()); };
+        return;
+      }
       if (message.type === 'OPERATION_RESULT' && command && lostNextType === object(command.params).type) {
         lostNextType = null;
         // The real extension has executed and persisted the result. Drop only its delivery.
@@ -183,28 +192,38 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       rmSync(operation);
     }
   }
-  async function connect(runtimeName: 'codex' | 'hermes', session: string = runtimeName) {
-    await client?.close(); client = new Client({ name: `input-qualification-${session}`, version: '1' });
-    await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(installedRuntime, 'adapter/main.js')],
+  async function newClient(runtimeName: 'codex' | 'hermes' | 'cc' | 'dsh', session: string = runtimeName) {
+    const next = new Client({ name: `input-qualification-${session}`, version: '1' });
+    await next.connect(new StdioClientTransport({ command: process.execPath, args: [join(installedRuntime, 'adapter/main.js')],
       env: { ...getDefaultEnvironment(), TABRO_RUNTIME_FILE: runtimeFile, TABRO_TOKEN: token,
-        TABRO_RUNTIME: runtimeName, TABRO_RUNTIME_SESSION: `input-qualification-${session}` }, stderr: 'pipe' }));
-    const tools = await client.listTools();
+        TABRO_RUNTIME: runtimeName, TABRO_RUNTIME_SESSION: `input-qualification-${runId}-${session}` }, stderr: 'pipe' }));
+    const tools = await next.listTools();
     expect(tools.tools.find(tool => tool.name === 'send_cdp_command')?.description).toContain('INPUT_ONLY_REQUIRED');
+    return next;
   }
-  async function call(name: string, args: Json) { return object((await client!.callTool({ name, arguments: args })).structuredContent); }
-  async function execute(name: string, args: Json, failCode?: string) {
-    const receipt = await call(name, args);
+  async function connect(runtimeName: 'codex' | 'hermes', session: string = runtimeName) {
+    await client?.close(); client = await newClient(runtimeName, session);
+  }
+  async function callOn(target: Client, name: string, args: Json) {
+    const result = await target.callTool({ name, arguments: args });
+    if (!result.structuredContent) throw new Error(`MCP ${name} returned no structured content: ${JSON.stringify(result.content)}`);
+    return object(result.structuredContent);
+  }
+  async function call(name: string, args: Json) { return callOn(client!, name, args); }
+  async function executeOn(target: Client, name: string, args: Json, failCode?: string) {
+    const receipt = await callOn(target, name, args);
     expect(receipt.disposition, JSON.stringify(receipt)).toBe('accepted');
     const ref = object(object(receipt.facts).ticket).request_ref;
     let ticket: Json = {};
     await expect.poll(async () => {
-      ticket = object(object((await call('get_browser_request', { request_ref: ref })).facts).ticket);
+      ticket = object(object((await callOn(target, 'get_browser_request', { request_ref: ref })).facts).ticket);
       return ticket.state;
     }, { timeout: 45000, interval: 100 }).toMatch(/^(succeeded|failed|uncertain)$/u);
     if (failCode) expect(object(object(ticket.failure).problem).code).toBe(failCode);
     else expect(ticket.state, JSON.stringify(ticket)).toBe('succeeded');
     return ticket;
   }
+  async function execute(name: string, args: Json, failCode?: string) { return executeOn(client!, name, args, failCode); }
   const cdp = (method: string, params: Json, failCode?: string) => execute('send_cdp_command', { workspace_ref: workspace, target: { kind: 'tab', tab_ref: tab }, method, params }, failCode);
   async function raw(method: string, params: Json): Promise<Json> {
     const ticket = await cdp(method, params); return object(object(object(object(ticket.result).facts).command).result);
@@ -265,8 +284,56 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       report.startupProfiles = profiles;
       nickname = String(profiles.find(profile => profile.ready)?.endpoint_nickname ?? ''); return !!nickname;
     }, { timeout: 25000 }).toBe(true);
-    const allocated = await execute('request_browser_workspace', { required_workspace_count: 1, designated_endpoints: [{ endpoint_nickname: nickname }] });
-    const resolved = (object(object(allocated.result).facts).resolved as Json[])[0]!;
+    const workspaceArgs = { required_workspace_count: 1, designated_endpoints: [{ endpoint_nickname: nickname }] };
+    const peer = await newClient('codex', 'codex'); additionalClients.push(peer);
+    const receipts = await Promise.all([call('request_browser_workspace', workspaceArgs), callOn(peer, 'request_browser_workspace', workspaceArgs)]);
+    const requestRef = object(object(receipts[0]!.facts).ticket).request_ref;
+    expect(object(object(receipts[1]!.facts).ticket).request_ref).toBe(requestRef);
+    let allocated: Json = {};
+    await expect.poll(async () => {
+      allocated = object(object((await call('get_browser_request', { request_ref: requestRef })).facts).ticket);
+      return allocated.state;
+    }, { timeout: 45000, interval: 100 }).toBe('succeeded');
+    let resolved = (object(object(allocated.result).facts).resolved as Json[])[0]!;
+    workspace = String(object(resolved.workspace).workspace_ref); tab = String((resolved.tabs as Json[])[0]!.tab_ref);
+    await connect('codex');
+    const resumed = await execute('request_browser_workspace', workspaceArgs);
+    expect(object((object(object(resumed.result).facts).resolved as Json[])[0]!.workspace).workspace_ref).toBe(workspace);
+    const groups = new Set([workspace]);
+    for (const runtimeName of ['cc', 'dsh'] as const) {
+      const other = await newClient(runtimeName, 'codex'); additionalClients.push(other);
+      expect((await callOn(other, 'get_browser_request', { request_ref: requestRef })).problem).toMatchObject({ code: 'REQUEST_NOT_FOUND' });
+      const ticket = await executeOn(other, 'request_browser_workspace', workspaceArgs);
+      const otherWorkspace = String(object((object(object(ticket.result).facts).resolved as Json[])[0]!.workspace).workspace_ref);
+      expect(groups.has(otherWorkspace)).toBe(false); groups.add(otherWorkspace);
+      await executeOn(other, 'terminate_workspace', { workspace_ref: otherWorkspace });
+    }
+    pass('real Chrome: concurrent same-chat requests share a ticket, adapter restart resumes the group, and Codex/CC/DSH identities use separate groups');
+    await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/` });
+    await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro input fixture');
+    const screenshot = await raw('Page.captureScreenshot', { format: 'png' });
+    expect(Buffer.from(String(screenshot.data), 'base64').subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    pass('real Chrome: screenshot observation works on a Human Simulation Mode domain');
+    holdNextControlResult = true;
+    const target = { workspace_ref: workspace, target: { kind: 'tab', tab_ref: tab } };
+    const seed = await call('send_cdp_command', { ...target, method: 'DOM.getDocument', params: {} });
+    expect(seed.disposition, JSON.stringify(seed)).toBe('accepted');
+    await expect.poll(() => releaseControlResult !== null, { timeout: 15000 }).toBe(true);
+    const sentinel = 'stop-must-fence-this-input';
+    const pendingInput = await call('send_cdp_command', { ...target, method: 'Input.insertText', params: { text: sentinel } });
+    expect(pendingInput.disposition, JSON.stringify(pendingInput)).toBe('accepted');
+    const stopReceipt = await call('stop_workspace_automation', { workspace_ref: workspace });
+    expect(stopReceipt.disposition).toBe('accepted');
+    (releaseControlResult as unknown as () => void)();
+    const stopRef = object(object(stopReceipt.facts).ticket).request_ref;
+    await expect.poll(async () => object(object((await call('get_browser_request', { request_ref: stopRef })).facts).ticket).state,
+      { timeout: 15000 }).toBe('succeeded');
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 300));
+    expect(trace.some(row => object(row.params).text === sentinel)).toBe(false);
+    pass('real Chrome: stopping automation fences an input queued behind an in-flight command');
+    await execute('terminate_workspace', { workspace_ref: workspace });
+    allocated = await execute('request_browser_workspace', workspaceArgs);
+    resolved = (object(object(allocated.result).facts).resolved as Json[])[0]!;
     workspace = String(object(resolved.workspace).workspace_ref); tab = String((resolved.tabs as Json[])[0]!.tab_ref);
     await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/` });
     await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro input fixture');
@@ -410,6 +477,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     throw error;
   } finally {
     await (client as Client | null)?.close().catch(() => {});
+    await Promise.allSettled(additionalClients.map(extra => extra.close()));
     if (control) { await control.send('Browser.close').catch(() => {}); await control.disconnect(); }
     if (browser && browser.exitCode === null && browser.signalCode === null) {
       const exited = once(browser, 'exit'); browser.kill(); await exited;

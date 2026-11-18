@@ -8,7 +8,8 @@ import type { ChromeManagementConnection } from '../../apps/broker/src/profiles/
 export async function probeDashboard(control: ChromeManagementConnection, extensionId: string, rulesPath: string, evidenceRoot: string,
   verifyEnforcement: () => Promise<void>): Promise<string[]> {
   const checks: string[] = [];
-  const original = JSON.parse(readFileSync(rulesPath, 'utf8')) as { schemaVersion: 1; rules: Array<{ id: string; domain: string; mode: 'human_simulation' }> };
+  const original = JSON.parse(readFileSync(rulesPath, 'utf8')) as { schemaVersion: 1; rules: Array<{ id: string; domain: string; mode: 'human_simulation' | 'input_only' }> };
+  const normalizedOriginal = { ...original, rules: original.rules.map(rule => ({ ...rule, mode: 'human_simulation' })) };
   const { targetId } = await control.send('Target.createTarget', { url: `chrome-extension://${extensionId}/options.html` });
   const { sessionId } = await control.send('Target.attachToTarget', { targetId, flatten: true });
   const session = String(sessionId);
@@ -84,11 +85,11 @@ export async function probeDashboard(control: ChromeManagementConnection, extens
     expect(rules().rules).toContainEqual(expect.objectContaining({ domain: 'app.fixture.test' }));
     await click('button[aria-label="Remove rule for app.fixture.test"]'); await click('#accept-confirm');
     await expect.poll(() => read('document.querySelector("#confirm-dialog").open')).toBe(false);
-    expect(rules()).toEqual(original);
+    expect(rules()).toEqual(normalizedOriginal);
     checks.push('dashboard edits and confirmed removals persist; cancel preserves the rule');
 
     await click('#add-rule'); await type('#rule-domain', 'draft.fixture.test');
-    const external = { ...original, rules: [...original.rules, { id: 'external-edit', domain: 'external.example', mode: 'human_simulation' }] };
+    const external = { ...normalizedOriginal, rules: [...normalizedOriginal.rules, { id: 'external-edit', domain: 'external.example', mode: 'human_simulation' }] };
     writeFileSync(rulesPath, JSON.stringify(external));
     await click('#save-rule');
     await expect.poll(() => read('document.querySelector("#rule-error").textContent')).toContain('RULES_CONFLICT');
@@ -98,7 +99,7 @@ export async function probeDashboard(control: ChromeManagementConnection, extens
     await expect.poll(() => read('document.querySelector("#rule-rows").textContent')).toContain('external.example');
     await click('button[aria-label="Remove rule for external.example"]'); await click('#accept-confirm');
     await expect.poll(() => read('document.querySelector("#confirm-dialog").open')).toBe(false);
-    expect(rules()).toEqual(original);
+    expect(rules()).toEqual(normalizedOriginal);
     checks.push('dashboard rejects stale saves without overwriting external edits and preserves the typed draft');
 
     const desktopSize = await read('[innerWidth, innerHeight]');

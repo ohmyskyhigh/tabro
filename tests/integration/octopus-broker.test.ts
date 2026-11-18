@@ -527,6 +527,8 @@ describe('canonical Tabro broker', () => {
     expect((await terminal(down)).state).toBe('succeeded');
     expect((await terminal(up)).state).toBe('succeeded');
     expect(extension.controlTimes[1]! - extension.controlTimes[0]!).toBeGreaterThanOrEqual(70);
+    // Keep the pacing window open even if the test runner was descheduled after mouse release.
+    vi.spyOn(performance, 'now').mockReturnValueOnce(extension.controlTimes[1]! - 1_000);
     const pending = accept('send_cdp_command', mouse('mouseMoved'));
     await eventuallyMatching(() => broker.getBrowserRequest({ request_ref: pending }, caller),
       value => (value.facts as { ticket: { state: string } }).ticket.state === 'running', 'paced running');

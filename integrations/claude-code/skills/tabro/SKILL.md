@@ -7,9 +7,11 @@ Use the Bash tool to invoke Node with the installed Tabro adapter entry in `TABR
 The Tabro plugin supplies identity through the session environment. Preserve it when
 launching the adapter, and use one workspace per chat.
 
-Use `node "$TABRO_ADAPTER_ENTRY" --list-tools` to discover the available tool
-names and inputs. Pipe a JSON object to `node "$TABRO_ADAPTER_ENTRY" --call <tool>`
-to call one tool. Poll accepted requests with `get_browser_request`.
+Use `bash -c 'node "$TABRO_ADAPTER_ENTRY" --list-tools'` to discover the available
+tool names and inputs. Pipe a JSON object to
+`bash -c 'node "$TABRO_ADAPTER_ENTRY" --call <tool>'` to call one tool. The inner
+shell expands the adapter path after the session environment is loaded. Poll
+accepted requests with `get_browser_request`.
 
 On Human Simulation Mode sites, take screenshots to observe the page and use
 read-only DOM commands for specific elements. Use CDP input events for interaction
