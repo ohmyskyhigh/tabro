@@ -119,16 +119,18 @@ describe('shared Broker runtime discovery', () => {
           TABRO_TEST_MACHINE_SECRET: machineSecret.toString('hex'), TABRO_RUNTIME_SESSION: 'lost-response-test' }, stderr: 'pipe' }));
       await client.listTools();
       let timeout: ReturnType<typeof setTimeout> | undefined;
+      let lostResponseResult: unknown;
       try {
         const result = await Promise.race([
           client.callTool({ name: 'request_browser_workspace', arguments: { required_workspace_count: 1,
             designated_endpoints: [{ endpoint_nickname: 'missing' }] } }),
           new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('Timed out waiting for the lost response.')), 15_000); })
         ]);
+        lostResponseResult = result;
         expect(result.isError).toBe(true);
       } finally { clearTimeout(timeout); }
       await new Promise(resolve => setTimeout(resolve, 250));
-      expect(mutations).toBe(1);
+      expect(mutations, `Lost-response tool result: ${JSON.stringify(lostResponseResult)}`).toBe(1);
       expect(nonces.length).toBeGreaterThan(2);
       expect(new Set(nonces).size).toBe(nonces.length);
     } finally {

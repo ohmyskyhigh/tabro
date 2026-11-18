@@ -299,7 +299,11 @@ globalThis.fetch = async (input, init) => {
     const state = JSON.parse(readFileSync(resolve(install, 'installation.json'), 'utf8')) as { runtimeDirectory: string; nodePath: string; contractVersion: string };
     const manifest = JSON.parse(readFileSync(resolve(packageRoot, 'runtime-manifest.json'), 'utf8')) as { contractVersion: string };
     expect(state.contractVersion).toBe(manifest.contractVersion);
-    expect(existsSync(resolve(install, state.runtimeDirectory, 'native-host/relay-runtime.json'))).toBe(windows);
+    // Machine registration supplies one shared discovery record on every platform.
+    expect(existsSync(resolve(install, state.runtimeDirectory, 'native-host/relay-runtime.json'))).toBe(false);
+    const sharedRuntime = JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8'));
+    expect(sharedRuntime).toMatchObject({ schemaVersion: 2, authMode: 'machine-v1', processId: installation.broker.processId });
+    expect(realpathSync.native(sharedRuntime.databasePath)).toBe(realpathSync.native(resolve(install, 'data/relay.sqlite')));
     const env = { ...getDefaultEnvironment(), ...installation.mcp.env, TABRO_RUNTIME: 'qualification' };
     const connect = () => client.connect(new StdioClientTransport({ ...installation!.mcp, env, stderr: 'inherit' }));
     await connect();
