@@ -15,6 +15,7 @@ import { extensionDigest, profileLayout } from '../../apps/broker/src/profiles/r
 import type { ManagedProfile } from '../../apps/broker/src/profiles/types.js';
 import { MCP_CONTRACT_VERSION } from '../../apps/shared/protocol/src/mcp/tool-catalog.js';
 import { maintenanceRequest } from '../../apps/shared/protocol/src/maintenance-client.js';
+import { removeBrokerRuntime } from '../../apps/shared/protocol/src/runtime-discovery.js';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): Json => {
@@ -408,6 +409,11 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     }
     const activeBroker = broker as ChildProcess | null;
     if (activeBroker && activeBroker.exitCode === null && activeBroker.signalCode === null) { const exited = once(activeBroker, 'exit'); activeBroker.kill('SIGTERM'); await exited; }
+    // Windows termination does not run the process's SIGTERM handler. Remove
+    // only this fixture's discovery record after its owned child has exited.
+    if (activeBroker && runtime.processId === activeBroker.pid && typeof runtime.instanceRef === 'string') {
+      removeBrokerRuntime(runtimeFile, runtime.instanceRef);
+    }
     if (previousRules) writeFileSync(rulesFile, previousRules);
     else rmSync(rulesFile, { force: true });
     for (const socket of sockets) socket.terminate();

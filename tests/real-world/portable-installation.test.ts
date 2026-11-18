@@ -428,7 +428,15 @@ globalThis.fetch = async (input, init) => {
       const database = resolve(install, 'data/relay.sqlite');
       const originalInode = statSync(database).ino;
       const beforeAmbiguous = JSON.parse(readFileSync(statePath, 'utf8')) as { runtimeDirectory: string };
-      const ambiguous = upgrade(ambiguousPackage, { NODE_OPTIONS: `--import="${lostResumeHook}"` });
+      const ambiguousEnvironment = { NODE_OPTIONS: `--import="${lostResumeHook}"` };
+      let ambiguous = upgrade(ambiguousPackage, ambiguousEnvironment);
+      // A reconnect can start between the health observation and admission.
+      // Retry only an explicit pre-admission busy rejection, never an accepted
+      // or ambiguous upgrade and never the injected lost resume response.
+      for (let retry = 0; retry < 3 && ambiguous.status !== 0 && /Maintenance enter failed with status 409/u.test(ambiguous.stderr); retry++) {
+        await waitForQuiescence();
+        ambiguous = upgrade(ambiguousPackage, ambiguousEnvironment);
+      }
       expect(ambiguous.status).not.toBe(0);
       expect(ambiguous.stderr).toMatch(/ambiguous/i);
       const journalPath = resolve(install, 'data/maintenance-operation.json');
