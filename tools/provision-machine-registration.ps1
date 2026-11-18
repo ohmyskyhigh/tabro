@@ -86,8 +86,10 @@ $temporary = Join-Path $directory ('.registration-' + [guid]::NewGuid().ToString
 try {
   $contents = [ordered]@{ schemaVersion = 1; owner = $OwnerSid; installationRoot = $install; dataRoot = $data } | ConvertTo-Json -Compress
   [IO.File]::WriteAllText($temporary, $contents, [Text.UTF8Encoding]::new($false))
-  & icacls.exe $temporary /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*${OwnerSid}:R" /setowner '*S-1-5-32-544' | Out-Null
+  & icacls.exe $temporary /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' "*${OwnerSid}:R" | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Could not secure the machine registration file.' }
+  & icacls.exe $temporary /setowner '*S-1-5-32-544' | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Could not set the machine registration owner.' }
   Move-Item -LiteralPath $temporary -Destination $file -ErrorAction Stop
 } finally { Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue }
 [ordered]@{ status = 'registered'; owner = $OwnerSid; installationRoot = $install; dataRoot = $data } | ConvertTo-Json -Compress

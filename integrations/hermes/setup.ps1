@@ -107,12 +107,12 @@ try {
         $manifestTemp = "$nativeManifest.$([guid]::NewGuid().ToString('N')).tmp"
         try {
           [IO.File]::WriteAllText($manifestTemp, $manifestText, [Text.UTF8Encoding]::new($false))
-          if (Test-Path -LiteralPath $nativeManifest) { [IO.File]::Replace($manifestTemp, $nativeManifest, $null) } else { [IO.File]::Move($manifestTemp, $nativeManifest) }
+          if (Test-Path -LiteralPath $nativeManifest) { [IO.File]::Replace($manifestTemp, $nativeManifest, [NullString]::Value) } else { [IO.File]::Move($manifestTemp, $nativeManifest) }
         } finally { Remove-Item -LiteralPath $manifestTemp -Force -ErrorAction SilentlyContinue }
         foreach ($backup in $registryBackups) { [void](New-Item -Path $backup.key -Force); Set-Item -Path $backup.key -Value $nativeManifest }
         $old | Add-Member -NotePropertyName nativeRegistered -NotePropertyValue $true -Force
         $stateTemp = "$stateFile.$([guid]::NewGuid().ToString('N')).tmp"
-        try { [IO.File]::WriteAllText($stateTemp, ($old | ConvertTo-Json), [Text.UTF8Encoding]::new($false)); [IO.File]::Replace($stateTemp, $stateFile, $null) }
+        try { [IO.File]::WriteAllText($stateTemp, ($old | ConvertTo-Json), [Text.UTF8Encoding]::new($false)); [IO.File]::Replace($stateTemp, $stateFile, [NullString]::Value) }
         finally { Remove-Item -LiteralPath $stateTemp -Force -ErrorAction SilentlyContinue }
       }
       $started = Start-TabroRuntime (Read-TabroState $install)
@@ -237,13 +237,13 @@ try {
     if (-not (Test-Path -LiteralPath $stableNativeHost) -or (Get-FileHash -LiteralPath $stableNativeHost -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $incomingHost -Algorithm SHA256).Hash) {
       $hostTemp = "$stableNativeHost.$([guid]::NewGuid().ToString('N')).tmp"
       Copy-Item -LiteralPath $incomingHost -Destination $hostTemp
-      try { if (Test-Path -LiteralPath $stableNativeHost) { [IO.File]::Replace($hostTemp, $stableNativeHost, $null) } else { [IO.File]::Move($hostTemp, $stableNativeHost) } }
+      try { if (Test-Path -LiteralPath $stableNativeHost) { [IO.File]::Replace($hostTemp, $stableNativeHost, [NullString]::Value) } else { [IO.File]::Move($hostTemp, $stableNativeHost) } }
       finally { Remove-Item -LiteralPath $hostTemp -Force -ErrorAction SilentlyContinue }
     }
     $pointer = Join-Path $install 'bootstrap\current-native-release.txt'
     $pointerTemp = "$pointer.$([guid]::NewGuid().ToString('N')).tmp"
     [IO.File]::WriteAllText($pointerTemp, ($releaseRelative.Replace('\', '/') + "`n"), [Text.UTF8Encoding]::new($false))
-    if (Test-Path -LiteralPath $pointer) { [IO.File]::Replace($pointerTemp, $pointer, $null) } else { [IO.File]::Move($pointerTemp, $pointer) }
+    if (Test-Path -LiteralPath $pointer) { [IO.File]::Replace($pointerTemp, $pointer, [NullString]::Value) } else { [IO.File]::Move($pointerTemp, $pointer) }
     [ordered]@{ name = $nativeName; description = 'Tabro Native Messaging companion'; path = $stableNativeHost; type = 'stdio'; allowed_origins = @('chrome-extension://caekiojlchhifdomfghejkbfpmaklafe/') } | ConvertTo-Json | Set-Content -LiteralPath $nativeManifest -Encoding UTF8
     foreach ($backup in $registryBackups) { [void](New-Item -Path $backup.key -Force); Set-Item -Path $backup.key -Value $nativeManifest }
   }
@@ -279,7 +279,7 @@ try {
       if ($null -ne $backup.bytes) {
         $restoreTemp = "$($backup.path).$([guid]::NewGuid().ToString('N')).tmp"
         [IO.File]::WriteAllBytes($restoreTemp, [byte[]]$backup.bytes)
-        try { if (Test-Path -LiteralPath $backup.path) { [IO.File]::Replace($restoreTemp, $backup.path, $null) } else { [IO.File]::Move($restoreTemp, $backup.path) } }
+        try { if (Test-Path -LiteralPath $backup.path) { [IO.File]::Replace($restoreTemp, $backup.path, [NullString]::Value) } else { [IO.File]::Move($restoreTemp, $backup.path) } }
         finally { Remove-Item -LiteralPath $restoreTemp -Force -ErrorAction SilentlyContinue }
       }
       elseif (Test-Path -LiteralPath $backup.path) { Remove-Item -LiteralPath $backup.path }
