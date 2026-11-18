@@ -535,7 +535,7 @@ globalThis.fetch = async (input, init) => {
     }
     if (installation) {
       try { stop(); } catch (cleanupError) {
-        if (report.status === 'passed') throw cleanupError;
+        if (report.status === 'passed') await Promise.reject(cleanupError);
         report.cleanupError = String(cleanupError);
         writeFileSync(resolve(evidenceRoot, `${process.platform}-${process.arch}-portable-installation.json`), JSON.stringify(report, null, 2));
       }
