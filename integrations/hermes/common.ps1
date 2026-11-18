@@ -71,6 +71,29 @@ function Read-TabroState([string]$Root) {
   return @{ state = $state; runtime = $runtime; node = $node; data = (Get-TabroChild $Root 'data') }
 }
 
+function Invoke-TabroMaintenanceResume($Installation, [string]$Url, [string]$TransactionId, [string]$InstanceRef) {
+  $start = [Diagnostics.ProcessStartInfo]::new()
+  $start.FileName = $Installation.node
+  $arguments = @((Join-Path $Installation.runtime 'maintenance-client.js'), (Split-Path -Parent $Installation.data), $Url, 'resume', $TransactionId, $InstanceRef) | ForEach-Object { '"' + $_ + '"' }
+  $start.Arguments = $arguments -join ' '
+  $start.UseShellExecute = $false
+  $start.CreateNoWindow = $true
+  $start.RedirectStandardOutput = $true
+  $start.RedirectStandardError = $true
+  $resume = [Diagnostics.Process]::Start($start)
+  try {
+    $stdout = $resume.StandardOutput.ReadToEndAsync()
+    $stderr = $resume.StandardError.ReadToEndAsync()
+    if (-not $resume.WaitForExit(70000)) { throw 'Maintenance resume timed out; inspect the operation without retrying it.' }
+    $output = $stdout.GetAwaiter().GetResult()
+    $errorOutput = $stderr.GetAwaiter().GetResult()
+    if ($resume.ExitCode -ne 0) { throw "Maintenance could not resume (exit $($resume.ExitCode)): $output $errorOutput. Inspect the operation before retrying." }
+  } finally {
+    if (-not $resume.HasExited) { $resume.Kill() }
+    $resume.Dispose()
+  }
+}
+
 function Start-TabroRuntime($Installation, [switch]$HoldMaintenance) {
   $mutex = Get-TabroMutex (Split-Path -Parent $Installation.data)
   $locked = $false
@@ -93,9 +116,7 @@ function Start-TabroRuntime($Installation, [switch]$HoldMaintenance) {
     if (Test-Path -LiteralPath $operation) {
       $pending = Get-Content -LiteralPath $operation -Raw -Encoding UTF8 | ConvertFrom-Json
       if ($pending.schemaVersion -ne 1 -or $pending.kind -ne 'stop' -or $pending.transactionId -notmatch '^[0-9a-f-]{36}$' -or -not (Test-Path -LiteralPath $fence)) { throw 'Maintenance state is ambiguous; inspect it before recovering.' }
-      $resumeOutput = & $Installation.node (Join-Path $Installation.runtime 'maintenance-client.js') (Split-Path -Parent $Installation.data) $result.runtime.mcpUrl 'resume' $pending.transactionId $result.runtime.health.instanceRef 2>&1
-      $resumeExitCode = $LASTEXITCODE
-      if ($resumeExitCode -ne 0) { throw "Maintenance could not resume (exit $resumeExitCode): $resumeOutput. Inspect the operation before retrying." }
+      Invoke-TabroMaintenanceResume $Installation $result.runtime.mcpUrl $pending.transactionId $result.runtime.health.instanceRef
       Remove-Item -LiteralPath $operation -Force
     } elseif (Test-Path -LiteralPath $fence) { throw 'An interrupted maintenance transaction needs inspection before startup.' }
     return $result
