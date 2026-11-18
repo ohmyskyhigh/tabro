@@ -14,7 +14,10 @@ export async function maintenanceRequest(root: string, url: URL, action: 'enter'
   const path = `/maintenance/${action}`;
   const body = Buffer.from(JSON.stringify({ transactionId, instanceRef }));
   const token = readFileSync(resolve(registration.dataRoot, 'admin-token.txt'), 'utf8').trim();
-  const result = await fetch(new URL(path, url), { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(5_000),
+  // Resume activates persisted Profiles and can perform bounded OS process inspection.
+  // Allow that activation to complete; a lost response is still never retried.
+  const timeoutMs = action === 'resume' ? 60_000 : 5_000;
+  const result = await fetch(new URL(path, url), { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
     headers: { 'content-type': 'application/json', 'x-tabro-auth': sealCredential(secret, token, instanceRef, 'POST', path, body) }, body });
   if (!result.ok) throw Object.assign(new Error(`Maintenance ${action} failed with status ${result.status}.`), { status: result.status });
 }
