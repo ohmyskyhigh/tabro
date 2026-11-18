@@ -100,9 +100,12 @@ describe('shared Broker runtime discovery', () => {
           mutation = message.method === 'tools/call' && message.params?.name === 'request_browser_workspace';
         } catch { /* Health and empty requests have no JSON body. */ }
         if (mutation) mutations++;
-        const upstream = httpRequest({ host: '127.0.0.1', port: targetPort, path: request.url, method: request.method, headers: request.headers }, result => {
+        // Keep this fault injector independent of idle keep-alive socket races.
+        // Only the explicitly selected mutation response should be lost.
+        const upstream = httpRequest({ host: '127.0.0.1', port: targetPort, path: request.url, method: request.method,
+          headers: { ...request.headers, connection: 'close' } }, result => {
           if (mutation) { result.resume(); response.destroy(); return; }
-          response.writeHead(result.statusCode ?? 500, result.headers); result.pipe(response);
+          response.writeHead(result.statusCode ?? 500, { ...result.headers, connection: 'close' }); result.pipe(response);
         });
         upstream.on('error', () => response.destroy());
         upstream.end(body);
