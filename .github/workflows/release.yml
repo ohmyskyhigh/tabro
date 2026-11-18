@@ -112,14 +112,24 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $root = Join-Path $env:RUNNER_TEMP 'tabro-device-install'
+          $root = Join-Path $env:LOCALAPPDATA 'TabroQualification'
           $data = Join-Path $root 'data'
           New-Item -ItemType Directory -Force -Path $data | Out-Null
           $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-          & icacls.exe $root /setowner "*$sid" /T | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw 'Could not set the qualification directory owner.' }
-          & icacls.exe $root /inheritance:r /grant:r "*${sid}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' /T | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw 'Could not make the qualification directories private.' }
+          foreach ($directory in @($root, $data)) {
+            $security = [Security.AccessControl.DirectorySecurity]::new()
+            $security.SetAccessRuleProtection($true, $false)
+            $security.SetOwner([Security.Principal.SecurityIdentifier]::new($sid))
+            $inherit = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+            foreach ($trusted in @($sid, 'S-1-5-18', 'S-1-5-32-544')) {
+              $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+                [Security.Principal.SecurityIdentifier]::new($trusted),
+                [Security.AccessControl.FileSystemRights]::FullControl, $inherit,
+                [Security.AccessControl.PropagationFlags]::None,
+                [Security.AccessControl.AccessControlType]::Allow))
+            }
+            Set-Acl -LiteralPath $directory -AclObject $security
+          }
           powershell.exe -NoProfile -NonInteractive -File tools/provision-machine-registration.ps1 -OwnerSid $sid -InstallationRoot $root -DataRoot $data
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "TABRO_QUALIFY_INSTALL_ROOT=$root" >> $env:GITHUB_ENV
