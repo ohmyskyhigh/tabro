@@ -9,6 +9,10 @@ if ($OutputPath) { $output = [IO.Path]::GetFullPath($OutputPath) }
 $buildRef = [Guid]::NewGuid().ToString('N')
 $temporaryOutput = Join-Path $outputDirectory "relay-native-host.$buildRef.exe"
 $temporaryObject = Join-Path $outputDirectory "relay-native-host.$buildRef.obj"
+$lockSource = Join-Path $workspace 'apps\native-host\src\machine-lock.c'
+$lockOutput = Join-Path $outputDirectory 'machine-lock.node'
+$temporaryLock = Join-Path $outputDirectory "machine-lock.$buildRef.node"
+$temporaryLockObject = Join-Path $outputDirectory "machine-lock.$buildRef.obj"
 
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
@@ -30,9 +34,14 @@ if (-not $installationPath) {
 
 $developerCommand = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
 try {
-  $compileCommand = 'call "{0}" -arch=x64 && cl /nologo /EHsc /O2 /W4 /DUNICODE /D_UNICODE "{1}" /Fo:"{2}" /Fe:"{3}" /link winhttp.lib' -f $developerCommand, $source, $temporaryObject, $temporaryOutput
+  $compileCommand = 'call "{0}" -arch=x64 && cl /nologo /EHsc /O2 /W4 /DUNICODE /D_UNICODE "{1}" /Fo:"{2}" /Fe:"{3}" /link shell32.lib advapi32.lib' -f $developerCommand, $source, $temporaryObject, $temporaryOutput
   & cmd.exe /d /s /c $compileCommand
   if ($LASTEXITCODE -ne 0) { throw "Native companion build failed with exit code $LASTEXITCODE." }
+
+  $lockCommand = 'call "{0}" -arch=x64 && cl /nologo /TC /std:c11 /O2 /W4 /D_CRT_SECURE_NO_WARNINGS /LD "{1}" /Fo:"{2}" /Fe:"{3}" /link shell32.lib ole32.lib advapi32.lib uuid.lib' -f $developerCommand, $lockSource, $temporaryLockObject, $temporaryLock
+  & cmd.exe /d /s /c $lockCommand
+  if ($LASTEXITCODE -ne 0) { throw "Machine lock build failed with exit code $LASTEXITCODE." }
+  Copy-Item -LiteralPath $temporaryLock -Destination $lockOutput -Force
 
   try {
     Copy-Item -LiteralPath $temporaryOutput -Destination $output -Force
@@ -50,6 +59,8 @@ try {
 finally {
   Remove-Item -LiteralPath $temporaryOutput -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $temporaryObject -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $temporaryLock -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $temporaryLockObject -Force -ErrorAction SilentlyContinue
 }
 
 Write-Output $output

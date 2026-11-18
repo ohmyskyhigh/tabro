@@ -29,6 +29,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22.3'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install compatible Chrome for Testing on macOS
         if: runner.os == 'macOS'
         shell: bash
@@ -86,14 +89,13 @@ jobs:
           tar -czf "artifacts/release/$TABRO_ASSET.tar.gz" -C "$TABRO_QUALIFY_PACKAGE" .
           cd artifacts/release
           shasum -a 256 "$TABRO_ASSET.tar.gz" > "$TABRO_ASSET.tar.gz.sha256"
-      - name: Qualify the Windows archive and Chrome connection
+      - name: Extract the Windows archive for qualification
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $env:TABRO_QUALIFY_PACKAGE = Join-Path $env:RUNNER_TEMP 'tabro-package'
           Expand-Archive -Path "artifacts/release/$env:TABRO_ASSET.zip" -DestinationPath $env:TABRO_QUALIFY_PACKAGE
           "TABRO_QUALIFY_PACKAGE=$env:TABRO_QUALIFY_PACKAGE" >> $env:GITHUB_ENV
-          pnpm exec vitest run tests/real-world/portable-installation.test.ts
       - name: Extract the Unix archive for qualification
         if: runner.os != 'Windows'
         shell: bash
@@ -101,6 +103,39 @@ jobs:
           mkdir -p "$RUNNER_TEMP/tabro-package"
           tar -xzf "artifacts/release/$TABRO_ASSET.tar.gz" -C "$RUNNER_TEMP/tabro-package"
           echo "TABRO_QUALIFY_PACKAGE=$RUNNER_TEMP/tabro-package" >> "$GITHUB_ENV"
+      - name: Reject an unregistered machine before writing state
+        shell: bash
+        env:
+          TABRO_QUALIFY_UNREGISTERED: '1'
+        run: pnpm exec vitest run tests/real-world/unregistered-broker.test.ts --maxWorkers=1
+      - name: Provision the isolated Windows qualification installation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'tabro-device-install'
+          $data = Join-Path $root 'data'
+          New-Item -ItemType Directory -Force -Path $data | Out-Null
+          $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          & icacls.exe $root /setowner "*$sid" /T | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Could not set the qualification directory owner.' }
+          & icacls.exe $root /inheritance:r /grant:r "*${sid}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' /T | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Could not make the qualification directories private.' }
+          powershell.exe -NoProfile -NonInteractive -File tools/provision-machine-registration.ps1 -OwnerSid $sid -InstallationRoot $root -DataRoot $data
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "TABRO_QUALIFY_INSTALL_ROOT=$root" >> $env:GITHUB_ENV
+      - name: Provision the isolated Unix qualification installation
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          root=$(python -c 'import os; print(os.path.realpath(os.path.join(os.environ["RUNNER_TEMP"], "tabro-device-install")))')
+          mkdir -p "$root/data"
+          chmod 700 "$root" "$root/data"
+          sudo "$(command -v node)" tools/provision-machine-registration.mjs "$(id -u)" "$root" "$root/data"
+          echo "TABRO_QUALIFY_INSTALL_ROOT=$root" >> "$GITHUB_ENV"
+      - name: Qualify the Windows archive and Chrome connection
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pnpm exec vitest run tests/real-world/portable-installation.test.ts --maxWorkers=1
       - name: Qualify Chrome, Keychain and interrupted input on macOS
         if: runner.os == 'macOS'
         shell: bash
@@ -119,11 +154,11 @@ jobs:
               security('unlock-keychain', '-p', 'tabro-fixture', keychain)
               security('set-keychain-settings', '-lut', '1800', keychain)
               # Chrome also uses the default Keychain during network initialization.
-              subprocess.run(['pnpm', 'exec', 'vitest', 'run',
-                  'tests/integration/proxy-credentials.test.ts',
-                  'tests/real-world/portable-installation.test.ts',
-                  'tests/real-world/input-only-recovery.test.ts', '--maxWorkers=1'],
-                  env={**os.environ, 'TABRO_QUALIFY_CREDENTIALS': '1'}, check=True)
+              for test in ['tests/integration/proxy-credentials.test.ts',
+                           'tests/real-world/portable-installation.test.ts',
+                           'tests/real-world/input-only-recovery.test.ts']:
+                  subprocess.run(['pnpm', 'exec', 'vitest', 'run', test, '--maxWorkers=1'],
+                      env={**os.environ, 'TABRO_QUALIFY_CREDENTIALS': '1'}, check=True)
               reports = list(pathlib.Path('artifacts/qualification').glob('darwin-*-input-only.json'))
               assert len(reports) == 1 and json.loads(reports[0].read_text())['status'] == 'passed'
           finally:
@@ -153,6 +188,13 @@ jobs:
         run: |
           pnpm exec vitest run tests/real-world/input-only-recovery.test.ts
           node -e 'const fs=require("node:fs"); const p="artifacts/qualification/"+process.platform+"-"+process.arch+"-input-only.json"; if(JSON.parse(fs.readFileSync(p)).status!=="passed") process.exit(1)'
+      - name: Qualify production Broker exclusivity and crash recovery
+        shell: bash
+        env:
+          TABRO_QUALIFY_DEVICE: '1'
+        run: |
+          pnpm test:device
+          node -e 'const fs=require("node:fs"); const p="artifacts/qualification/"+process.platform+"-"+process.arch+"-device-broker.json"; if(JSON.parse(fs.readFileSync(p)).status!=="passed") process.exit(1)'
       - name: Qualify the Hermes catalog package against the release binary
         if: runner.os == 'Windows'
         shell: pwsh

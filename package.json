@@ -21,10 +21,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --exclude \"tests/e2e/**\"",
+    "test:migrations": "python -m unittest discover -s tests/migrations -p test_broker_store_merge.py",
+    "test:device": "vitest run tests/real-world/device-broker.test.ts --maxWorkers=1",
     "test:e2e": "vitest run tests/e2e",
     "test:real-world": "vitest run tests/e2e/multi-agent-multi-extension.test.ts",
     "preflight:real-world": "tsx tests/real-world/setup-readiness.ts",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm build",
+    "verify": "pnpm lint && pnpm typecheck && pnpm build && pnpm test && pnpm test:migrations && pnpm test:e2e",
     "smoke": "tsx tools/smoke-test.ts"
   },
   "dependencies": {

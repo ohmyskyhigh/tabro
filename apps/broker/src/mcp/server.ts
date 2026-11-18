@@ -23,6 +23,8 @@ import {
 import type { RelayRepositories } from '../storage/index.js';
 import { authenticateRequest, rejectUnauthorized } from './auth.js';
 import { callerEvidenceFromContext } from './caller-evidence.js';
+import { machineProof, openCredential } from '../../../shared/protocol/src/machine-auth.js';
+import type { MaintenanceFence } from '../runtime/maintenance.js';
 
 type NodeRequestWithAuth = IncomingMessage & { auth?: AuthInfo };
 
@@ -39,6 +41,9 @@ export interface McpGatewayOptions {
   port: number;
   serviceVersion: string;
   health: () => Record<string, unknown>;
+  machineSecret?: Buffer;
+  instanceRef?: string;
+  maintenance?: MaintenanceFence;
   onError?: (error: Error) => void;
 }
 
@@ -56,6 +61,14 @@ export interface McpGatewayOptions {
 export class McpGateway {
   private readonly httpServer: Server;
   private readonly delivery = new AsyncLocalStorage<DeliveryContext>();
+  private inFlight = 0;
+  private readonly credentialNonces = new Map<string, number>();
+  private maintenanceStop?: () => void;
+  private maintenanceResume?: () => Promise<void>;
+  private resuming = false;
+
+  setMaintenanceStopHandler(handler: () => void): void { this.maintenanceStop = handler; }
+  setMaintenanceResumeHandler(handler: () => Promise<void>): void { this.maintenanceResume = handler; }
 
   constructor(
     private readonly broker: OctopusBroker,
@@ -75,18 +88,62 @@ export class McpGateway {
         response.writeHead(403, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'FORBIDDEN_HOST' }));
         return;
       }
-      if (request.url === '/health' && request.method === 'GET') {
+      let healthUrl: URL;
+      try { healthUrl = new URL(request.url ?? '/', 'http://127.0.0.1'); }
+      catch { response.writeHead(400).end(); return; }
+      if (healthUrl.pathname === '/health' && request.method === 'GET') {
+        const challenge = healthUrl.searchParams.get('challenge');
+        if (healthUrl.search && (!challenge || !/^[a-f0-9]{64}$/u.test(challenge) || healthUrl.searchParams.size !== 1 ||
+            !this.options.machineSecret || !this.options.instanceRef)) {
+          response.writeHead(400).end();
+          return;
+        }
         response.writeHead(200, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({ status: 'ok', ...this.options.health() }));
+        response.end(JSON.stringify({ status: 'ok', ...this.options.health(),
+          ...(challenge && this.options.machineSecret && this.options.instanceRef
+            ? { proof: machineProof(this.options.machineSecret, 'health', this.options.instanceRef, challenge) } : {}) }));
+        return;
+      }
+      if ((request.url === '/maintenance/enter' || request.url === '/maintenance/resume' || request.url === '/maintenance/stop') && request.method === 'POST' && this.options.maintenance) {
+        if (!this.validSealedHeader(request)) { rejectUnauthorized(response); return; }
+        try {
+          const body = await this.readBody(request, 4096);
+          const auth = this.authenticate(request, body);
+          if (!auth?.scopes.includes('broker:admin')) { rejectUnauthorized(response); return; }
+          const input = JSON.parse(body.toString('utf8')) as { transactionId?: unknown; instanceRef?: unknown };
+          if (typeof input.transactionId !== 'string' || typeof input.instanceRef !== 'string' || input.instanceRef !== this.options.instanceRef) throw new Error('Invalid maintenance request.');
+          let accepted = false;
+          if (request.url === '/maintenance/enter') {
+            accepted = this.options.maintenance.enter(input.transactionId, input.instanceRef, () => {
+              const state = this.options.health();
+              return this.inFlight === 0 && state.activeWorkspaceCount === 0 && state.openRequestCount === 0 &&
+                state.relayQuiescent === true && state.profileQuiescent === true && state.proxyQuiescent === true;
+            });
+          } else if (request.url === '/maintenance/stop') {
+            accepted = !this.resuming && !!this.maintenanceStop && this.options.maintenance.stop(input.transactionId);
+          } else if (!this.resuming && this.options.maintenance.canResume(input.transactionId)) {
+            this.resuming = true;
+            try {
+              await this.maintenanceResume?.();
+              accepted = this.options.maintenance.resume(input.transactionId);
+            } finally { this.resuming = false; }
+          }
+          if (accepted && request.url === '/maintenance/stop') response.once('finish', () => this.maintenanceStop?.());
+          response.writeHead(accepted ? 200 : 409, { 'content-type': 'application/json' }).end(JSON.stringify({ accepted }));
+        } catch {
+          response.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'MAINTENANCE_FAILED' }));
+        }
         return;
       }
       if (request.url !== '/mcp') {
         response.writeHead(404).end();
         return;
       }
-      const auth = authenticateRequest(request, this.store);
-      if (!auth) {
-        rejectUnauthorized(response);
+      if (!this.validSealedHeader(request)) { rejectUnauthorized(response); return; }
+      const legacyAuth = this.options.machineSecret ? undefined : authenticateRequest(request, this.store);
+      if (!this.options.machineSecret && !legacyAuth) { rejectUnauthorized(response); return; }
+      if (this.options.maintenance?.fenced) {
+        response.writeHead(503, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'MAINTENANCE' }));
         return;
       }
       if (request.headers['x-octopus-contract-version'] !== MCP_CONTRACT_VERSION) {
@@ -95,12 +152,26 @@ export class McpGateway {
         }));
         return;
       }
-      (request as NodeRequestWithAuth).auth = auth;
+      this.inFlight += 1;
+      let handlerDone = false;
+      let responseDone = false;
+      let released = false;
+      const release = (): void => {
+        if (handlerDone && responseDone && !released) { released = true; this.inFlight -= 1; }
+      };
+      const responseFinished = (): void => { responseDone = true; release(); };
+      response.once('finish', responseFinished);
+      response.once('close', responseFinished);
       const deliveryContext: DeliveryContext = { acknowledgements: [] };
       try {
+        const body = this.options.machineSecret ? await this.readBody(request, 8 * 1024 * 1024) : undefined;
+        const auth = legacyAuth ?? this.authenticate(request, body ?? Buffer.alloc(0));
+        if (!auth) { rejectUnauthorized(response); return; }
+        (request as NodeRequestWithAuth).auth = auth;
+        const parsedBody = body?.length ? JSON.parse(body.toString('utf8')) as unknown : undefined;
         await this.delivery.run(deliveryContext, async () => nodeHandler(
           request as unknown as Parameters<typeof nodeHandler>[0],
-          response as unknown as Parameters<typeof nodeHandler>[1]
+          response as unknown as Parameters<typeof nodeHandler>[1], parsedBody
         ));
         this.confirmAfterResponseHandoff(response, deliveryContext.acknowledgements);
       } catch (error) {
@@ -112,8 +183,45 @@ export class McpGateway {
         } else if (!response.writableEnded) {
           response.destroy();
         }
-      }
+      } finally { handlerDone = true; release(); }
     });
+  }
+
+  private async readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const timeout = setTimeout(() => request.destroy(new Error('Request body timed out.')), 5_000);
+    try {
+      for await (const chunk of request) {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+        size += bytes.length;
+        if (size > limit) throw new Error('Request too large.');
+        chunks.push(bytes);
+      }
+      return Buffer.concat(chunks);
+    } finally { clearTimeout(timeout); }
+  }
+
+  private validSealedHeader(request: IncomingMessage): boolean {
+    if (!this.options.machineSecret) return true;
+    const value = request.headers['x-tabro-auth'];
+    return !request.headers.authorization && typeof value === 'string' &&
+      /^\d{13}\.[a-f0-9]{24}\.[a-f0-9]{32,8192}\.[a-f0-9]{32}$/u.test(value);
+  }
+
+  private authenticate(request: IncomingMessage, body: Buffer): AuthInfo | null {
+    if (!this.options.machineSecret || !this.options.instanceRef) return authenticateRequest(request, this.store);
+    const header = request.headers['x-tabro-auth'];
+    if (typeof header !== 'string' || request.headers.authorization || !request.method || !request.url) return null;
+    const credential = openCredential(this.options.machineSecret, header, this.options.instanceRef, request.method, request.url, body);
+    if (!credential) return null;
+    const now = Date.now();
+    for (const [nonce, expiry] of this.credentialNonces) if (expiry <= now) this.credentialNonces.delete(nonce);
+    if (this.credentialNonces.size >= 100_000 || this.credentialNonces.has(credential.nonce)) return null;
+    const principal = this.store.authenticateAgent(credential.token);
+    if (!principal) return null;
+    this.credentialNonces.set(credential.nonce, credential.expires);
+    return { token: credential.token, clientId: principal.principalId, scopes: [...principal.scopes], extra: { displayName: principal.displayName } };
   }
 
   async start(): Promise<void> {

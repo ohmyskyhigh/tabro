@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -14,6 +14,7 @@ import { ChromeLauncher } from '../../apps/broker/src/profiles/chrome-launcher.j
 import { extensionDigest, profileLayout } from '../../apps/broker/src/profiles/runtime-config.js';
 import type { ManagedProfile } from '../../apps/broker/src/profiles/types.js';
 import { MCP_CONTRACT_VERSION } from '../../apps/shared/protocol/src/mcp/tool-catalog.js';
+import { maintenanceRequest } from '../../apps/shared/protocol/src/maintenance-client.js';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): Json => {
@@ -26,18 +27,29 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   const packageRoot = resolve(process.env.TABRO_QUALIFY_PACKAGE!);
   const manifest = object(JSON.parse(readFileSync(join(packageRoot, 'runtime-manifest.json'), 'utf8')));
   expect(manifest.contractVersion).toBe(MCP_CONTRACT_VERSION);
+  if (!process.env.TABRO_QUALIFY_INSTALL_ROOT) throw new Error('TABRO_QUALIFY_INSTALL_ROOT must name the pre-provisioned machine installation.');
+  const install = realpathSync(process.env.TABRO_QUALIFY_INSTALL_ROOT);
+  const registrationPath = process.platform === 'win32'
+    ? resolve(process.env.ProgramData ?? 'C:\\ProgramData', 'Tabro/registration.json')
+    : process.platform === 'darwin' ? '/var/db/tabro/registration.json' : '/var/lib/tabro/registration.json';
+  const registration = object(JSON.parse(readFileSync(registrationPath, 'utf8')));
+  expect(realpathSync(String(registration.installationRoot))).toBe(install);
+  expect(realpathSync(String(registration.dataRoot))).toBe(realpathSync(join(install, 'data')));
+  const installation = object(JSON.parse(readFileSync(join(install, 'installation.json'), 'utf8')));
+  const installedRuntime = resolve(install, String(installation.runtimeDirectory));
   const root = mkdtempSync(join(tmpdir(), 'tabro-input-qualification-'));
   const evidence = resolve(process.env.TABRO_INPUT_EVIDENCE ?? 'artifacts/qualification', `${process.platform}-${process.arch}-input-only.json`);
   const userData = join(root, 'chrome'); mkdirSync(userData);
-  const runtimeFile = join(root, 'runtime.json');
-  const rulesFile = join(root, 'browser-rules.json');
+  const runtimeFile = join(install, 'data/runtime.json');
+  const rulesFile = join(install, 'data/browser-rules.json');
+  if (existsSync(runtimeFile)) throw new Error('Qualification requires a stopped Broker and no published runtime.');
+  const previousRules = existsSync(rulesFile) ? readFileSync(rulesFile) : null;
   const browserPath = process.env.TABRO_QUALIFY_CHROME ?? (process.platform === 'darwin'
     ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : process.platform === 'win32'
       ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '/opt/google/chrome/chrome');
   expect(existsSync(browserPath), 'A native Chrome installation is required').toBe(true);
   const rules = { schemaVersion: 1, rules: [{ id: 'fixture', domain: 'fixture.test', mode: 'input_only' }] };
-  writeFileSync(rulesFile, JSON.stringify(rules));
-  const token = randomBytes(32).toString('base64url');
+  const token = readFileSync(join(install, 'data/admin-token.txt'), 'utf8').trim();
   const trace: Json[] = [];
   const connections: Json[] = [];
   const events: Json[] = [];
@@ -105,7 +117,14 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
   bridge.on('connection', (socket, request) => {
     connectionEvent({ event: 'extension_connected' });
     sockets.add(socket);
-    const upstream = new WebSocket(String(runtime.relayUrl), { headers: { origin: request.headers.origin ?? 'chrome-extension://caekiojlchhifdomfghejkbfpmaklafe' } });
+    const timestamp = Date.now();
+    const nonce = randomBytes(16).toString('hex');
+    const proof = createHmac('sha256', Buffer.from(readFileSync(join(install, 'data/native-secret'), 'utf8').trim(), 'hex'))
+      .update(`relay:${runtime.instanceRef}:${timestamp}:${nonce}`).digest('hex');
+    const upstream = new WebSocket(String(runtime.relayUrl), { headers: {
+      origin: request.headers.origin ?? 'chrome-extension://caekiojlchhifdomfghejkbfpmaklafe',
+      'x-tabro-relay-proof': `${timestamp}.${nonce}.${proof}`
+    } });
     sockets.add(upstream);
     const waiting: string[] = [];
     upstream.on('open', () => { connectionEvent({ event: 'broker_connected' }); for (const message of waiting.splice(0)) upstream.send(message); });
@@ -136,11 +155,11 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
 
   async function startBroker() {
     const oldPid = broker?.pid;
-    broker = spawn(process.execPath, [join(packageRoot, 'runtime/broker/main.js')], { stdio: ['ignore', 'pipe', 'pipe'], env: {
-      ...process.env, RELAY_DB_PATH: join(root, 'relay.sqlite'), RELAY_ADMIN_TOKEN: token, RELAY_LOG_LEVEL: 'silent',
+    broker = spawn(process.execPath, [join(installedRuntime, 'broker/main.js')], { stdio: ['ignore', 'pipe', 'pipe'], env: {
+      ...process.env, RELAY_DB_PATH: join(install, 'data/relay.sqlite'), RELAY_ADMIN_TOKEN: token, RELAY_LOG_LEVEL: 'silent',
       RELAY_MCP_PORT: runtime.mcpUrl ? new URL(String(runtime.mcpUrl)).port : '0',
       RELAY_WS_PORT: runtime.relayUrl ? new URL(String(runtime.relayUrl)).port : '0',
-      TABRO_RUNTIME_FILE: runtimeFile, TABRO_NATIVE_RUNTIME_FILE: join(root, 'native-runtime.json'), TABRO_BROWSER_RULES_PATH: rulesFile
+      TABRO_RUNTIME_FILE: runtimeFile, TABRO_NATIVE_RUNTIME_FILE: runtimeFile, TABRO_BROWSER_RULES_PATH: rulesFile
     } });
     broker.stdout?.on('data', data => { logs += String(data); }); broker.stderr?.on('data', data => { logs += String(data); });
     await expect.poll(() => {
@@ -150,10 +169,22 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       if (next.processId !== broker?.pid || next.processId === oldPid) return false;
       runtime = next; return true;
     }, { timeout: 15000 }).toBe(true);
+    const marker = join(install, 'data/maintenance.json');
+    const operation = join(install, 'data/maintenance-operation.json');
+    if (existsSync(marker)) {
+      if (!existsSync(operation)) throw new Error('Unowned maintenance fence requires inspection.');
+      const journal = object(JSON.parse(readFileSync(operation, 'utf8')));
+      const fenced = object(JSON.parse(readFileSync(marker, 'utf8')));
+      if (journal.kind !== 'stop' || typeof journal.transactionId !== 'string' || fenced.transactionId !== journal.transactionId) {
+        throw new Error('The maintenance fence does not match the stopped fixture installation.');
+      }
+      await maintenanceRequest(install, new URL(String(runtime.mcpUrl)), 'resume', journal.transactionId, String(runtime.instanceRef));
+      rmSync(operation);
+    }
   }
   async function connect(runtimeName: 'codex' | 'hermes') {
     await client?.close(); client = new Client({ name: `input-qualification-${runtimeName}`, version: '1' });
-    await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(packageRoot, 'runtime/adapter/main.js')],
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(installedRuntime, 'adapter/main.js')],
       env: { ...getDefaultEnvironment(), TABRO_RUNTIME_FILE: runtimeFile, TABRO_TOKEN: token,
         TABRO_RUNTIME: runtimeName, TABRO_RUNTIME_SESSION: `input-qualification-${runtimeName}` }, stderr: 'pipe' }));
     const tools = await client.listTools();
@@ -205,6 +236,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     expect(value.exceptionDetails, JSON.stringify(value)).toBeUndefined(); return object(value.result).value;
   }
   try {
+    writeFileSync(rulesFile, JSON.stringify(rules));
     await startBroker(); await connect('codex');
     browser = spawn(browserPath, [`--user-data-dir=${userData}`, '--no-first-run', '--no-default-browser-check', '--disable-background-mode',
       '--headless=new', '--window-size=1280,900', '--no-proxy-server', '--host-resolver-rules=MAP *.test 127.0.0.1', '--remote-debugging-address=127.0.0.1',
@@ -376,6 +408,8 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     }
     const activeBroker = broker as ChildProcess | null;
     if (activeBroker && activeBroker.exitCode === null && activeBroker.signalCode === null) { const exited = once(activeBroker, 'exit'); activeBroker.kill('SIGTERM'); await exited; }
+    if (previousRules) writeFileSync(rulesFile, previousRules);
+    else rmSync(rulesFile, { force: true });
     for (const socket of sockets) socket.terminate();
     await new Promise<void>(resolveClose => bridge.close(() => resolveClose()));
     site.closeAllConnections(); await new Promise<void>(resolveClose => site.close(() => resolveClose()));

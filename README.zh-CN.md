@@ -1,6 +1,8 @@
 # Tabro
 
-项目原名为 Octopus Browser Relay。新的 MCP 注册名为 `tabro`；已有 Profile 数据、扩展身份、Native Messaging 注册和旧环境变量继续兼容。GitHub 仓库已迁移至 [ohmyskyhigh/tabro](https://github.com/ohmyskyhigh/tabro)，旧仓库地址会跳转，历史发布附件保留原文件名。
+> **当前安装方式：**请按 [入门指南](./GETTING_STARTED.md) 完成设备注册并使用当前安装包。源码工具复用已注册的安装。
+
+项目原名为 Octopus Browser Relay。新的 MCP 注册名为 `tabro`；迁移到设备级 Broker 前应检查已有安装和数据。GitHub 仓库已迁移至 [ohmyskyhigh/tabro](https://github.com/ohmyskyhigh/tabro)，历史发布附件保留原文件名。
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [中文文档](./doc/zh-CN/README.md)
 
@@ -41,13 +43,7 @@ Agent 可以为不同任务创建独立的标签组工作区。Broker 记录工�
 
 ### 开发者可从源码安装二十二工具的共享运行时
 
-1. 准备下方“环境要求”中的 Windows 构建工具，克隆仓库并进入根目录。
-2. 运行 `pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker`；启用受管 Chrome 时另加 `-EnableManagedProfiles`。
-3. 外部已有浏览器 Profile 在 `chrome://extensions` 加载安装器返回的扩展目录，使用 Native companion 等待连接；受管 Profile 在 create/open 时自动加载。
-4. 使用 `.relay-data/bootstrap/codex-mcp.toml` 或 `hermes-mcp.txt` 生成的配置，新建 Agent 会话并核对 22 个工具。
-5. 从 `.relay-data/runtime.json` 读取实际健康地址，再验证端点连接和真实托管标签页操作。
-
-仓库发布记录中的 `v0.3.0` 安装包仍是旧名称与 14 工具协议。当前源码更新器要求包声明 `runtimeDiscoveryVersion: 1`，不合格包会在停止现有安装前被拒绝。完整步骤见[安装与设置](./doc/zh-CN/Installation-and-Setup.md)。
+运行 `pnpm install --frozen-lockfile`、`pnpm build`，再用 `pnpm stage:hermes --output=tabro-v0.5.0-<平台>` 构建当前安装包。按[入门指南](./GETTING_STARTED.md#standalone-installers)注册设备和桌面用户、运行安装包，使用输出的 MCP 与扩展路径完成连接验证。
 
 ## 功能
 
@@ -100,39 +96,7 @@ flowchart LR
 
 ### 独立更新器会校验、安装、注册并启动选定版本
 
-以下下载命令对应历史发布包路径；它不等于当前源码的二十二工具、受管 Profile 和动态发现安装。使用当前功能请按“源码安装”构建。
-
-在 PowerShell 中执行：
-
-```powershell
-Invoke-WebRequest `
-  https://github.com/ohmyskyhigh/tabro/releases/download/v0.3.0/octopus-browser-relay-update.ps1 `
-  -OutFile .\octopus-browser-relay-update.ps1
-pwsh -NoProfile -File .\octopus-browser-relay-update.ps1 -Repository ohmyskyhigh/tabro -Version v0.3.0
-```
-
-更新器会：
-
-- 下载 Windows ZIP 和 SHA-256 文件；
-- 校验 ZIP 哈希和包内每个文件的哈希及大小；
-- 安装到 `%LOCALAPPDATA%\Octopus Browser Relay\releases\<version>`；
-- 将扩展同步到稳定目录 `%LOCALAPPDATA%\Octopus Browser Relay\browser-extension`；
-- 注册版本化 Native Messaging 伴生程序；
-- 保留 `data` 目录中的 SQLite、令牌、配对和审计状态；
-- 生成 Codex 配置交接文件，以及可注册所有已安装 Hermes 配置文件的命令；
-- 启动 Broker，并确认健康接口报告目标版本；
-- 在启动失败时恢复上一个版本。
-
-生成的主要文件位于：
-
-```text
-%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\INSTALLATION.md
-%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\codex-mcp.toml
-%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\hermes-mcp.txt
-%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\current-release.json
-```
-
-ZIP 本身不能直接作为 Chrome 扩展加载。必须先运行更新器，再选择它返回的稳定扩展目录。
+按[入门指南](./GETTING_STARTED.md#standalone-installers)验证当前安装包的校验和，注册设备并以桌面用户运行安装。Windows 源码包装命令为 `pwsh -NoProfile -File tools/update-local.ps1 -PackagePath <解压后的当前安装包>`。
 
 ## 浏览器扩展
 
@@ -143,7 +107,7 @@ ZIP 本身不能直接作为 Chrome 扩展加载。必须先运行更新器，�
 1. 打开 `chrome://extensions`。
 2. 开启**开发者模式**。
 3. 点击**加载已解压的扩展程序**。
-4. 选择 `%LOCALAPPDATA%\Octopus Browser Relay\browser-extension`。
+4. 选择安装器输出的 `extensionPath`。
 5. 确认扩展 ID 为 `caekiojlchhifdomfghejkbfpmaklafe`。
 6. 打开扩展设置页，保持 **Native companion**，等待连接成功。
 
@@ -151,50 +115,23 @@ ZIP 本身不能直接作为 Chrome 扩展加载。必须先运行更新器，�
 
 ### 后续更新复用同一路径，扩展重载后启用新代码
 
-运行已安装的更新器：
-
-```powershell
-pwsh -NoProfile -File "$env:LOCALAPPDATA\Octopus Browser Relay\update-local.ps1"
-```
-
-更新器替换稳定目录中的文件后，重载扩展以启用新代码；扩展保留配置文件内的配对身份。Broker 以 relay 协议协商判断兼容性，不要求扩展与 Broker 的软件版本号相同，也不会因版本号不同要求重载。
+完成活动浏览器工作后运行新安装包的 setup。更新会阻止新请求并检查活动工作；更新文件后重载浏览器扩展。
 
 ## Agent 配置
 
 ### Codex 使用更新器生成的 TOML 片段启动会话独立适配器
 
-将 `bootstrap\codex-mcp.toml` 合并到当前 Codex `config.toml`，然后新建 Codex 会话。配置通过本地文件引用令牌，不会把令牌内容写进 TOML。
+按[入门指南](./GETTING_STARTED.md#codex-connects-through-its-stdio-mcp-registration)注册安装器输出的 stdio MCP 命令，然后新建 Codex 会话。
 
 ### Hermes 使用一个生成命令注册默认和所有已安装配置文件
 
-执行 `bootstrap\hermes-mcp.txt` 中的完整命令。它会发现默认配置文件和所有已安装命名配置文件，并为每个隔离配置文件注册同一个 stdio MCP 服务。为目标配置文件新建会话后验证：
-
-```powershell
-hermes -p <profile> mcp test tabro
-```
-
-必须发现 22 个工具。以后新建 Hermes 配置文件时，需要再次运行该命令。Codex 和 Hermes 都应为每个独立 Agent 会话启动独立的 stdio 适配器进程，以保持会话身份隔离。
+按[入门指南](./GETTING_STARTED.md#hermes)为每个 Hermes 配置文件启用兼容插件并重载 MCP。
 
 ## 源码安装
 
 ### 开发者可以从仓库构建、注册并启动本地运行时
 
-```powershell
-git clone https://github.com/ohmyskyhigh/tabro.git
-Set-Location .\tabro
-corepack enable
-pnpm install --frozen-lockfile
-pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker
-```
-
-源码安装把生成状态写到 `.relay-data`，扩展构建输出为 `dist\browser-extension`。开发时先用 `tools/stop-local-broker.ps1` 停止同一数据目录的已运行 Broker，再运行：
-
-```powershell
-pnpm build:extension
-pnpm dev
-```
-
-扩展源码变化后，需要重新构建并在浏览器扩展页重载 `dist\browser-extension`。
+运行 `pnpm build` 并使用 `pnpm stage:hermes --output=tabro-v0.5.0-<平台>` 生成安装包。按[入门指南](./GETTING_STARTED.md)完成设备注册和安装。源码工具复用注册的 Broker；只有设备注册明确指向源码目录时才可直接启动源码 Broker。
 
 ## MCP 工具
 
@@ -259,19 +196,15 @@ pnpm build
 健康接口从共享运行记录读取：
 
 ```text
-.relay-data/runtime.json → mcpUrl，将 /mcp 替换为 /health
-.relay-data/runtime.json → relayUrl，将 ws: 替换为 http:，/relay 替换为 /health
+<安装目录>/data/runtime.json → mcpUrl，将 /mcp 替换为 /health
+<安装目录>/data/runtime.json → relayUrl，将 ws: 替换为 http:，/relay 替换为 /health
 ```
 
 ## 故障排查
 
 ### Demo 与日常 MCP 共享一个动态端口 Broker
 
-当前源码默认将 MCP 和 relay 监听端口设为 `0`，由系统分配空闲端口。两种任务共用同一个 Broker 和同一份运行记录；MCP 与 relay 是同一进程的两个接口，各有一个监听端口。
-
-运行 `powershell -NoProfile -File tools/start-local-broker.ps1` 会复用健康实例并返回实际地址。Hermes 和 Codex 使用 `TABRO_RUNTIME_FILE` 指向 `.relay-data/runtime.json`，认证仍通过令牌文件。Native Host 从可执行文件旁的 `relay-runtime.json` 读取当前 relay 地址。重启后适配器在下一次调用前重新发现地址，不自动重放已提交操作。
-
-Demo 只单独保留演示站、trace 与输出；Chrome 数据目录和登录状态仍在原位置。Hermes Plugin 接管是后续独立工作。
+Demo 和 MCP 共用注册的 Broker。动态地址保存在 `<安装目录>/data/runtime.json`，原生伴生程序和客户端使用同一设备注册。`tools/start-local-broker.ps1` 复用注册的 Windows Broker。
 
 ### 扩展未连接时应从 Broker 健康、Native Messaging 和扩展路径依次检查
 
@@ -289,19 +222,7 @@ Demo 只单独保留演示站、trace 与输出；Chrome 数据目录和登录�
 
 ### 停止 Broker 时必须使用带 PID 和命令行校验的脚本
 
-Release 安装：
-
-```powershell
-pwsh -NoProfile -File "$env:LOCALAPPDATA\Octopus Browser Relay\stop-installed-broker.ps1"
-```
-
-源码安装：
-
-```powershell
-pwsh -NoProfile -File .\tools\stop-local-broker.ps1
-```
-
-脚本只会停止命令行与已记录入口完全匹配的 Node 进程，不会按端口盲目结束其他进程。
+Windows 使用当前安装包的 `stop.ps1`；macOS 和 Linux 使用 `node <安装目录>/tabro.mjs stop`。Broker 先阻止新请求，仍有活动工作时拒绝停止。
 
 ## 当前限制
 
@@ -348,7 +269,7 @@ dist/                   生成的构建输出
 
 本开发版本新增 list_browser_profiles、create_browser_profile、open_browser_profile、stop_browser_profile，使用 MCP contract v5。Windows 受管启动支持兼容的 Chrome、Chromium 和 Edge 153+，通过版本及运行能力检查，不再锁定一个 Chrome 构建号；Native Messaging 只需一次性安装，新 Profile 自动加载扩展。停止保留 Cookie、网站存储和扩展身份。Hermes 插件已包含此实现；安装前须按插件指南设置浏览器路径。
 
-本地安装使用 `tools/install-local.ps1 -Install -EnableManagedProfiles`；从本分支构建的发布包也可通过 `-EnableManagedProfiles` 启用。Broker 与 adapter 必须一起升级。详细操作与两轮真实结果见 [单 Agent Demo 运行手册](./tests/demo/RUNBOOK.md)。
+请使用[入门指南](./GETTING_STARTED.md)中的注册安装包；兼容客户端共用同一个 Broker。详细操作与两轮真实结果见 [单 Agent Demo 运行手册](./tests/demo/RUNBOOK.md)。
 
 ## 域名规则
 

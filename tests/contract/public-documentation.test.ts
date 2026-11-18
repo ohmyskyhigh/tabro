@@ -13,14 +13,13 @@ function markdownFiles(): string[] {
 }
 
 describe('public documentation', () => {
-  it('keeps the English and Chinese installation entry points aligned to generated handoffs', () => {
+  it('directs both installation entry points to the registered package workflow', () => {
     for (const name of ['README.md', 'README.zh-CN.md']) {
       const text = readFileSync(resolve(workspace, name), 'utf8');
       expect(text).toContain('./GETTING_STARTED.md');
-      expect(text).toContain('releases/download/v0.3.0/octopus-browser-relay-update.ps1');
-      expect(text).toContain('-Version v0.3.0');
-      expect(text).toContain('codex-mcp.toml');
-      expect(text).toContain('hermes-mcp.txt');
+      expect(text).toContain('stage:hermes');
+      expect(text).toContain('-PackagePath');
+      expect(text).toContain('data/runtime.json');
       expect(text).toContain('chrome://extensions');
     }
   });

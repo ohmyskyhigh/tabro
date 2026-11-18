@@ -1,8 +1,12 @@
 import { once } from 'node:events';
 import { endianness } from 'node:os';
+import { resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import WebSocket from 'ws';
 import { readBrokerRuntime } from '../../shared/protocol/src/runtime-discovery.js';
 import { MANAGED_EXTENSION_ID } from '../../broker/src/profiles/runtime-config.js';
+import { newRelayProof, readMachineSecret, verifyBrokerHealth } from '../../shared/protocol/src/machine-auth.js';
+import { readMachineRegistration } from '../../shared/protocol/src/machine-registration.js';
 
 const maxMessage = 1024 * 1024;
 const littleEndian = endianness() === 'LE';
@@ -43,13 +47,31 @@ process.stdout.on('error', () => {
 });
 try {
   const [runtimePath, origin] = process.argv.slice(2);
-  if (!runtimePath || origin !== `chrome-extension://${MANAGED_EXTENSION_ID}/`) throw new Error('Tabro extension origin is required.');
+  if (origin !== `chrome-extension://${MANAGED_EXTENSION_ID}/`) throw new Error('Tabro extension origin is required.');
+  const registration = readMachineRegistration();
+  const stateFile = resolve(registration.installationRoot, 'installation.json');
+  if (existsSync(stateFile)) {
+    const state = JSON.parse(readFileSync(stateFile, 'utf8')) as { schemaVersion?: unknown; runtimeDirectory?: unknown };
+    if (state.schemaVersion !== 1 || typeof state.runtimeDirectory !== 'string') throw new Error('Invalid installation selection.');
+    const runtimeDirectory = state.runtimeDirectory.replaceAll('\\', '/');
+    if (!/^releases\/\d+\.\d+\.\d+-[a-f0-9]{12}$/u.test(runtimeDirectory) ||
+        realpathSync(resolve(registration.installationRoot, runtimeDirectory, 'native-host/relay-native-host.js')) !== realpathSync(import.meta.filename)) {
+      throw new Error('The native companion is not from the selected installation.');
+    }
+  }
+  const expectedRuntime = resolve(registration.dataRoot, 'runtime.json');
+  if (runtimePath && resolve(runtimePath) !== expectedRuntime) throw new Error('The native host runtime does not match the machine registration.');
   const input = messages();
   const first = await input.next();
   const hello = first.done ? undefined : JSON.parse(first.value.toString('utf8'));
   if (hello?.nativeControl?.type !== 'CONNECT') throw new Error('The first native message must request a connection.');
 
-  const connected = socket = new WebSocket(readBrokerRuntime(runtimePath).relayUrl, { maxPayload: maxMessage, handshakeTimeout: 5000 });
+  const runtime = readBrokerRuntime(expectedRuntime);
+  if (runtime.databasePath !== resolve(registration.dataRoot, 'relay.sqlite')) throw new Error('Broker discovery does not match the machine registration.');
+  const secret = readMachineSecret(registration.dataRoot);
+  await verifyBrokerHealth(new URL(runtime.mcpUrl), runtime.instanceRef, secret);
+  const connected = socket = new WebSocket(runtime.relayUrl, { maxPayload: maxMessage, handshakeTimeout: 5000,
+    headers: { 'x-tabro-relay-proof': newRelayProof(secret, runtime.instanceRef) } });
   await once(connected, 'open');
   control('READY');
   connected.on('error', () => { /* WebSocket reports the disconnect through close. */ });

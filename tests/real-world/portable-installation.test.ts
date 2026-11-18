@@ -1,6 +1,6 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/client';
@@ -32,9 +32,45 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     website: liveWebsite ? 'https://www.selenium.dev/selenium/web/web-form.html' : null,
     packageManifestSha256: createHash('sha256').update(readFileSync(resolve(packageRoot, 'runtime-manifest.json'))).digest('hex'), checks: [], commands: [] };
   const passed = (check: string) => { (report.checks as string[]).push(check); };
-  const install = resolve(root, 'Tabro 装');
+  if (!process.env.TABRO_QUALIFY_INSTALL_ROOT) throw new Error('TABRO_QUALIFY_INSTALL_ROOT must name the pre-provisioned machine installation.');
+  const install = realpathSync(process.env.TABRO_QUALIFY_INSTALL_ROOT);
   const userData = resolve(root, 'Existing Chrome');
   const nativeName = 'io.github.ohmyskyhigh.octopus_browser_relay';
+  const upgradePackage = resolve(root, 'upgrade-package');
+  const launcherPackage = resolve(root, 'launcher-package');
+  const brokenPackage = resolve(root, 'broken-package');
+  const snapshotFailurePackage = resolve(root, 'snapshot-failure-package');
+  const ambiguousPackage = resolve(root, 'ambiguous-package');
+  const lostResumeHook = resolve(root, 'lost-resume.mjs');
+  if (!windows) {
+    cpSync(packageRoot, launcherPackage, { recursive: true });
+    const launcherSource = resolve(launcherPackage, 'setup.mjs');
+    writeFileSync(launcherSource, Buffer.concat([readFileSync(launcherSource), Buffer.from('\n// qualification launcher update\n')]));
+    const variant = (destination: string, path: string, content: Buffer) => {
+      cpSync(packageRoot, destination, { recursive: true });
+      const manifestPath = resolve(destination, 'runtime-manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { files: Array<{ path: string; bytes: number; sha256: string }> };
+      const file = manifest.files.find(item => item.path === path);
+      if (!file) throw new Error(`The packaged fixture file is missing: ${path}`);
+      writeFileSync(resolve(destination, 'runtime', path), content);
+      file.bytes = content.length; file.sha256 = createHash('sha256').update(content).digest('hex');
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    };
+    variant(upgradePackage, 'browser-extension/options.html', Buffer.concat([
+      readFileSync(resolve(packageRoot, 'runtime/browser-extension/options.html')), Buffer.from('\n<!-- qualification upgrade -->\n')
+    ]));
+    variant(brokenPackage, 'broker/main.js', Buffer.from('throw new Error("Injected qualification startup failure");\n'));
+    variant(snapshotFailurePackage, 'managed-upgrade-snapshot.mjs', Buffer.from('throw new Error("Injected qualification snapshot failure");\n'));
+    variant(ambiguousPackage, 'browser-extension/options.html', Buffer.concat([
+      readFileSync(resolve(packageRoot, 'runtime/browser-extension/options.html')), Buffer.from('\n<!-- qualification ambiguous resume -->\n')
+    ]));
+    writeFileSync(lostResumeHook, `const original = globalThis.fetch;
+globalThis.fetch = async (input, init) => {
+  const response = await original(input, init);
+  if (new URL(String(input)).pathname === '/maintenance/resume') throw new Error('Injected lost resume response');
+  return response;
+};\n`);
+  }
   const run = (command: string, args: string[], env = process.env) => execFileSync(command, args, { encoding: 'utf8', timeout: 45_000, windowsHide: true, env });
   const powershell = (file: string, args: string[]) => run('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', resolve(packageRoot, file), ...args]);
   const node = (...args: string[]) => run(process.execPath, args);
@@ -78,11 +114,38 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
   let installation: Setup | undefined;
   let proxy: Awaited<ReturnType<typeof httpProxyFixture>> | undefined;
   let credential: string | undefined;
+  let busyUpgradeChecked = false;
+  const upgrade = (source = upgradePackage, extraEnv: NodeJS.ProcessEnv = {}) => spawnSync(process.execPath,
+    [resolve(source, 'setup.mjs'), '--root', install, '--browser-data-dir', userData],
+    { encoding: 'utf8', timeout: 90_000, env: { ...process.env, TABRO_BROWSER_PATH: browser, ...extraEnv } });
   const stop = () => windows ? powershell('stop.ps1', ['-InstallRoot', install]) : node(resolve(install, 'tabro.mjs'), 'stop');
   async function verifyBrowser(profile: Profile, url: string, title: string): Promise<void> {
     ({ resolved: [workspace] } = await request<{ resolved: Workspace[] }>('request_browser_workspace', {
       required_workspace_count: 1, designated_endpoints: [{ endpoint_nickname: profile.endpoint_nickname }]
     }));
+    if (!windows && !busyUpgradeChecked) {
+      const statePath = resolve(install, 'installation.json');
+      const previousState = readFileSync(statePath);
+      const backups = resolve(install, 'data/backups');
+      const before = existsSync(backups) ? readdirSync(backups).length : 0;
+      const releases = readdirSync(resolve(install, 'releases')).sort();
+      const blocked = upgrade();
+      expect(blocked.status).not.toBe(0);
+      expect(blocked.stderr).toContain('409');
+      expect(readFileSync(statePath)).toEqual(previousState);
+      expect(existsSync(backups) ? readdirSync(backups).length : 0).toBe(before);
+      expect(readdirSync(resolve(install, 'releases')).sort()).toEqual(releases);
+      const launcher = resolve(install, 'tabro.mjs');
+      const previousLauncher = readFileSync(launcher);
+      const launcherBlocked = upgrade(launcherPackage);
+      expect(launcherBlocked.status).not.toBe(0);
+      expect(launcherBlocked.stderr).toContain('409');
+      expect(readFileSync(launcher)).toEqual(previousLauncher);
+      expect(readFileSync(statePath)).toEqual(previousState);
+      expect(existsSync(backups) ? readdirSync(backups).length : 0).toBe(before);
+      busyUpgradeChecked = true;
+      passed('active workspace rejects upgrade before snapshot or installation changes');
+    }
     const workspace_ref = workspace!.workspace.workspace_ref;
     const target = { kind: 'tab', tab_ref: workspace!.tabs[0]!.tab_ref };
     await request('send_cdp_command', { workspace_ref, target, method: 'Page.navigate', params: { url } });
@@ -174,18 +237,20 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     await request('terminate_workspace', { workspace_ref }); workspace = undefined;
   }
   try {
+    const rulesPath = resolve(install, 'data/browser-rules.json');
+    const existingRules = existsSync(rulesPath) ? readFileSync(rulesPath, 'utf8') : null;
     installation = setup();
     if (windows) {
       // The native resolver expands Windows 8.3 aliases before comparing the install roots.
       expect(realpathSync.native(installation.mcp.env!.TABRO_INSTALL_ROOT!).toLowerCase())
         .toBe(realpathSync.native(install).toLowerCase());
     }
-    const rulesPath = resolve(install, 'data/browser-rules.json');
     let savedRules = JSON.stringify({ schemaVersion: 1, rules: [
       { id: 'preserved', domain: 'preserved.example', mode: 'input_only' },
       ...(liveWebsite ? [{ id: 'selenium-input-only', domain: 'selenium.dev', mode: 'input_only' }] : [])
     ] }, null, 2);
-    expect(JSON.parse(readFileSync(rulesPath, 'utf8'))).toEqual({ schemaVersion: 1, rules: [] });
+    if (existingRules === null) expect(JSON.parse(readFileSync(rulesPath, 'utf8'))).toEqual({ schemaVersion: 1, rules: [] });
+    else expect(readFileSync(rulesPath, 'utf8')).toBe(existingRules);
     writeFileSync(rulesPath, savedRules);
     const managedConfigPath = resolve(install, 'data/managed-profiles.json');
     const readManagedConfig = () => JSON.parse(readFileSync(managedConfigPath, 'utf8')) as { root: string; executablePath: string };
@@ -194,6 +259,43 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     expect(readManagedConfig()).toMatchObject({ root: previousConfig.root, executablePath: previousConfig.executablePath });
     expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
     passed('installer initializes rules and preserves edited rules on repeated setup');
+    if (!windows) {
+      const extraProfile = resolve(root, 'second Chrome');
+      mkdirSync(extraProfile);
+      const second = JSON.parse(run(process.execPath, [resolve(packageRoot, 'setup.mjs'), '--root', install, '--browser-data-dir', extraProfile],
+        { ...process.env, TABRO_BROWSER_PATH: browser })) as Setup;
+      expect(second.broker.processId).toBe(installation.broker.processId);
+      const manifestPath = resolve(extraProfile, 'NativeMessagingHosts', `${nativeName}.json`);
+      expect(JSON.parse(readFileSync(manifestPath, 'utf8'))).toMatchObject({ path: resolve(install, 'native-host') });
+      const conflictPath = resolve(root, 'conflicting Chrome', 'NativeMessagingHosts', `${nativeName}.json`);
+      mkdirSync(resolve(conflictPath, '..'), { recursive: true });
+      writeFileSync(conflictPath, JSON.stringify({ path: '/unrelated/native-host' }));
+      const conflict = spawnSync(process.execPath, [resolve(packageRoot, 'setup.mjs'), '--root', install,
+        '--browser-data-dir', resolve(root, 'conflicting Chrome')], { encoding: 'utf8', timeout: 45_000, env: { ...process.env, TABRO_BROWSER_PATH: browser } });
+      expect(conflict.status).not.toBe(0);
+      expect(JSON.parse(readFileSync(conflictPath, 'utf8'))).toEqual({ path: '/unrelated/native-host' });
+      passed('repeated setup registers another Chrome profile and preserves conflicting registrations');
+    }
+    const concurrentSetup = () => new Promise<{ code: number | null; output: string }>((resolveResult, reject) => {
+      const command = windows ? 'powershell.exe' : process.execPath;
+      const args = windows
+        ? ['-NoProfile', '-NonInteractive', '-File', resolve(packageRoot, 'setup.ps1'), '-InstallRoot', install, '-BrowserPath', browser, '-NodePath', process.execPath]
+        : [resolve(packageRoot, 'setup.mjs'), '--root', install, '--browser-data-dir', userData];
+      const child = spawn(command, args, { windowsHide: true, env: { ...process.env, TABRO_BROWSER_PATH: browser }, stdio: ['ignore', 'pipe', 'pipe'] });
+      let output = '';
+      const timeout = setTimeout(() => child.kill(), 45_000);
+      child.stdout.on('data', chunk => { output += String(chunk); });
+      child.stderr.resume();
+      child.once('error', error => { clearTimeout(timeout); reject(error); });
+      child.once('close', code => { clearTimeout(timeout); resolveResult({ code, output }); });
+    });
+    const concurrent = await Promise.all([concurrentSetup(), concurrentSetup()]);
+    const successful = concurrent.filter(result => result.code === 0);
+    expect(successful.length).toBeGreaterThan(0);
+    for (const result of successful) expect((JSON.parse(result.output) as Setup).broker.processId).toBe(installation.broker.processId);
+    expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
+    expect(readManagedConfig()).toEqual(previousConfig);
+    passed('simultaneous installers preserve the single running Broker and installation state');
     const state = JSON.parse(readFileSync(resolve(install, 'installation.json'), 'utf8')) as { runtimeDirectory: string; nodePath: string; contractVersion: string };
     const manifest = JSON.parse(readFileSync(resolve(packageRoot, 'runtime-manifest.json'), 'utf8')) as { contractVersion: string };
     expect(state.contractVersion).toBe(manifest.contractVersion);
@@ -234,7 +336,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     }
     if (liveWebsite) await verifyPublicWebsite((await profiles()).profiles.find(item => item.ownership === 'user' && item.ready)!);
 
-    ({ profile } = await request<{ profile: Profile }>('create_browser_profile', { idempotency_key: 'portable-install-profile' }));
+    ({ profile } = await request<{ profile: Profile }>('create_browser_profile', { idempotency_key: `portable-install-profile-${randomUUID()}` }));
     expect(profile).toMatchObject({ ownership: 'broker', ready: true });
     await verifyBrowser(profile, fixture.url, 'Tabro managed profile probe');
     passed('Broker-owned profile launches with automatic extension and completes an MCP browser action');
@@ -247,7 +349,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
         env: { ...process.env, RELAY_DB_PATH: resolve(install, 'data/relay.sqlite'), NODE_NO_WARNINGS: '1' } });
       credential = (JSON.parse(output) as { credential_ref: string }).credential_ref;
       proxy = await httpProxyFixture(false, '<!doctype html><title>Tabro authenticated proxy</title>');
-      await request('set_browser_proxy', { profile_ref, expected_revision: 0, idempotency_key: 'portable-install-proxy',
+      await request('set_browser_proxy', { profile_ref, expected_revision: 0, idempotency_key: `portable-install-proxy-${randomUUID()}`,
         proxy: { scheme: 'http', host: '127.0.0.1', port: proxy.port, credential_ref: credential } });
     }
     const opened = await request<{ profile: Profile }>('open_browser_profile', { profile_ref });
@@ -259,6 +361,86 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('installs a packaged Broker and pa
     }
     await request('stop_browser_profile', { profile_ref });
     profile = undefined;
+    if (!windows) {
+      expect(busyUpgradeChecked).toBe(true);
+      const waitForQuiescence = () => expect.poll(async () => {
+        const runtime = JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')) as { mcpUrl: string };
+        const health = await (await fetch(new URL('/health', runtime.mcpUrl))).json() as { relayQuiescent: boolean; profileQuiescent: boolean;
+          proxyQuiescent: boolean; activeWorkspaceCount: number; openRequestCount: number };
+        return health.relayQuiescent && health.profileQuiescent && health.proxyQuiescent && health.activeWorkspaceCount === 0 && health.openRequestCount === 0;
+      }, { timeout: 30_000 }).toBe(true);
+      await waitForQuiescence();
+      const statePath = resolve(install, 'installation.json');
+      const beforeLauncher = JSON.parse(readFileSync(statePath, 'utf8')) as { runtimeDirectory: string; packageDigest: string };
+      const originalPid = (JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')) as { processId: number }).processId;
+      const launcherUpdate = upgrade(launcherPackage);
+      expect(launcherUpdate.status, launcherUpdate.stderr).toBe(0);
+      const afterLauncher = JSON.parse(readFileSync(statePath, 'utf8')) as { runtimeDirectory: string; packageDigest: string };
+      expect(afterLauncher).toMatchObject(beforeLauncher);
+      expect(readFileSync(resolve(install, 'tabro.mjs'))).toEqual(readFileSync(resolve(launcherPackage, 'setup.mjs')));
+      expect((JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')) as { processId: number }).processId).not.toBe(originalPid);
+      passed('launcher-only change is fenced while busy and applied with the same runtime when idle');
+      await waitForQuiescence();
+      const installedFile = resolve(install, afterLauncher.runtimeDirectory, 'licenses/dependencies.json');
+      const installedBytes = readFileSync(installedFile);
+      const beforeCorruption = readFileSync(statePath);
+      try {
+        writeFileSync(installedFile, Buffer.concat([installedBytes, Buffer.from('\ncorrupted')]));
+        const rejected = upgrade(launcherPackage);
+        expect(rejected.status).not.toBe(0);
+        expect(rejected.stderr).toContain('Installed release is damaged');
+        expect(readFileSync(statePath)).toEqual(beforeCorruption);
+      } finally { writeFileSync(installedFile, installedBytes); }
+      expect(readFileSync(installedFile)).toEqual(installedBytes);
+      passed('unchanged setup rejects a damaged installed release and the fixture restores its exact bytes');
+      const previousState = readFileSync(statePath);
+      const failedSnapshot = upgrade(snapshotFailurePackage);
+      expect(failedSnapshot.status).not.toBe(0);
+      expect(readFileSync(statePath)).toEqual(previousState);
+      expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
+      expect(existsSync(resolve(install, 'data/maintenance-operation.json'))).toBe(false);
+      expect(existsSync(resolve(install, 'data/maintenance.json'))).toBe(false);
+      expect((await profiles()).profiles.some(item => item.profile_ref === profile_ref)).toBe(true);
+      passed('snapshot failure resumes the original Broker without changing its data');
+      await waitForQuiescence();
+      const failed = upgrade(brokenPackage);
+      expect(failed.status).not.toBe(0);
+      expect(readFileSync(statePath)).toEqual(previousState);
+      expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
+      expect(existsSync(resolve(install, 'data/maintenance-operation.json'))).toBe(false);
+      expect(existsSync(resolve(install, 'data/maintenance.json'))).toBe(false);
+      expect((await profiles()).profiles.some(item => item.profile_ref === profile_ref)).toBe(true);
+      passed('failed new Broker startup rolls back before resume and preserves profile data');
+      await waitForQuiescence();
+      const before = (JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')) as { processId: number }).processId;
+      const changed = upgrade();
+      expect(changed.status, changed.stderr).toBe(0);
+      installation = JSON.parse(changed.stdout) as Setup;
+      expect(installation.broker.processId).not.toBe(before);
+      expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
+      expect(readManagedConfig()).toMatchObject({ root: previousConfig.root, executablePath: previousConfig.executablePath });
+      passed('quiescent upgrade switches Broker and preserves rules and managed profile configuration');
+      await waitForQuiescence();
+      const database = resolve(install, 'data/relay.sqlite');
+      const originalInode = statSync(database).ino;
+      const beforeAmbiguous = JSON.parse(readFileSync(statePath, 'utf8')) as { runtimeDirectory: string };
+      const ambiguous = upgrade(ambiguousPackage, { NODE_OPTIONS: `--import="${lostResumeHook}"` });
+      expect(ambiguous.status).not.toBe(0);
+      expect(ambiguous.stderr).toMatch(/ambiguous/i);
+      const journalPath = resolve(install, 'data/maintenance-operation.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { kind: string; phase: string; next: string };
+      const selected = JSON.parse(readFileSync(statePath, 'utf8')) as { runtimeDirectory: string };
+      expect(journal).toMatchObject({ kind: 'upgrade', phase: 'ready', next: selected.runtimeDirectory });
+      expect(selected.runtimeDirectory).not.toBe(beforeAmbiguous.runtimeDirectory);
+      expect(existsSync(resolve(install, 'data/maintenance.json'))).toBe(false);
+      expect(statSync(database).ino).toBe(originalInode);
+      expect((await profiles()).profiles.some(item => item.profile_ref === profile_ref)).toBe(true);
+      expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
+      passed('lost resume response preserves its journal and never restores the database');
+      // The isolated fixture has proved resume committed; remove its journal so teardown can stop it normally.
+      rmSync(journalPath);
+      installation.broker.processId = (JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')) as { processId: number }).processId;
+    }
     const initialBrokerPid = installation.broker.processId;
     await client.close();
     stop();

@@ -9,7 +9,8 @@ const loopbackUrl = (protocol: string, path: string) => z.string().url().refine(
 });
 
 export const BrokerRuntimeSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
+  authMode: z.literal('machine-v1'),
   instanceRef: z.string().uuid(),
   processId: z.number().int().positive(),
   startedAt: z.string().datetime(),
@@ -20,9 +21,14 @@ export const BrokerRuntimeSchema = z.strictObject({
 export type BrokerRuntime = z.infer<typeof BrokerRuntimeSchema>;
 
 export function readBrokerRuntime(path: string): BrokerRuntime {
-  const record = BrokerRuntimeSchema.parse(JSON.parse(readFileSync(path, 'utf8')) as unknown);
+  const value = JSON.parse(readFileSync(path, 'utf8')) as { schemaVersion?: unknown };
+  if (value?.schemaVersion !== 2) throw new Error('Unsupported Broker discovery protocol. Update the Broker and all Tabro clients together.');
+  const record = BrokerRuntimeSchema.parse(value);
   try { process.kill(record.processId, 0); }
-  catch { throw new Error('The discovered Tabro Broker is not running. Start the local Broker first.'); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') throw new Error('The discovered Tabro Broker is not running. Start the local Broker first.');
+    throw new Error('The discovered Tabro Broker process could not be verified.', { cause: error });
+  }
   return record;
 }
 

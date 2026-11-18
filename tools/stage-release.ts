@@ -101,6 +101,7 @@ export async function stageRelease(output = defaultOutput): Promise<{ output: st
   cpSync(resolve(workspace, 'apps/broker/src/storage/sqlite/migrations'), resolve(target, 'broker/migrations'), { recursive: true });
   cpSync(resolve(workspace, 'dist/browser-extension'), resolve(target, 'browser-extension'), { recursive: true });
   mkdirSync(resolve(target, 'native-host'), { recursive: true });
+  cpSync(resolve(workspace, 'dist/native-host/machine-lock.node'), resolve(target, 'native-host/machine-lock.node'));
   const nativeHostEntry = `native-host/relay-native-host-${version}.exe`;
   cpSync(resolve(workspace, 'dist/native-host/relay-native-host.exe'), resolve(target, nativeHostEntry));
   mkdirSync(resolve(target, 'tools'), { recursive: true });
@@ -112,7 +113,8 @@ export async function stageRelease(output = defaultOutput): Promise<{ output: st
     'stop-installed-broker.ps1',
     'register-hermes-profiles.ps1',
     'installed-broker-launcher.mjs',
-    'installed-mcp-adapter-launcher.mjs'
+    'installed-mcp-adapter-launcher.mjs',
+    'provision-machine-registration.ps1'
   ]) {
     cpSync(resolve(workspace, 'tools', name), resolve(target, 'tools', name));
   }

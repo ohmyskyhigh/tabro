@@ -240,8 +240,10 @@ export class ProfileNetworkService {
     this.reconciling.set(ref, work);
     try { await work; } finally { this.reconciling.delete(ref); }
   }
-  start(): void {
-    this.timer = setInterval(() => { for (const binding of this.store.proxies.all()) void this.reconcile(binding.profileRef); }, 2_000);
+  get quiescent(): boolean { return this.reconciling.size === 0; }
+
+  start(canRun: () => boolean = () => true): void {
+    this.timer = setInterval(() => { if (canRun()) for (const binding of this.store.proxies.all()) void this.reconcile(binding.profileRef); }, 2_000);
     this.timer.unref();
   }
   async close(): Promise<void> { this.stopping = true; if (this.timer) clearInterval(this.timer); await Promise.allSettled(this.reconciling.values()); await this.gateways.close(); }

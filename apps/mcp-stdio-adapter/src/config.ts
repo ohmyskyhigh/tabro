@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { OCTOPUS_VERSION } from '../../shared/protocol/src/version.js';
 import type { DemoTraceConfig } from './demo-trace.js';
 import { readBrokerRuntime } from '../../shared/protocol/src/runtime-discovery.js';
+import { machineNative, readMachineRegistration } from '../../shared/protocol/src/machine-registration.js';
+import { readMachineSecret } from '../../shared/protocol/src/machine-auth.js';
 
 const SAFE_RUNTIME_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,63}$/u;
 const SAFE_SESSION_KEY = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/u;
@@ -21,6 +24,7 @@ export interface StdioAdapterConfig {
   bearerToken: string;
   identity: StdioAdapterIdentity;
   serviceVersion: string;
+  machineSecret?: Buffer;
 }
 
 export type AdapterEnvironment = Readonly<Record<string, string | undefined>>;
@@ -135,4 +139,20 @@ export function loadStdioAdapterConfig(
     identity: resolveAdapterIdentity(environment, createRandomId),
     serviceVersion: valueOf(environment, 'OCTOPUS_ADAPTER_VERSION') ?? OCTOPUS_VERSION
   };
+}
+
+export function loadMachineStdioAdapterConfig(environment: AdapterEnvironment = process.env): StdioAdapterConfig {
+  const registration = readMachineRegistration();
+  const runtimeFile = resolve(registration.dataRoot, 'runtime.json');
+  const runtime = readBrokerRuntime(runtimeFile);
+  if (runtime.databasePath !== resolve(registration.dataRoot, 'relay.sqlite')) throw new Error('Broker discovery does not match the machine registration.');
+  const tokenFile = resolve(registration.dataRoot, 'admin-token.txt');
+  machineNative().verifyPrivate(tokenFile);
+  const tokenStat = lstatSync(tokenFile);
+  if (!tokenStat.isFile() || tokenStat.nlink !== 1 || tokenStat.size > 4096 ||
+      (process.platform !== 'win32' && (tokenStat.uid !== process.getuid?.() || (tokenStat.mode & 0o077) !== 0))) {
+    throw new Error('The installation token file is not private.');
+  }
+  return { ...loadStdioAdapterConfig({ ...environment, TABRO_RUNTIME_FILE: runtimeFile, TABRO_TOKEN_FILE: tokenFile }),
+    machineSecret: readMachineSecret(registration.dataRoot) };
 }

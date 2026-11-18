@@ -67,6 +67,10 @@ export class SqliteProfileRepository {
 
   all(): ManagedProfile[] { return (this.db.prepare('SELECT * FROM managed_profiles').all() as Row[]).map(profile); }
 
+  activeInstanceCount(): number {
+    return Number((this.db.prepare('SELECT count(*) AS count FROM managed_browser_instances WHERE ended_at IS NULL').get() as Row).count);
+  }
+
   page(principalId: string, limit = 50, cursor?: string): { profiles: ManagedProfile[]; nextCursor: string | null } {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new ProfileError('INVALID_ARGUMENT');
     let afterCreated = '';

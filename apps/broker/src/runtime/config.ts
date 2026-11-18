@@ -19,7 +19,9 @@ const ConfigSchema = z.strictObject({
   heartbeatTimeoutMs: z.coerce.number().int().min(5_000).max(300_000).default(45_000),
   errorThreshold: z.coerce.number().int().min(1).max(100).default(3),
   leaseTtlMs: z.coerce.number().int().min(5_000).max(300_000).default(60_000),
-  adminToken: z.string().min(16).max(4096)
+  adminToken: z.string().min(16).max(4096),
+  machineSecret: z.instanceof(Buffer).optional(),
+  maintenancePath: z.string().min(1).optional()
 });
 
 export type RelayConfig = z.infer<typeof ConfigSchema>;

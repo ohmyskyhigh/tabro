@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -51,10 +51,14 @@ const setup = (profile = hermesProfiles[0]!, directory = profile.plugin, target?
 
 describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
   beforeAll(async () => {
+    if (!process.env.TABRO_QUALIFY_INSTALL_ROOT || !nativeHostFixture || !priorPlugin) {
+      throw new Error('Windows Hermes qualification requires TABRO_QUALIFY_INSTALL_ROOT, TABRO_TEST_HERMES_NATIVE_HOST and TABRO_TEST_HERMES_PRIOR_PACKAGE.');
+    }
+    if (!existsSync(nativeHostFixture) || !existsSync(priorPlugin)) throw new Error('A required Windows Hermes qualification fixture is missing.');
     mkdirSync(base, { recursive: true });
     fixture = mkdtempSync(resolve(base, 'multi profile-'));
     const localAppData = resolve(fixture, 'Local AppData 测试');
-    install = customRoot ? resolve(fixture, 'Custom runtime 测试') : resolve(localAppData, 'Tabro');
+    install = resolve(process.env.TABRO_QUALIFY_INSTALL_ROOT);
     for (const label of ['tabro-one', 'research-two']) {
       const home = resolve(fixture, 'Hermes homes', label);
       const directory = resolve(home, 'plugins/tabro');
@@ -71,7 +75,6 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
     const results = await Promise.all(hermesProfiles.map(async profile => JSON.parse((await setup(profile)).stdout)));
     for (const result of results) {
       expect(result.status).toBe('INSTALLED');
-      expect(result.nativeRegistered).toBe(false);
       expect(result.installRoot).toBe(install);
     }
     expect(results.map(result => result.broker.status).sort()).toEqual(['already_running', 'started']);
@@ -83,7 +86,7 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
     await Promise.allSettled(clients.map(client => client.close()));
     if (record) {
       const health = await fetch(new URL('/health', record.mcpUrl)).then(response => response.json()) as { instanceRef: string };
-      if (health.instanceRef !== record.instanceRef || !install.startsWith(resolve(fixture) + '\\')) throw new Error('Fixture ownership changed; refusing shutdown.');
+      if (health.instanceRef !== record.instanceRef || install !== resolve(process.env.TABRO_QUALIFY_INSTALL_ROOT!)) throw new Error('Fixture ownership changed; refusing shutdown.');
       const stopped = await run('powershell.exe', ['-NoProfile', '-File', resolve(plugin, 'stop.ps1'), '-InstallRoot', install], {
         timeout: 15000, windowsHide: true
       });
@@ -141,6 +144,45 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
     }
   }, 60000);
 
+  it('repairs a missing Edge registration after skipped registration and refuses a conflicting host', async () => {
+    const key = 'HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\io.github.ohmyskyhigh.octopus_browser_relay';
+    const manifest = resolve(install, 'bootstrap/io.github.ohmyskyhigh.octopus_browser_relay.json');
+    const registry = (...args: string[]) => execFileSync('reg.exe', args, { encoding: 'utf8', windowsHide: true });
+    const register = (value: string) => registry('add', key, '/ve', '/t', 'REG_SZ', '/d', value, '/f');
+    let keyExisted = false;
+    let originalValue: { type: string; value: string } | undefined;
+    try { registry('query', key); keyExisted = true; } catch { /* No previous registration. */ }
+    if (keyExisted) {
+      try {
+        const match = /(REG_\w+)\s+(.+)$/mu.exec(registry('query', key, '/ve'));
+        if (match) originalValue = { type: match[1]!, value: match[2]!.trim() };
+      }
+      catch { /* The key had no default value. */ }
+    }
+    const regularSetup = () => run('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', resolve(plugin, 'setup.ps1'),
+      '-InstallRoot', install, '-NodePath', process.execPath], { timeout: 60000, windowsHide: true,
+      cwd: hermesProfiles[0]!.home, env: { ...process.env, ...hermesProfiles[0]!.env } });
+    try {
+      if (originalValue) registry('delete', key, '/ve', '/f');
+      await setup(hermesProfiles[0]);
+      expect(() => registry('query', key, '/ve')).toThrow();
+      const repaired = JSON.parse((await regularSetup()).stdout);
+      expect(repaired.broker.processId).toBe(record.processId);
+      expect(registry('query', key, '/ve')).toContain(manifest);
+      expect(JSON.parse(readFileSync(resolve(install, 'installation.json'), 'utf8')).nativeRegistered).toBe(true);
+      const before = digest(resolve(install, 'installation.json'));
+      const conflicting = 'C:\\fixture\\different-native-host.json';
+      register(conflicting);
+      await expect(regularSetup()).rejects.toThrow('different Tabro Native Host');
+      expect(registry('query', key, '/ve')).toContain(conflicting);
+      expect(digest(resolve(install, 'installation.json'))).toBe(before);
+    } finally {
+      if (originalValue) registry('add', key, '/ve', '/t', originalValue.type, '/d', originalValue.value, '/f');
+      else if (keyExisted) registry('delete', key, '/ve', '/f');
+      else registry('delete', key, '/f');
+    }
+  }, 120000);
+
   it('disconnecting one Hermes profile leaves the other profile and shared daemon usable', async () => {
     await clients[0]!.close();
     const profiles = await clients[1]!.callTool({ name: 'list_browser_profiles', arguments: {} });
@@ -152,65 +194,71 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
     const copied = mkdtempSync(resolve(base, 'altered-plugin-'));
     cpSync(plugin, copied, { recursive: true });
     writeFileSync(resolve(copied, 'runtime/broker/main.js'), '// altered payload\n');
-    const target = resolve(copied, 'install-target');
-    await expect(setup(hermesProfiles[1], copied, target)).rejects.toThrow('Package integrity check failed');
-    expect(existsSync(resolve(target, 'installation.json'))).toBe(false);
+    const state = readFileSync(resolve(install, 'installation.json'));
+    await expect(setup(hermesProfiles[1], copied, install)).rejects.toThrow('Package integrity check failed');
+    expect(readFileSync(resolve(install, 'installation.json'))).toEqual(state);
     expect(JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')).processId).toBe(record.processId);
   });
 
-  it.runIf(!!nativeHostFixture)('verifies the downloaded Native Host and reuses only the verified installed copy', async () => {
+  it('verifies the catalog Native Host matches the installed release and reuses it', async () => {
     const manifest = JSON.parse(readFileSync(resolve(plugin, 'runtime-manifest.json'), 'utf8'));
     const state = JSON.parse(readFileSync(resolve(install, 'installation.json'), 'utf8'));
     expect(existsSync(resolve(plugin, 'runtime', manifest.nativeHostEntry))).toBe(false);
     expect(digest(resolve(install, state.runtimeDirectory, manifest.nativeHostEntry))).toBe(digest(nativeHostFixture!));
-    const target = resolve(fixture, 'native-host-mismatch');
     const altered = resolve(fixture, 'altered-host.exe');
     const bytes = readFileSync(nativeHostFixture!);
     bytes[0] = bytes[0]! ^ 1;
     writeFileSync(altered, bytes);
-    await expect(setup(hermesProfiles[0], plugin, target, altered)).rejects.toThrow('Native Host checksum mismatch');
-    expect(existsSync(resolve(target, 'installation.json'))).toBe(false);
-    expect(existsSync(resolve(target, state.runtimeDirectory, manifest.nativeHostEntry))).toBe(false);
     const repeated = JSON.parse((await setup(hermesProfiles[0], plugin, undefined, altered)).stdout);
     expect(repeated.broker.processId).toBe(record.processId);
   }, 60000);
 
-  it.runIf(!!priorPlugin)('upgrades a stopped 0.4.2 installation and preserves its user data', async () => {
-    const legacy = resolve(priorPlugin!);
+  it('rejects an unregistered legacy root without starting a Broker or altering its data', async () => {
+    const legacyManifest = JSON.parse(readFileSync(resolve(priorPlugin!, 'runtime-manifest.json'), 'utf8')) as { version: string };
+    expect(legacyManifest.version).toBe('0.4.2');
     const target = resolve(fixture, 'preview-upgrade');
-    const stop = (directory: string) => run('powershell.exe', ['-NoProfile', '-File', resolve(directory, 'stop.ps1'),
-      '-InstallRoot', target], { timeout: 30000, windowsHide: true });
-    const oldState = JSON.parse((await setup(hermesProfiles[0], legacy, target)).stdout);
-    const token = resolve(target, 'data/admin-token.txt');
-    const before = digest(token);
-    let activePackage = legacy;
-    try {
-      expect(oldState.version).toBe('0.4.2');
-      await expect(setup(hermesProfiles[0], plugin, target)).rejects.toThrow('A different Tabro release is running');
-      await stop(legacy);
-      await expect.poll(() => {
-        try { process.kill(oldState.broker.processId, 0); return false; }
-        catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true; throw error; }
-      }).toBe(true);
-      const upgraded = JSON.parse((await setup(hermesProfiles[0], plugin, target)).stdout);
-      activePackage = plugin;
-      expect(upgraded.version).toBe(JSON.parse(readFileSync(resolve(plugin, 'runtime-manifest.json'), 'utf8')).version);
-      expect(digest(token)).toBe(before);
-    } finally {
-      await stop(activePackage);
-    }
+    mkdirSync(resolve(target, 'data'), { recursive: true });
+    const data = resolve(target, 'data/legacy-data');
+    writeFileSync(data, 'preserve legacy data');
+    const before = digest(data);
+    await expect(setup(hermesProfiles[0], plugin, target)).rejects.toThrow('conflicts with the machine Tabro registration');
+    expect(digest(data)).toBe(before);
+    expect(existsSync(resolve(target, 'installation.json'))).toBe(false);
+    expect(JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')).processId).toBe(record.processId);
   }, 120000);
 
-  it('rejects a different plugin release without restarting the other profile\'s daemon', async () => {
+  it('rejects a pre-machine installation at the registered root before changing its data', async () => {
+    const statePath = resolve(install, 'installation.json');
+    const original = readFileSync(statePath);
+    const configPath = resolve(install, 'data/managed-profiles.json');
+    const configHash = digest(configPath);
+    const legacyRelative = `releases/legacy-qualification-${Date.now()}`;
+    const legacyRoot = resolve(install, legacyRelative);
+    mkdirSync(legacyRoot, { recursive: true });
+    const legacyState = { ...JSON.parse(original.toString()), runtimeDirectory: legacyRelative };
+    const legacyBytes = Buffer.from(JSON.stringify(legacyState));
+    try {
+      writeFileSync(statePath, legacyBytes);
+      await expect(setup(hermesProfiles[0], plugin, install)).rejects.toThrow('predates device-wide registration');
+      expect(readFileSync(statePath)).toEqual(legacyBytes);
+      expect(digest(configPath)).toBe(configHash);
+      expect(JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')).processId).toBe(record.processId);
+    } finally {
+      writeFileSync(statePath, original);
+      rmSync(legacyRoot, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('rejects an incompatible plugin contract without restarting the other profile\'s daemon', async () => {
     const copied = mkdtempSync(resolve(base, 'different-release-'));
     cpSync(plugin, copied, { recursive: true });
     const manifestFile = resolve(copied, 'runtime-manifest.json');
     const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
-    manifest.version = '99.0.0-test';
+    manifest.contractVersion = '5';
     writeFileSync(manifestFile, JSON.stringify(manifest));
     await expect(run('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', resolve(copied, 'launch.ps1')], {
       windowsHide: true, timeout: 15000, env: { ...process.env, ...hermesProfiles[1]!.env }
-    })).rejects.toThrow('plugin and installed runtime differ');
+    })).rejects.toThrow('incompatible MCP contracts');
     expect((await clients[1]!.callTool({ name: 'list_browser_profiles', arguments: {} })).isError).not.toBe(true);
     expect(JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')).processId).toBe(record.processId);
   });
@@ -233,15 +281,14 @@ describe.skipIf(!enabled)('Hermes plugin Windows installation', () => {
     writeFileSync(resolve(copied, 'broker-service.mjs'), "import { writeFileSync } from 'node:fs'; writeFileSync(process.argv[3], JSON.stringify({status:'error',message:'Injected fixture startup failure'}));\n");
     const config = resolve(install, 'data/managed-profiles.json');
     const original = readFileSync(config);
-    writeFileSync(config, original.toString() + '\n  ');
-    const preserved = ['installation.json', 'data/managed-profiles.json', 'data/managed-profiles.json.previous'];
+    const preserved = ['installation.json', 'data/managed-profiles.json'];
     const before = preserved.map(file => digest(resolve(install, file)));
     try {
       await expect(setup(hermesProfiles[1], copied)).rejects.toThrow('Injected fixture startup failure');
       expect(preserved.map(file => digest(resolve(install, file)))).toEqual(before);
       expect((await clients[1]!.callTool({ name: 'list_browser_profiles', arguments: {} })).isError).not.toBe(true);
       expect(JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')).processId).toBe(record.processId);
-    } finally { writeFileSync(config, original); }
+    } finally { expect(readFileSync(config)).toEqual(original); }
   }, 30000);
 
   it('refuses to stop an unrelated process referenced by stale discovery metadata', async () => {

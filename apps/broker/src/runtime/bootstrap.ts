@@ -14,6 +14,7 @@ import { ProfileManager } from '../profiles/profile-manager.js';
 import { MCP_CONTRACT_VERSION } from '../../../shared/protocol/src/mcp/tool-catalog.js';
 import { BrowserRulesFile } from './browser-rules.js';
 import { DashboardService } from './dashboard.js';
+import { MaintenanceFence } from './maintenance.js';
 
 const SERVICE_VERSION = OCTOPUS_VERSION;
 const RELAY_PROTOCOL_VERSION = '2';
@@ -37,10 +38,14 @@ export interface RelayApplication {
 
 export function createRelayApplication(config: RelayConfig): RelayApplication {
   const instanceRef = randomUUID();
+  const maintenance = config.maintenancePath ? new MaintenanceFence(config.maintenancePath) : undefined;
   const logger = pino({
     level: config.logLevel,
     redact: [
       'req.headers.authorization',
+      'req.headers["x-tabro-auth"]',
+      'req.headers["x-tabro-relay-proof"]',
+      '*.machineSecret',
       '*.token',
       '*.pairingCode',
       '*.publicKeyJwk',
@@ -76,7 +81,9 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
   const extensionGateway = new ExtensionGateway(
     legacyBroker,
     store,
-    { host: config.host, port: config.wsPort, serviceVersion: SERVICE_VERSION },
+    { host: config.host, port: config.wsPort, serviceVersion: SERVICE_VERSION,
+      ...(config.machineSecret ? { machineSecret: config.machineSecret, instanceRef } : {}),
+      ...(maintenance ? { maintenance } : {}) },
     broker,
     profileManager?.grants
   );
@@ -107,6 +114,11 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
       openRequestCount: requests.filter((request) => request.publiclyVisible).length,
       relayProtocolVersion: RELAY_PROTOCOL_VERSION,
       mcpContractVersion: MCP_CONTRACT_VERSION,
+      maintenanceTransactionId: maintenance?.current ?? null,
+      relayQuiescent: extensionGateway.quiescent,
+      profileQuiescent: profileManager?.quiescent ?? true,
+      proxyQuiescent: network.quiescent,
+      managedLiveInstanceCount: store.profiles.activeInstanceCount(),
       legacyRelayV1Enabled: true
     };
   };
@@ -115,6 +127,8 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
     host: config.host,
     port: config.mcpPort,
     serviceVersion: SERVICE_VERSION,
+    ...(config.machineSecret ? { machineSecret: config.machineSecret, instanceRef } : {}),
+    ...(maintenance ? { maintenance, instanceRef } : {}),
     health,
     onError: (error) => logger.error({ error }, 'MCP gateway failure')
   });
@@ -123,6 +137,23 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
   let extensionStarted = false;
   let mcpStarted = false;
   let storeClosed = false;
+  let activated = false;
+  const activate = async (): Promise<void> => {
+    if (activated) return;
+    await profileManager?.reconcile();
+    legacyBroker.recover();
+    broker.recover();
+    profileManager?.startObserving(() => !maintenance?.fenced);
+    network.start(() => !maintenance?.fenced);
+    sweepTimer = setInterval(() => {
+      if (maintenance?.fenced) return;
+      legacyBroker.sweep();
+      extensionGateway.sweepHeartbeat(config.heartbeatTimeoutMs);
+    }, Math.min(1_000, Math.max(250, Math.floor(config.heartbeatTimeoutMs / 4))));
+    sweepTimer.unref();
+    activated = true;
+  };
+  mcpGateway.setMaintenanceResumeHandler(activate);
 
   return {
     instanceRef,
@@ -139,9 +170,6 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
       if (storeClosed) throw new Error('Cannot restart a closed relay application.');
       if (extensionStarted || mcpStarted) throw new Error('Relay application is already started.');
       try {
-        await profileManager?.reconcile();
-        legacyBroker.recover();
-        broker.recover();
         await extensionGateway.start();
         extensionStarted = true;
         if (config.profiles) {
@@ -149,13 +177,7 @@ export function createRelayApplication(config: RelayConfig): RelayApplication {
         }
         await mcpGateway.start();
         mcpStarted = true;
-        profileManager?.startObserving();
-        network.start();
-        sweepTimer = setInterval(() => {
-          legacyBroker.sweep();
-          extensionGateway.sweepHeartbeat(config.heartbeatTimeoutMs);
-        }, Math.min(1_000, Math.max(250, Math.floor(config.heartbeatTimeoutMs / 4))));
-        sweepTimer.unref();
+        if (!maintenance?.fenced) await activate();
         logger.info({
           serviceVersion: SERVICE_VERSION,
           mcp: mcpGateway.address(),

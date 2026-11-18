@@ -1,5 +1,7 @@
 # Tabro
 
+> **Current installation:** Follow [Getting Started](./GETTING_STARTED.md) for machine registration and the supported package setup. Source tools reuse the registered installation.
+
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [中文文档](./doc/zh-CN/README.md)
 
 Open-source Chromium browser automation for AI agents: one shared Broker, separate task workspaces, and per-profile proxies through MCP.
@@ -13,7 +15,7 @@ Open-source Chromium browser automation for AI agents: one shared Broker, separa
 >
 > Register the local stdio MCP server and help me load the unpacked extension into my chosen Chrome profile. Confirm that the profile appears in MCP, then use a Tabro workspace to read the title of `https://example.com`. If you lack host or browser access, give me the steps to run on that host.
 
-Tabro was previously named Octopus Browser Relay. New MCP registrations use `tabro`; existing profile data, extension identity, Native Messaging registration, and legacy environment variables remain compatible. The repository is now [ohmyskyhigh/tabro](https://github.com/ohmyskyhigh/tabro); the previous repository address redirects to it, and historical release asset filenames remain valid.
+Tabro was previously named Octopus Browser Relay. New MCP registrations use `tabro`. Existing installations and data require inspection before migration to the device-wide Broker. The repository is now [ohmyskyhigh/tabro](https://github.com/ohmyskyhigh/tabro); historical release asset filenames remain valid.
 
 Tabro connects a local MCP gateway to one extension instance in each browser profile. An agent asks for browser capacity, receives broker-issued workspace and tab references, submits extension-supported Chrome DevTools Protocol (CDP) commands, and polls durable request tickets. The extension relays those commands through `chrome.debugger`; Chrome does not need a public remote-debugging port.
 
@@ -50,13 +52,9 @@ The current Windows source updater requires a release declaring shared runtime d
 
 ### The source installer prepares the current twenty-two-tool shared runtime
 
-1. Prepare the Windows source-build prerequisites under [Requirements](#requirements), then clone this repository and open its root directory.
-2. Run `pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker`. Add `-EnableManagedProfiles` when using the verified managed Chrome lifecycle.
-3. For external profiles, load the reported extension directory through `chrome://extensions` and wait for Native companion connection. Managed Profiles load their extension during create/open.
-4. Apply `.relay-data/bootstrap/codex-mcp.toml` or the generated `hermes-mcp.txt` command, then start a new agent session and verify twenty-two tools.
-5. Read actual MCP and relay addresses from `.relay-data/runtime.json`. Broker health and a real managed-tab operation establish different parts of readiness.
-
-The [Release installation section](#github-releases-provide-verified-installation-and-updates) retains the published-package procedure; its historical package contract differs from this source baseline.
+1. Build with `pnpm install --frozen-lockfile` and `pnpm build`, then run `pnpm stage:hermes --output=tabro-v0.5.0-<platform>` for the current platform.
+2. Follow [Getting Started](./GETTING_STARTED.md#standalone-installers) to provision one device owner and run the staged package's setup as that user.
+3. Register the printed stdio MCP entry, load the printed extension directory for an existing profile, and verify a real browser action.
 
 ## What agents can do
 
@@ -109,103 +107,23 @@ Use [Getting Started](./GETTING_STARTED.md#standalone-installers) for the standa
 
 ### The installer builds, registers, and prepares the local runtime
 
-From the repository root, run:
-
-```powershell
-corepack enable
-pwsh -NoProfile -File .\tools\install-local.ps1 -Install -StartBroker
-```
-
-The installer runs the frozen pnpm install and build unless skip switches are supplied, verifies the compiled stdio MCP adapter, registers the `io.github.ohmyskyhigh.octopus_browser_relay` Native Messaging companion for the current Windows user, migrates an attributable prototype registration, optionally starts the compiled broker, and creates these local handoff files:
-
-```text
-.relay-data/bootstrap/PAIRING.md
-.relay-data/bootstrap/MCP-REGISTRATION.md
-.relay-data/bootstrap/codex-mcp.toml
-.relay-data/bootstrap/hermes-mcp.txt
-```
-
-It does not overwrite Codex configuration. The generated Hermes registration command updates every Hermes profile installed when it runs. The installer also leaves browser-profile data and existing broker state in place.
+Build the runtime with `pnpm build`, stage a package with `pnpm stage:hermes --output=tabro-v0.5.0-<platform>`, then provision and run it using [Getting Started](./GETTING_STARTED.md#standalone-installers). On Windows, `pwsh -NoProfile -File tools/install-local.ps1 -PackagePath <extracted-current-package>` delegates to that package's setup. The package prints the MCP and extension paths.
 
 ### Preflight reports each missing setup action as JSON
 
-With the Broker running, use the installer’s read-only readiness entry point; it derives health addresses from the data-directory runtime record:
-
-```powershell
-pwsh -NoProfile -File .\tools\install-local.ps1
-```
-
-The standalone preflight retains fixed-port defaults. Supply discovered URLs when using it directly:
-
-```powershell
-$runtime = Get-Content -Raw .relay-data/runtime.json | ConvertFrom-Json
-$mcpHealth = $runtime.mcpUrl -replace '/mcp$', '/health'
-$relayHealth = ($runtime.relayUrl -replace '^ws:', 'http:') -replace '/relay$', '/health'
-pwsh -NoProfile -File .\tools\real-world-preflight.ps1 -McpUrl $runtime.mcpUrl -McpHealthUrl $mcpHealth -RelayHealthUrl $relayHealth
-```
-
-The check verifies the workspace, built extension files, required manifest declarations, native executable, compiled stdio adapter, Native Messaging manifest, every configured Native Messaging registry value, generated pairing and MCP handoff files, and both health endpoints. It exits with code `10` when operator action is still required. Pass the same `-NativeRegistryRoots` values to installation and preflight when a browser build uses different roots.
-
-The handoff validator still expects a literal broker URL in generated registration files and can report `mcp_registration_handoffs: ACTION_REQUIRED` for valid runtime-file registrations. Inspect the generated discovery/token paths and verify actual tool discovery; do not treat that warning as a passed full preflight or repeatedly reinstall. The [runbook](./doc/06-Files/Real-World-Runbook.md) records this implementation gap.
+Use the installed package's health and browser verification steps in [Getting Started](./GETTING_STARTED.md#verification). The older source preflight expects generated legacy handoff files and does not qualify the device-wide runtime.
 
 ### GitHub Releases provide verified installation and updates
 
-Use [Getting Started](./GETTING_STARTED.md#standalone-installers) for the standalone installers. The Windows legacy updater uses its own ZIP and checksum and requires `runtimeDiscoveryVersion: 1` for the current source runtime. The historical `v0.3.0` package exposes fourteen tools. Reproduce that exact release with its versioned updater.
-
-```powershell
-Invoke-WebRequest `
-  https://github.com/ohmyskyhigh/tabro/releases/download/v0.3.0/octopus-browser-relay-update.ps1 `
-  -OutFile .\octopus-browser-relay-update.ps1
-pwsh -NoProfile -File .\octopus-browser-relay-update.ps1 -Repository ohmyskyhigh/tabro -Version v0.3.0
-```
-
-The updater installs under `%LOCALAPPDATA%\Octopus Browser Relay`, preserves durable data under its `data` directory, registers the versioned native host, starts the broker, and prints the stable extension directory. It also writes these handoff files under `%LOCALAPPDATA%\Octopus Browser Relay\bootstrap`:
-
-```text
-INSTALLATION.md
-codex-mcp.toml
-hermes-mcp.txt
-current-release.json
-```
-
-Open `chrome://extensions`, enable developer mode, choose **Load unpacked**, and select the returned extension directory once. Do not select the downloaded ZIP itself; the updater extracts and maintains the stable extension directory.
-
-For later updates, run the installed updater:
-
-```powershell
-pwsh -NoProfile -File "$env:LOCALAPPDATA\Octopus Browser Relay\update-local.ps1"
-```
-
-Later updates keep the unpacked-extension path unchanged. Reload the extension after updating its files to activate the new code; its pairing identity is preserved. The broker accepts different extension package versions when relay protocol negotiation succeeds and does not request a reload based on version differences.
-
-Maintainers build the assets with:
-
-```powershell
-pnpm package:release
-```
+Use the checksum-verified current standalone package as described in [Getting Started](./GETTING_STARTED.md#standalone-installers). On Windows, `pwsh -NoProfile -File tools/update-local.ps1 -PackagePath <extracted-current-package>` delegates to its fenced setup. Finish active browser work before updating and reload the browser extension after its files change.
 
 ### The stop command refuses to terminate an unrelated process
 
-An installer-started broker records its process ID in `.relay-data/broker.pid`. Stop it with:
-
-```powershell
-pwsh -NoProfile -File .\tools\stop-local-broker.ps1
-```
-
-The command inspects the recorded Windows process and stops it only when it is `node.exe` running this workspace's absolute compiled broker entry point. A missing PID file is a successful no-op; a stale PID is retained for inspection; a process mismatch is rejected without stopping anything or deleting the PID file. Use `Ctrl+C` for a foreground `pnpm dev` broker.
+Use the current package's `stop.ps1` on Windows or `node <install-root>/tabro.mjs stop` on macOS and Linux. The broker fences admission and refuses to stop while work is active. The Windows source wrapper `tools/stop-local-broker.ps1` delegates to the registered installation.
 
 ### Development mode runs the broker directly from TypeScript
 
-After the one-time Native Messaging registration, use this shorter development loop:
-
-```powershell
-corepack enable
-pnpm install --frozen-lockfile
-pnpm build:extension
-pnpm dev
-```
-
-`pnpm dev` runs `apps/broker/src/runtime/main.ts` through `tsx`. Rebuild and reload `dist/browser-extension` after extension source changes.
+A source broker can start only when the machine registration explicitly designates that source root and its data directory. When a package is registered, use its launcher; another checkout cannot start a competing Broker. Build source with `pnpm build` and follow [Getting Started](./GETTING_STARTED.md) for the registered installation.
 
 ## Browser profile pairing
 
@@ -231,19 +149,11 @@ The extension options page can connect directly to the `relayUrl` published in t
 
 ### The installer generates a Codex stdio MCP configuration fragment
 
-Merge `.relay-data/bootstrap/codex-mcp.toml` into the active Codex `config.toml`, then start a new Codex session. The generated fragment launches Node with `dist/mcp-stdio-adapter/src/main.js` and passes the broker URL, token-file path, and `codex` runtime label as process environment.
-
-The token remains in `.relay-data/admin-token.txt`; the generated fragment points to that file instead of embedding the token. The repository does not choose or modify the active Codex configuration file.
+Use the command and arguments printed by the registered package setup, as described in [Getting Started](./GETTING_STARTED.md#codex-connects-through-its-stdio-mcp-registration). Start a new Codex session after registration.
 
 ### The installer generates one Hermes command for every installed profile
 
-Open `.relay-data/bootstrap/MCP-REGISTRATION.md` and run the exact PowerShell command stored in `.relay-data/bootstrap/hermes-mcp.txt`. It discovers the default and every installed named Hermes profile, then registers the same compiled adapter with `TABRO_RUNTIME=hermes`, the broker URL, and the local token-file path in each isolated profile. Start a new session in each profile, then run:
-
-```powershell
-hermes -p <profile> mcp test tabro
-```
-
-Run the generated command again after creating another Hermes profile. Hermes CLI releases can change their configuration syntax. The current repository generates the command and readiness handoff but does not install Hermes or prove a particular external Hermes release.
+Enable the compatible Hermes plugin for each profile and reload its MCP connection. See [Getting Started](./GETTING_STARTED.md#hermes) for the supported package and profile setup.
 
 ### One stdio adapter process supplies caller evidence for one agent session
 
@@ -308,23 +218,7 @@ Poll the returned `request_ref` with `get_browser_request` until completion. Sup
 
 ## Local endpoints and state
 
-The table shows the Windows source layout. Standalone installations keep the runtime record, database, token, PID and logs under `data/` in the reported install root. Windows publishes an additional relay record beside the native executable. macOS and Linux share `data/runtime.json` between the Native Host and stdio adapter.
-
-| Purpose | Default |
-| --- | --- |
-| MCP and MCP health | Dynamic loopback HTTP port; read `mcpUrl` in `.relay-data/runtime.json` and replace `/mcp` with `/health` |
-| Extension relay and relay health | Dynamic loopback WebSocket port; read `relayUrl` in the same runtime record |
-| Shared discovery | `.relay-data/runtime.json`; Native Host reads `relay-runtime.json` beside its executable |
-| SQLite state | `.relay-data/relay.sqlite` |
-| Generated bearer token | `.relay-data/admin-token.txt` |
-| Installer-managed broker PID | `.relay-data/broker.pid` |
-| Generated setup handoff | `.relay-data/bootstrap/` |
-
-Demo and ordinary MCP sessions share one Broker. Both listeners default to port `0`, so the operating system chooses available ports. Registrations use `TABRO_RUNTIME_FILE` and a token file rather than fixed port numbers. The adapter checks the instance identity and reconnects before a new tool call after a Broker restart; it never retries a dispatched browser mutation. Native Host reads the current relay record on each connection.
-
-The broker creates the token on first start when `RELAY_ADMIN_TOKEN` is unset. `.relay-data/` is ignored by Git.
-
-Supported environment variables are `RELAY_HOST`, `RELAY_MCP_PORT`, `RELAY_WS_PORT`, `RELAY_DB_PATH`, `RELAY_LOG_LEVEL`, `RELAY_HEARTBEAT_TIMEOUT_MS`, `RELAY_ERROR_THRESHOLD`, `RELAY_LEASE_TTL_MS`, `RELAY_ADMIN_TOKEN`, and `RELAY_PROFILES_CONFIG`. Configuration validation lives in `apps/broker/src/runtime/config.ts`. `TABRO_RUNTIME_FILE` and `TABRO_NATIVE_RUNTIME_FILE` select the discovery outputs in `apps/broker/src/runtime/main.ts`.
+The registered installation keeps discovery in `<install-root>/data/runtime.json`, the database in `data/relay.sqlite`, and its private authentication material in `data/`. MCP and relay use dynamically assigned loopback ports. The broker, clients and native companion discover the same registered installation; path overrides cannot select another broker.
 
 ## Verification
 
@@ -347,7 +241,7 @@ pnpm build
 1. Read `relayUrl` from the runtime record, change `ws:` to `http:` and `/relay` to `/health`, and confirm it responds.
 2. Confirm the extension ID is `caekiojlchhifdomfghejkbfpmaklafe` and **Native companion** is selected.
 3. Confirm the extension directory still exists at the path reported by the updater.
-4. Check the setup output and the native registration for your browser. The legacy Windows updater writes its handoff to `%LOCALAPPDATA%\Octopus Browser Relay\bootstrap\INSTALLATION.md`.
+4. Check the package setup output and the native registration for your browser.
 5. Reload the unpacked extension after updating its files. If it reports a required-version mismatch, update and restart the broker to remove the old version gate, then reconnect the extension.
 
 For a source checkout, run `pwsh -NoProfile -File .\tools\real-world-preflight.ps1`. For a GitHub Release install, check both health endpoints and the generated handoff files directly.
@@ -364,13 +258,13 @@ Exactly twenty-two tools must be discovered. Do not point an agent at the relay 
 
 ### Dynamic port allocation avoids conflicts without stopping unrelated applications
 
-Both ports default to `0`; clients use the actual addresses in the discovery record. `tools/start-local-broker.ps1` serializes launches and reuses a healthy instance; the Broker also locks its data directory against duplicate startup. Use the installed `stop-installed-broker.ps1` or source checkout's `tools/stop-local-broker.ps1` for verified shutdown. Explicit nonzero port overrides remain available for compatibility.
+The registered Broker uses dynamically assigned loopback ports and publishes them in `<install-root>/data/runtime.json`. Source start and stop wrappers reuse the registered Broker; they do not create a separate data store.
 
 ## Current limits
 
 - The legacy updater and checked-in Hermes catalog package target Windows x64. The [qualification record](./doc/06-Files/Real-World-Runbook.md#packaged-installation) tracks standalone evidence by OS and architecture.
-- The Windows source installer accepts `-NativeRegistryRoots` for browser-specific registry locations. macOS and Linux setup accepts `--browser-data-dir` for a custom browser user-data directory.
-- The Windows source installer and legacy updater generate the Codex fragment and the all-profile Hermes command. Standalone packages print a local stdio MCP handoff for the operator to register.
+- macOS and Linux setup accepts `--browser-data-dir` for a custom browser user-data directory.
+- Standalone packages print a local stdio MCP handoff for the operator to register.
 - Independent sessions remain distinct when the host launches one adapter process per session or supplies a supported runtime session environment value. A host that deliberately reuses one adapter process across unidentified sessions also reuses that adapter identity.
 - The HTTP broker confirms an accepted ticket after handing it to the stdio adapter. MCP has no transaction spanning that HTTP handoff and the adapter's later stdout write, so an adapter crash in that narrow interval can dispatch work whose ticket the agent runtime did not receive.
 - The extension executes only methods published by `octopus-extension-baseline-v1`; flattened child CDP sessions are disabled.
@@ -409,7 +303,7 @@ Tabro is available under the [MIT License](./LICENSE).
 
 The development implementation includes list_browser_profiles, create_browser_profile, open_browser_profile and stop_browser_profile under MCP contract v5. The pairing alias (`endpoint_nickname`) is each Profile's only public name; creation requires only an idempotency key. Managed launch supports compatible Chrome, Chromium and Edge 153+ on Windows with one-time Native Messaging installation. The exact Chrome build lock has been replaced by version and runtime capability checks. New Profiles automatically load the extension; normal stop retains cookies, website storage and identity. The Hermes package includes this implementation; see its installation guide for the selected-browser prerequisite.
 
-Use `tools/install-local.ps1 -Install -EnableManagedProfiles` for local setup, or `-EnableManagedProfiles` with a package built from this source. Broker and adapter must upgrade together. Read the [single-Agent Demo runbook](./tests/demo/RUNBOOK.md) for the two verified three-Profile runs and reproduction steps.
+Use the registered package setup in [Getting Started](./GETTING_STARTED.md). Compatible clients share its Broker. Read the [single-Agent Demo runbook](./tests/demo/RUNBOOK.md) for the two verified three-Profile runs and reproduction steps.
 
 ## Domain rules
 

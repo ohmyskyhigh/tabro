@@ -1,4 +1,7 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { BrokerCore, OctopusBroker, type ExtensionEventSink } from '../../apps/broker/src/core/index.js';
@@ -15,6 +18,7 @@ import {
 } from '../../apps/shared/protocol/src/index.js';
 import { SqliteRelayStore } from '../../apps/broker/src/storage/index.js';
 import { DASHBOARD_CAPABILITY_ID } from '../../apps/shared/protocol/src/dashboard.js';
+import { MaintenanceFence } from '../../apps/broker/src/runtime/maintenance.js';
 
 function nextMessage(socket: WebSocket): Promise<RelayEnvelope> {
   return new Promise((resolve, reject) => {
@@ -58,6 +62,7 @@ describe('extension WebSocket gateway', () => {
   let octopus: OctopusBroker;
   let gateway: ExtensionGateway;
   let socket: WebSocket | null;
+  let fenceRoot: string | undefined;
 
   beforeEach(() => {
     store = new SqliteRelayStore(':memory:');
@@ -81,6 +86,7 @@ describe('extension WebSocket gateway', () => {
     await gateway.stop();
     await octopus.waitForIdle();
     store.close();
+    if (fenceRoot) { rmSync(fenceRoot, { recursive: true, force: true }); fenceRoot = undefined; }
   });
 
   it.each([
@@ -215,6 +221,10 @@ describe('extension WebSocket gateway', () => {
   });
 
   it.each([false, true])('pairs through relay v2 and correlates operations (pre-dispatch inventory rejection: %s)', async (rejectStaleInventory) => {
+    fenceRoot = mkdtempSync(join(tmpdir(), 'tabro-dashboard-fence-'));
+    const fence = new MaintenanceFence(join(fenceRoot, 'maintenance.json'));
+    gateway = new ExtensionGateway(broker, store, { host: '127.0.0.1', port: 0, serviceVersion: '0.3.0-test', maintenance: fence }, octopus);
+    broker.setTransport(gateway);
     const keys = generateKeyPairSync('ec', { namedCurve: 'P-256' });
     const publicKeyJwk = keys.publicKey.export({ format: 'jwk' }) as RelayV2PayloadByType['HELLO']['publicKeyJwk'];
     await gateway.start();
@@ -291,6 +301,14 @@ describe('extension WebSocket gateway', () => {
       connectionGeneration: ready.payload.connectionGeneration, command: { action: 'snapshot' } })));
     expect(await currentReply).toMatchObject({ type: 'DASHBOARD_RESULT', payload: { result: { marker: 'authenticated' }, error: null } });
     expect(dashboard).toHaveBeenCalledTimes(1);
+    const transaction = crypto.randomUUID();
+    expect(fence.enter(transaction, crypto.randomUUID(), () => true)).toBe(true);
+    socket.send(JSON.stringify(createRelayV2Envelope('DASHBOARD_REQUEST', { requestId: crypto.randomUUID(),
+      connectionGeneration: ready.payload.connectionGeneration,
+      command: { action: 'rules.save', expectedRevision: 'a'.repeat(64), configuration: { schemaVersion: 1, rules: [] } } })));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(dashboard).toHaveBeenCalledTimes(1);
+    expect(fence.resume(transaction)).toBe(true);
 
     expect(store.getTargetById(paired.payload.endpointId)?.alias).toBe('calmreef');
     expect(store.canonical.logical.getEndpointByNickname('mintwave')).toBeNull();

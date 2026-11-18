@@ -9,7 +9,35 @@ Install Tabro on the desktop host and under the OS account that runs your browse
 On the [release page](https://github.com/ohmyskyhigh/tabro/releases), look for `tabro-setup-` assets and choose Windows x64, macOS arm64 (Apple Silicon), macOS x64 (Intel), or Linux x64. The [qualification record](./doc/06-Files/Real-World-Runbook.md#packaged-installation) tracks availability separately from local test results. Windows x64 users can use the [Windows preview](#other-agents) while the standalone release is pending.
 
 1. Download the matching archive and its `.sha256` file. Compare the SHA-256 before extracting the archive into its own folder. Use `Get-FileHash` on Windows, `shasum -a 256` on macOS, or `sha256sum` on Linux.
-2. Open a terminal in the extracted folder as your desktop browser user. Use Chrome, Chromium or Edge 153 or newer. Install Node.js 22.12 or newer before running the macOS or Linux setup. Linux also uses `flock` from `util-linux`. Authenticated proxies on Linux require `secret-tool` and an unlocked Secret Service keyring.
+2. Open a terminal in the extracted folder as your desktop browser user. Use Chrome, Chromium or Edge 153 or newer. Install Node.js 22.12 or newer before running the macOS or Linux setup. Authenticated proxies on Linux require `secret-tool` and an unlocked Secret Service keyring. Before first setup, register one installation and one desktop OS account for the device. Other OS accounts cannot use that Broker. Run normal setup, the Broker and the browser as the designated desktop user, not as administrator.
+
+   Finish active browser work and inspect any existing Tabro installations before registration. First setup rejects detected running legacy Brokers or conflicting Native Messaging registrations. It does not merge multiple stores or stop old processes. Preserve existing data and resolve conflicts before proceeding; an older unrecognized executable may require manual inspection.
+
+   Create the installation and data directories as the desktop user, then run the one-time provisioning command as an administrator. The selected paths become the device's persistent registration; later packages and source checkouts must use them.
+
+   **Windows (PowerShell; run the last line in an elevated PowerShell for the same user)**
+
+   ```powershell
+   $TabroRoot = Join-Path $env:LOCALAPPDATA 'Tabro'
+   New-Item -ItemType Directory -Force -Path (Join-Path $TabroRoot 'data') | Out-Null
+   $TabroOwner = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+   icacls.exe $TabroRoot /inheritance:r /grant:r "*${TabroOwner}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F'
+   icacls.exe (Join-Path $TabroRoot 'data') /inheritance:r /grant:r "*${TabroOwner}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F'
+   powershell.exe -NoProfile -File .\provision-machine-registration.ps1 -OwnerSid $TabroOwner -InstallationRoot $TabroRoot -DataRoot (Join-Path $TabroRoot 'data')
+   ```
+
+   **macOS and Linux (desktop terminal)**
+
+   ```sh
+   # macOS; on Linux use "$HOME/.local/share/tabro" instead.
+   tabro_root="$HOME/Library/Application Support/Tabro"
+   mkdir -p "$tabro_root/data"
+   chmod 700 "$tabro_root" "$tabro_root/data"
+   tabro_root="$(cd "$tabro_root" && pwd -P)"
+   sudo "$(command -v node)" ./provision-machine-registration.mjs "$(id -u)" "$tabro_root" "$tabro_root/data"
+   ```
+
+   Provisioning refuses a different existing owner or root; it does not move databases. Then run setup as the desktop user:
 
    **Windows (PowerShell)**
 
@@ -23,17 +51,31 @@ On the [release page](https://github.com/ohmyskyhigh/tabro/releases), look for `
    node ./setup.mjs
    ```
 
-   Setup detects browsers in standard locations. To select a custom installation, supply `-BrowserPath` on Windows or `--browser` on macOS or Linux with the absolute browser executable path. `TABRO_BROWSER_PATH` sets a browser for a fresh installation. To choose a dedicated install directory, use `-InstallRoot` on Windows or `--root` on macOS or Linux. For a custom Chrome user-data directory on macOS or Linux, supply its absolute path with `--browser-data-dir`. Keep the extracted Windows folder because its MCP launcher runs from there.
+   Setup detects browsers in standard locations. To select a custom browser, supply `-BrowserPath` on Windows or `--browser` on macOS or Linux with its absolute executable path. `TABRO_BROWSER_PATH` sets a browser for a fresh installation. A custom `-InstallRoot` or `--root` must match the provisioned root. For a custom Chrome user-data directory on macOS or Linux, supply its absolute path with `--browser-data-dir`; setup registers the companion only in that directory. Keep the extracted Windows folder because its MCP launcher runs from there.
 3. Copy the installer’s `mcp.command`, `mcp.args` and `mcp.env` (when present) into a `tabro` **stdio** server in your local MCP client. Restart the client’s MCP connection. The launcher starts or reuses the shared Broker. On Linux, if your MCP client filters desktop environment variables, run `node ~/.local/share/tabro/tabro.mjs start` from your desktop terminal first. Substitute your install root if you use `XDG_DATA_HOME` or a custom root.
 4. [Connect an existing profile](#connect-an-existing-chrome-edge-or-adspower-sunbrowser-profile) or [create a managed profile](#create-and-open-a-browser-profile-through-mcp), then [verify a browser action](#verification).
+
+### Older installations require an offline migration review
+
+Current setup rejects an existing installation that lacks the machine lock and maintenance components; it will not start or upgrade that legacy Broker. Finish its browser work, close managed profiles, stop it using its original instructions, and preserve the entire old installation and data directory. Confirm no legacy Broker is running before starting the registered Broker.
+
+Before provisioning an unregistered device, choose a new, empty installation root and keep the old root as a separate backup. To make an additional offline SQLite backup, run the following only after stopping the old Broker, substituting the old database and a new, unused output path:
+
+```sh
+python3 -c 'import sqlite3,sys; from pathlib import Path; p=Path(sys.argv[2]); assert not p.exists(), "Output already exists"; a=sqlite3.connect(Path(sys.argv[1]).resolve().as_uri()+"?mode=ro",uri=True); b=sqlite3.connect(str(p)); a.backup(b); b.close(); a.close()' '<old-data>/relay.sqlite' '<new-backup>.sqlite'
+```
+
+On Windows, use `py -3` in place of `python3` if that is how Python is installed. The database alone is not a complete migration. Managed browser data directories, profile configuration and rules, extension identity, Native Messaging registrations, and OS-bound proxy credentials need separate review; paths or vault entries may not be portable. The database merge tool produces an offline candidate only and does not migrate those external assets. Do not replace the new Broker's database with a backup or merge output without verifying the complete migration. If the device is already registered to the legacy root, stop and inspect that registration before changing it; ordinary setup does not transfer ownership or choose a different root.
 
 ### Authenticated proxies use the desktop user’s credential vault
 
 Use the Windows package’s `proxy-credential.ps1` to enter credentials. On macOS and Linux, run the installed launcher with `credentials` and pipe a JSON object with `username` and `password` through stdin from your secret manager. Pass the returned `credential_ref` to MCP when configuring a closed managed profile. Windows uses DPAPI, macOS uses Keychain, and Linux uses Secret Service. Keep the credential input out of shell history and process arguments.
 
-### Updates preserve browser data and require an idle Broker
+### Updates fence new work and require an idle Broker
 
-Finish browser work, terminate active workspaces, close completed request tickets, and stop any managed profiles. On Windows, run the old package’s `stop.ps1`, then run setup from the new archive and update your MCP entry. On macOS and Linux, run `node <install-root>/tabro.mjs stop` and then run setup from the new archive. Reload Tabro in each existing Chrome profile after updating its extension files. If you are upgrading from the Windows preview and its extension path changed, load the new `extensionPath` once.
+Finish browser work, terminate active workspaces, close completed request tickets, and stop managed profiles. Run setup from the new archive using the registered root. Setup fences new requests before checking for active work and preserves a database snapshot during the switch. A busy Broker refuses the update. Reload Tabro in each existing browser profile after updating its extension files.
+
+On macOS and Linux, `node <install-root>/tabro.mjs recover` can finish a fenced upgrade that reached its ready phase. If it reports an ambiguous or earlier phase, preserve the installation, journal and backups for inspection; do not replace the database after a potentially completed resume. The registered package launcher starts the shared Broker for source checkouts and compatible clients; incompatible protocol versions report an error instead of selecting another Broker.
 
 ## Requirements
 

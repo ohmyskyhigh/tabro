@@ -104,7 +104,7 @@ describe('stdio MCP session adapter', () => {
 function createAdapter(port: number, label: string): AdapterClient {
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: ['--import', 'tsx', 'apps/mcp-stdio-adapter/src/main.ts'],
+    args: ['--import', 'tsx', 'tests/helpers/stdio-adapter-fixture.ts'],
     cwd: process.cwd(),
     env: {
       ...getDefaultEnvironment(),

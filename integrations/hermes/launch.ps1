@@ -15,7 +15,6 @@ try {
     if ($locked) { $mutex.ReleaseMutex() }
     $mutex.Dispose()
   }
-  if ($ready.runtime.health.serviceVersion -ne $installation.state.version) { throw 'Broker and plugin runtime versions do not match.' }
   if (-not $env:TABRO_RUNTIME) { $env:TABRO_RUNTIME = 'hermes' }
   $env:TABRO_RUNTIME_FILE = Join-Path $installation.data 'runtime.json'
   $env:TABRO_TOKEN_FILE = Join-Path $installation.data 'admin-token.txt'

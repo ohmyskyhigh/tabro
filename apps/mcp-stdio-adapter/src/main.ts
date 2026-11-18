@@ -1,7 +1,7 @@
-import { loadStdioAdapterConfig } from './config.js';
+import { loadMachineStdioAdapterConfig } from './config.js';
 import { startStdioAdapter } from './server.js';
 
-const config = loadStdioAdapterConfig();
+const config = loadMachineStdioAdapterConfig();
 const adapter = await startStdioAdapter(config);
 
 let stopping = false;

@@ -70,6 +70,7 @@ function stageCatalog(standalone: string): void {
       cpSync(resolve(sourcePlugin, name), resolve(plugin, name), { recursive: true });
     }
   }
+  cpSync(resolve(root, 'tools/provision-machine-registration.ps1'), resolve(plugin, 'provision-machine-registration.ps1'));
   rmSync(runtime, { recursive: true, force: true });
   for (const fact of facts.filter(fact => fact.path !== windowsNativeHost)) {
     const target = containedPath(runtime, fact.path);
@@ -88,10 +89,12 @@ async function stageStandalone(): Promise<void> {
   for (const name of windows ? windowsScripts : []) {
     cpSync(resolve(sourcePlugin, name), resolve(plugin, name));
   }
+  if (windows) cpSync(resolve(root, 'tools/provision-machine-registration.ps1'), resolve(plugin, 'provision-machine-registration.ps1'));
   if (!windows) {
     cpSync(resolve(sourcePlugin, 'broker-service.mjs'), resolve(runtime, 'broker-service.mjs'));
-    cpSync(resolve(root, 'tools/managed-upgrade-snapshot.mjs'), resolve(runtime, 'managed-upgrade-snapshot.mjs'));
+    cpSync(resolve(root, 'tools/provision-machine-registration.mjs'), resolve(plugin, 'provision-machine-registration.mjs'));
   }
+  cpSync(resolve(root, 'tools/managed-upgrade-snapshot.mjs'), resolve(runtime, 'managed-upgrade-snapshot.mjs'));
   const sourceSha = (file: string): string => createHash('sha256').update(readFileSync(file, 'utf8').replace(/\r\n/gu, '\n')).digest('hex');
   const inputNames = new Set<string>();
   // Keep the SDK's JSON Schema validators separate from filesystem services.
@@ -106,9 +109,11 @@ async function stageStandalone(): Promise<void> {
   const entries: Array<[string, string]> = [
     ['apps/broker/src/runtime/main.ts', 'broker/main.js'],
     ['apps/mcp-stdio-adapter/src/main.ts', 'adapter/main.js'],
-    ['tools/provision-proxy-credential.ts', 'broker/provision-proxy-credential.js']
+    ['tools/provision-proxy-credential.ts', 'broker/provision-proxy-credential.js'],
+    ['tools/maintenance-client.ts', 'maintenance-client.js'],
+    ['apps/native-host/src/relay-native-host.ts', 'native-host/relay-native-host.js']
   ];
-  if (!windows) entries.push(['apps/native-host/src/relay-native-host.ts', 'native-host/relay-native-host.js'], ['tools/tabro-setup.ts', '../setup.mjs']);
+  if (!windows) entries.push(['tools/tabro-setup.ts', '../setup.mjs']);
   for (const [source, entry] of entries) {
     const result = await build({ entryPoints: [resolve(root, source)], outfile: resolve(runtime, entry), bundle: true,
       platform: 'node', format: 'esm', target: 'node22', external: ['node:*'], metafile: true,
@@ -123,6 +128,7 @@ async function stageStandalone(): Promise<void> {
   cpSync(resolve(root, 'apps/broker/src/storage/sqlite/migrations'), resolve(runtime, 'broker/migrations'), { recursive: true });
   cpSync(resolve(root, 'dist/browser-extension'), resolve(runtime, 'browser-extension'), { recursive: true, filter: path => !path.endsWith('.map') });
   mkdirSync(resolve(runtime, 'native-host'), { recursive: true });
+  cpSync(resolve(root, 'dist/native-host/machine-lock.node'), resolve(runtime, 'native-host/machine-lock.node'));
   const nativeHostEntry = windows ? windowsNativeHost : 'native-host/relay-native-host.js';
   if (windows) {
     cpSync(resolve(root, 'dist/native-host/relay-native-host.exe'), resolve(runtime, nativeHostEntry));

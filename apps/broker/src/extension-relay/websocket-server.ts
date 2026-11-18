@@ -38,6 +38,8 @@ import { ConnectionRegistry, type LiveExtensionConnection } from './connection-r
 import type { BootstrapGrants, ManagedConnectionClaim } from '../profiles/bootstrap-grants.js';
 import { MANAGED_EXTENSION_ID } from '../profiles/runtime-config.js';
 import { DASHBOARD_CAPABILITY_ID, type DashboardCommand } from '../../../shared/protocol/src/dashboard.js';
+import { machineProof, sameProof } from '../../../shared/protocol/src/machine-auth.js';
+import type { MaintenanceFence } from '../runtime/maintenance.js';
 
 interface BrowserHelloFacts {
   product: string;
@@ -99,6 +101,9 @@ export interface ExtensionGatewayOptions {
   maxPayloadBytes?: number;
   handshakeTimeoutMs?: number;
   operationTimeoutMs?: number;
+  machineSecret?: Buffer;
+  instanceRef?: string;
+  maintenance?: MaintenanceFence;
 }
 
 /**
@@ -114,6 +119,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
   private readonly states = new WeakMap<WebSocket, PendingSocketState>();
   private readonly messageTasks = new Set<Promise<void>>();
   private readonly pendingAttempts = new Map<string, PendingAttempt>();
+  private readonly relayNonces = new Map<string, number>();
   private eventSink: ExtensionEventSink | null = null;
   private upgradeAttempts = 0;
   private upgradeAccepted = 0;
@@ -163,6 +169,12 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       this.lastUpgradeAt = new Date().toISOString();
       this.lastUpgradePath = request.url ?? null;
       this.lastUpgradeHostKind = this.hostKind(request.headers.host);
+      if (options.maintenance?.fenced) {
+        this.upgradeRejected += 1;
+        socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       if (request.url !== '/relay') {
         this.upgradeRejected += 1;
         this.lastUpgradeResult = 'rejected-path';
@@ -176,6 +188,21 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;
+      }
+      if (options.machineSecret && options.instanceRef) {
+        const proof = request.headers['x-tabro-relay-proof'];
+        const match = typeof proof === 'string' ? /^(\d{13})\.([a-f0-9]{32})\.([a-f0-9]{64})$/u.exec(proof) : null;
+        const now = Date.now();
+        for (const [nonce, expiry] of this.relayNonces) if (expiry <= now) this.relayNonces.delete(nonce);
+        const time = Number(match?.[1]);
+        if (!match || Math.abs(now - time) > 30_000 || this.relayNonces.size >= 100_000 || this.relayNonces.has(match[2]!) ||
+            !sameProof(machineProof(options.machineSecret, 'relay', options.instanceRef, `${match[1]}:${match[2]}`), match[3]!)) {
+          this.upgradeRejected += 1;
+          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        this.relayNonces.set(match[2]!, now + 60_000);
       }
       // Browser pages send Origin; the WinHTTP Native Host does not. Reject
       // other origins before HELLO can reach automatic extension registration.
@@ -196,6 +223,8 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
   setEventSink(sink: ExtensionEventSink): void {
     this.eventSink = sink;
   }
+
+  get quiescent(): boolean { return this.messageTasks.size === 0 && this.pendingAttempts.size === 0; }
 
   connection(endpointRef: string): ExtensionConnectionSnapshot | null {
     const connection = this.registry.getEndpoint(endpointRef);
@@ -358,6 +387,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     this.states.set(socket, state);
     let messages = Promise.resolve();
     socket.on('message', (data, isBinary) => {
+      if (this.options.maintenance?.fenced) return;
       const text = data.toString();
       const maximum = this.options.maxPayloadBytes ?? MAX_RELAY_V2_ENVELOPE_BYTES;
       if (isBinary || Buffer.byteLength(text) > maximum) {
@@ -365,7 +395,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
         return;
       }
       messages = messages.then(async () => {
-      if (socket.readyState !== WebSocket.OPEN) return;
+      if (socket.readyState !== WebSocket.OPEN || this.options.maintenance?.fenced) return;
       try {
         const raw = JSON.parse(text) as { protocolVersion?: unknown };
         if (raw.protocolVersion === RELAY_PROTOCOL_V2) {

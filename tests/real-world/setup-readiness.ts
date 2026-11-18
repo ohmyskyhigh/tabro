@@ -135,7 +135,7 @@ if (!existsSync(nativeManifestPath)) {
   actionRequired(
     'native_host_manifest',
     `Native Messaging manifest is missing at ${nativeManifestPath}.`,
-    'Run tools/install-local.ps1 -Install to generate and register it for the current user.'
+    'Follow GETTING_STARTED.md to register the native host for the current browser.'
   );
 } else {
   try {
@@ -155,7 +155,7 @@ if (!existsSync(nativeManifestPath)) {
       actionRequired(
         'native_host_manifest',
         'Native Messaging manifest does not match the built host or fixed extension identity.',
-        'Rerun tools/install-local.ps1 -Install with the intended parameterized paths.'
+        'Follow GETTING_STARTED.md to configure the registered installation.'
       );
     } else {
       ready('native_host_manifest', `Native Messaging manifest is valid at ${nativeManifestPath}.`, {
@@ -167,7 +167,7 @@ if (!existsSync(nativeManifestPath)) {
     actionRequired(
       'native_host_manifest',
       `Native Messaging manifest cannot be parsed: ${error instanceof Error ? error.message : 'unknown error'}.`,
-      'Rerun tools/install-local.ps1 -Install.'
+      'Follow GETTING_STARTED.md to configure the registered installation.'
     );
   }
 }
@@ -194,7 +194,7 @@ if (!existsSync(pairingInstructionsPath)) {
   actionRequired(
     'pairing_instructions',
     `Pairing instructions are missing at ${pairingInstructionsPath}.`,
-    'Run tools/install-local.ps1 -Install to generate path-specific instructions.'
+    'Follow GETTING_STARTED.md to configure the registered MCP adapter.'
   );
 } else {
   const instructions = readFileSync(pairingInstructionsPath, 'utf8');
@@ -206,14 +206,14 @@ if (!existsSync(pairingInstructionsPath)) {
     actionRequired(
       'pairing_instructions',
       'Pairing instructions do not match the selected extension path or required Native Messaging flow.',
-      'Regenerate instructions with tools/install-local.ps1 -Install and the same bootstrap parameters.'
+      'Follow GETTING_STARTED.md to configure the registered MCP adapter.'
     );
   } else {
     ready('pairing_instructions', `Pairing steps are ready at ${pairingInstructionsPath}.`);
   }
 }
 
-await checkHealth('mcp_health', mcpHealthUrl, 'Start the broker with tools/install-local.ps1 -Install -StartBroker.');
+await checkHealth('mcp_health', mcpHealthUrl, 'Start the registered Broker using the package instructions in GETTING_STARTED.md.');
 await checkHealth('relay_health', relayHealthUrl, 'Start the broker and verify the extension relay port is available.');
 
 const pending = checks.filter((check) => check.status === 'action_required');

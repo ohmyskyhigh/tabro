@@ -18,6 +18,7 @@ import type { StdioAdapterConfig } from './config.js';
 import { createDemoTrace } from './demo-trace.js';
 import { randomUUID } from 'node:crypto';
 import { readBrokerRuntime } from '../../shared/protocol/src/runtime-discovery.js';
+import { sealCredential, verifyBrokerHealth } from '../../shared/protocol/src/machine-auth.js';
 
 export interface RunningStdioAdapter {
   close(): Promise<void>;
@@ -49,7 +50,7 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
   const trace = createDemoTrace(config.demoTrace, config.identity.runtimeSessionKey, config.bearerToken);
   const requestHeaders: Record<string, string> = {
     'x-octopus-contract-version': MCP_CONTRACT_VERSION,
-    Authorization: `Bearer ${config.bearerToken}`,
+    ...(config.machineSecret ? {} : { Authorization: `Bearer ${config.bearerToken}` }),
     'x-octopus-runtime': config.identity.runtimeName,
     'x-octopus-runtime-session': config.identity.runtimeSessionKey,
     ...(config.identity.parentRuntimeSessionKey === undefined
@@ -65,7 +66,11 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
     if (remoteClient && (!runtime || connectedInstance === runtime.instanceRef)) return;
     const url = runtime ? new URL(runtime.mcpUrl) : config.brokerUrl;
     connecting = (async () => {
-      const response = await fetch(new URL('/health', url), { signal: AbortSignal.timeout(5_000) });
+      if (config.machineSecret) {
+        if (!runtime) throw new Error('The machine Broker runtime is required.');
+        await verifyBrokerHealth(url, runtime.instanceRef, config.machineSecret);
+      }
+      const response = await fetch(new URL('/health', url), { redirect: 'error', signal: AbortSignal.timeout(5_000) });
       const health = await response.json() as { mcpContractVersion?: string; instanceRef?: string };
       if (!response.ok || health.mcpContractVersion !== MCP_CONTRACT_VERSION) {
         throw new Error('MCP_CONTRACT_VERSION_MISMATCH: update the Broker and stdio adapter together.');
@@ -74,7 +79,17 @@ export async function startStdioAdapter(config: StdioAdapterConfig): Promise<Run
         throw new Error('The discovered Tabro runtime does not match the responding Broker.');
       }
       const next = new Client({ name: 'tabro-stdio-adapter', version: config.serviceVersion }, { versionNegotiation: { mode: 'auto' } });
-      try { await next.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: requestHeaders } })); }
+      const authenticatedFetch: typeof fetch | undefined = config.machineSecret && runtime ? async (input, init) => {
+        const request = new Request(input, init);
+        const target = new URL(request.url);
+        if (target.href !== url.href) throw new Error('Refusing to send credentials to a different Broker endpoint.');
+        const body = Buffer.from(await request.clone().arrayBuffer());
+        const headers = new Headers(request.headers);
+        headers.set('x-tabro-auth', sealCredential(config.machineSecret!, config.bearerToken, runtime.instanceRef, request.method, target.pathname, body));
+        return fetch(request, { headers, redirect: 'error' });
+      } : undefined;
+      try { await next.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: requestHeaders },
+        ...(authenticatedFetch ? { fetch: authenticatedFetch } : {}) })); }
       catch (error) { await next.close(); throw error; }
       const previous = remoteClient;
       remoteClient = next;

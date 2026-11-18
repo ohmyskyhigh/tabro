@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, openSync, closeSync, existsSync } from 'node:fs';
-import { resolve, dirname, sep } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { URL } from 'node:url';
 import process from 'node:process';
@@ -21,12 +21,12 @@ const alive = pid => { try { process.kill(pid, 0); return true; } catch (error) 
 async function readHealthy() {
   if (!existsSync(runtimeFile)) return null;
   const record = JSON.parse(readFileSync(runtimeFile, 'utf8'));
-  if (record.schemaVersion !== 1 || !Number.isInteger(record.processId) || record.processId <= 0) throw new Error('Invalid Broker discovery record.');
+  if (record.schemaVersion !== 2 || record.authMode !== 'machine-v1' || !Number.isInteger(record.processId) || record.processId <= 0) throw new Error('Invalid or incompatible Broker discovery record.');
   if (!alive(record.processId)) return null;
   const url = new URL(record.mcpUrl);
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.pathname !== '/mcp' || record.databasePath !== resolve(data, 'relay.sqlite')) throw new Error('Broker discovery does not match this local installation.');
   const health = await fetch(new URL('/health', url), { signal: AbortSignal.timeout(1500) }).then(response => response.json());
-  if (health.status !== 'ok' || health.instanceRef !== record.instanceRef || health.serviceVersion !== state.version || health.mcpContractVersion !== (state.contractVersion ?? '5')) throw new Error('Existing Broker has incompatible health or protocol.');
+  if (health.status !== 'ok' || health.instanceRef !== record.instanceRef || health.mcpContractVersion !== state.contractVersion) throw new Error('Existing Broker has incompatible health or protocol.');
   return { processId: record.processId, runtime: { runtimeFile, mcpUrl: record.mcpUrl, relayUrl: record.relayUrl, health } };
 }
 
@@ -46,8 +46,7 @@ try {
       if (systemRoot) environment.ComSpec = resolve(systemRoot, 'System32', 'cmd.exe');
     }
     Object.assign(environment, { RELAY_DB_PATH: resolve(data, 'relay.sqlite'), RELAY_HOST: '127.0.0.1', RELAY_MCP_PORT: '0', RELAY_WS_PORT: '0',
-      RELAY_LOG_LEVEL: 'info', TABRO_RUNTIME_FILE: runtimeFile, TABRO_NATIVE_RUNTIME_FILE: process.platform === 'win32'
-        ? resolve(runtime, dirname(state.nativeHostEntry), 'relay-runtime.json') : runtimeFile, NODE_NO_WARNINGS: '1' });
+      RELAY_LOG_LEVEL: 'info', TABRO_RUNTIME_FILE: runtimeFile, TABRO_NATIVE_RUNTIME_FILE: runtimeFile, NODE_NO_WARNINGS: '1' });
     const config = resolve(data, 'managed-profiles.json');
     if (existsSync(config)) environment.RELAY_PROFILES_CONFIG = config;
     if (process.platform === 'darwin') environment.TABRO_MACOS_HELPER = resolve(runtime, 'native-host/tabro-macos');

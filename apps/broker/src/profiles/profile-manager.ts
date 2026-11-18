@@ -17,6 +17,7 @@ export class ProfileManager {
   private observation: Promise<void> | null = null;
   private observationTimer: NodeJS.Timeout | null = null;
   private readonly barriers = new Set<string>();
+  get quiescent(): boolean { return this.pending === 0 && this.active === 0 && this.observation === null; }
   constructor(readonly store: SqliteRelayStore, private readonly launcher: ProfileLifecycleLauncher,
     private readonly connection: (endpointRef: string) => ExtensionConnectionSnapshot | null,
     private readonly timeoutMs = 120_000, readonly launchesEnabled = true) {
@@ -183,9 +184,9 @@ export class ProfileManager {
     try { await work; } finally { this.observation = null; }
   }
 
-  startObserving(): void {
+  startObserving(canRun: () => boolean = () => true): void {
     if (this.observationTimer || this.stopping) return;
-    this.observationTimer = setInterval(() => { void this.reconcile().catch(() => {}); }, 10_000);
+    this.observationTimer = setInterval(() => { if (canRun()) void this.reconcile().catch(() => {}); }, 10_000);
     this.observationTimer.unref();
   }
 

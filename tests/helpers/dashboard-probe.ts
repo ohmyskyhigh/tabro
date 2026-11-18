@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect } from 'vitest';
@@ -111,10 +112,12 @@ export async function probeDashboard(control: ChromeManagementConnection, extens
     await read('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))');
     await click('#tab-connection');
     await expect.poll(() => read('document.querySelector("#panel-connection").hidden')).toBe(false);
-    await type('#pairing-code', 'CALM-REED');
+    const letters = [...randomBytes(12)].map(value => String.fromCharCode(65 + value % 26)).join('');
+    const pairingCode = `${letters.slice(0, 6)}-${letters.slice(6)}`;
+    await type('#pairing-code', pairingCode);
     await click('#save-settings');
     await expect.poll(() => read('document.querySelector("#status").textContent'), { timeout: 15000 }).toBe('Connected');
-    await expect.poll(() => read('document.querySelector("#profile-nickname").textContent'), { timeout: 15000 }).toBe('calmreed');
+    await expect.poll(() => read('document.querySelector("#profile-nickname").textContent'), { timeout: 15000 }).toBe(letters.toLowerCase());
     checks.push('dashboard stays within a narrow viewport and pairing alias updates after authenticated reconnect');
     return checks;
   } catch (error) { await screenshot('failure').catch(() => {}); throw error; }
