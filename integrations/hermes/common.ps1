@@ -93,8 +93,9 @@ function Start-TabroRuntime($Installation, [switch]$HoldMaintenance) {
     if (Test-Path -LiteralPath $operation) {
       $pending = Get-Content -LiteralPath $operation -Raw -Encoding UTF8 | ConvertFrom-Json
       if ($pending.schemaVersion -ne 1 -or $pending.kind -ne 'stop' -or $pending.transactionId -notmatch '^[0-9a-f-]{36}$' -or -not (Test-Path -LiteralPath $fence)) { throw 'Maintenance state is ambiguous; inspect it before recovering.' }
-      & $Installation.node (Join-Path $Installation.runtime 'maintenance-client.js') (Split-Path -Parent $Installation.data) $result.runtime.mcpUrl 'resume' $pending.transactionId $result.runtime.health.instanceRef
-      if ($LASTEXITCODE -ne 0) { throw 'Maintenance could not resume; inspect the operation before retrying.' }
+      $resumeOutput = & $Installation.node (Join-Path $Installation.runtime 'maintenance-client.js') (Split-Path -Parent $Installation.data) $result.runtime.mcpUrl 'resume' $pending.transactionId $result.runtime.health.instanceRef 2>&1
+      $resumeExitCode = $LASTEXITCODE
+      if ($resumeExitCode -ne 0) { throw "Maintenance could not resume (exit $resumeExitCode): $resumeOutput. Inspect the operation before retrying." }
       Remove-Item -LiteralPath $operation -Force
     } elseif (Test-Path -LiteralPath $fence) { throw 'An interrupted maintenance transaction needs inspection before startup.' }
     return $result

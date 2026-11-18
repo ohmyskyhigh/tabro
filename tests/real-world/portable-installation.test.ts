@@ -448,6 +448,7 @@ globalThis.fetch = async (input, init) => {
     const initialBrokerPid = installation.broker.processId;
     await client.close();
     stop();
+    passed('Broker stopped normally before launcher restart');
     client = new Client({ name: 'portable-qualification-restart', version: '1' });
     await connect();
     expect((JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')) as { processId: number }).processId).not.toBe(initialBrokerPid);
@@ -462,6 +463,8 @@ globalThis.fetch = async (input, init) => {
     report.status = 'passed';
   } catch (error) {
     report.status = 'failed'; report.error = error instanceof Error ? error.stack : String(error);
+    const brokerErrorLog = resolve(install, 'data/broker.stderr.log');
+    if (existsSync(brokerErrorLog)) report.brokerStderr = readFileSync(brokerErrorLog, 'utf8').split('\n').slice(-30).join('\n');
     report.browserLog = browserLog;
     try {
       const data = resolve(install, 'data');
@@ -531,7 +534,11 @@ globalThis.fetch = async (input, init) => {
       else run('secret-tool', ['clear', 'application', 'tabro', 'account', account]);
     }
     if (installation) {
-      stop();
+      try { stop(); } catch (cleanupError) {
+        if (report.status === 'passed') throw cleanupError;
+        report.cleanupError = String(cleanupError);
+        writeFileSync(resolve(evidenceRoot, `${process.platform}-${process.arch}-portable-installation.json`), JSON.stringify(report, null, 2));
+      }
       if (windows) {
         const registered = resolve(install, 'bootstrap', `${nativeName}.json`);
         for (const vendor of ['Google\\Chrome', 'Microsoft\\Edge', 'Chromium', 'AdsPower\\SunBrowser']) {
