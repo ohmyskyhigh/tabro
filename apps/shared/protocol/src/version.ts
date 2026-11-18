@@ -1,3 +1,3 @@
-export const TABRO_VERSION = '0.5.4' as const;
+export const TABRO_VERSION = '0.5.5' as const;
 /** Compatibility export for existing integrations. */
 export const OCTOPUS_VERSION = TABRO_VERSION;
