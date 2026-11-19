@@ -154,6 +154,12 @@ export class BrowserInventory {
     return this.inventoryGeneration;
   }
 
+  /** Live window focus used to gate Human Simulation input. False when the window is gone. */
+  async isWindowFocused(windowId: number): Promise<boolean> {
+    const info = await this.api.windows.get(windowId, { populate: false }).catch(() => null);
+    return info?.focused === true;
+  }
+
   markChanged(): number {
     this.inventoryGeneration += 1;
     return this.inventoryGeneration;

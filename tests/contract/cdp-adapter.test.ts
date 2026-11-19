@@ -33,7 +33,12 @@ class MemoryStorage implements LocalStorageArea {
 class FakeDebugger implements DebuggerApi {
   readonly attach = vi.fn(async () => undefined);
   readonly detach = vi.fn(async () => undefined);
-  readonly sendCommand = vi.fn(async (_target: chrome.debugger.DebuggerSession, method: string): Promise<object> => ({ method, value: 2 }));
+  readonly sendCommand = vi.fn(async (_target: chrome.debugger.DebuggerSession, method: string): Promise<object> => {
+    if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame-1', loaderId: 'loader-1' } } };
+    if (method === 'Page.createIsolatedWorld') return { executionContextId: 42 };
+    if (method === 'Runtime.evaluate') return { result: { type: 'string', value: 'observed' } };
+    return { method, value: 2 };
+  });
   readonly getTargets = vi.fn(async () => []);
   private detachListener: ((source: chrome.debugger.Debuggee, reason: string) => void) | null = null;
   private eventListener: ((source: chrome.debugger.DebuggerSession, method: string, params?: object) => void) | null = null;
@@ -111,7 +116,7 @@ describe('extension CDP adapter', () => {
   });
 
   const policy: BrowserPolicySnapshot = { revision: 'a'.repeat(64), generation: 1,
-    configuration: { schemaVersion: 1, rules: [{ id: 'protected', domain: 'example.test', mode: 'human_simulation' }] } };
+    configuration: { schemaVersion: 1, rules: [{ id: 'protected', domain: 'example.test', mode: 'human_simulation' }], verification_signatures: [] } };
   async function policyFixture() {
     let url = 'https://example.test/a';
     const inventory = new BrowserInventory({ ...browserApi, tabs: { get: async () => ({ ...tab, url }) } });
@@ -142,13 +147,56 @@ describe('extension CDP adapter', () => {
     await expect(f.executor.execute({ ...f.input, method: 'DOM.getDocument' })).rejects.toMatchObject({ code: 'INPUT_POLICY_STALE' });
   });
 
-  it('blocks even read-only JavaScript before dispatch and permits geometry and screenshots', async () => {
+  it('runs guarded evaluate in an isolated world and still refuses page mutations', async () => {
     const f = await policyFixture();
-    await expect(f.executor.execute({ ...f.input, method: 'Runtime.evaluate', params: { expression: 'document.title' } })).rejects.toMatchObject({ code: 'INPUT_ONLY_REQUIRED' });
-    expect(f.api.sendCommand).not.toHaveBeenCalled();
-    expect(await f.attempts.getForReconciliation({ attemptId: f.input.attemptId })).toMatchObject({ ok: false, error: { code: 'INPUT_ONLY_REQUIRED' } });
+    const result = await f.executor.execute({ ...f.input, method: 'Runtime.evaluate', params: { expression: 'document.title' } });
+    expect(f.api.sendCommand).toHaveBeenCalledWith({ tabId: 10 }, 'Page.createIsolatedWorld', { frameId: 'frame-1', worldName: 'tabro-observation', grantUniveralAccess: false });
+    expect(f.api.sendCommand).toHaveBeenCalledWith({ tabId: 10 }, 'Runtime.evaluate',
+      expect.objectContaining({ expression: 'document.title', returnByValue: true, throwOnSideEffect: true, contextId: 42 }));
+    expect(result.rawResult).toEqual({ result: { type: 'string', value: 'observed' } });
+    // Context IDs are not unique across renderer processes, so the world is requested for every
+    // evaluate (Chrome returns the existing one); only the main frame ID is looked up once.
+    let nextContext = 42;
+    f.api.sendCommand.mockImplementation(async (_target, method) => method === 'Page.createIsolatedWorld' ? { executionContextId: ++nextContext }
+      : method === 'Page.getFrameTree' ? { frameTree: { frame: { id: 'frame-1', loaderId: 'loader-2' } } }
+        : method === 'Runtime.evaluate' ? { result: { type: 'number', value: 2 } } : { method, value: 2 });
+    await f.executor.execute({ ...f.input, attemptId: crypto.randomUUID(), method: 'Runtime.evaluate', params: { expression: '1+1' } });
+    expect(f.api.sendCommand.mock.calls.filter(call => call[1] === 'Page.createIsolatedWorld')).toHaveLength(2);
+    expect(f.api.sendCommand.mock.calls.filter(call => call[1] === 'Page.getFrameTree')).toHaveLength(1);
+    expect(f.api.sendCommand).toHaveBeenLastCalledWith({ tabId: 10 }, 'Runtime.evaluate', expect.objectContaining({ contextId: 43 }));
+    await expect(f.executor.execute({ ...f.input, attemptId: crypto.randomUUID(), method: 'DOM.focus', params: { nodeId: 1 } })).rejects.toMatchObject({ code: 'INPUT_ONLY_REQUIRED' });
     await f.executor.execute({ ...f.input, attemptId: crypto.randomUUID(), method: 'DOM.getBoxModel', params: { nodeId: 1 } });
     expect(f.api.sendCommand).toHaveBeenLastCalledWith({ tabId: 10 }, 'DOM.getBoxModel', { nodeId: 1 });
+  });
+
+  it('strips remote object identifiers from guarded evaluate results', async () => {
+    const f = await policyFixture();
+    f.api.sendCommand.mockImplementation(async (_target, method) => method === 'Runtime.evaluate'
+      ? { result: { type: 'object', subtype: 'error', objectId: 'secret-1', value: { nested: { objectId: 'x' } } } }
+      : method === 'Page.getFrameTree' ? { frameTree: { frame: { id: 'frame-1', loaderId: 'loader-1' } } }
+        : method === 'Page.createIsolatedWorld' ? { executionContextId: 42 } : { method, value: 2 });
+    const result = await f.executor.execute({ ...f.input, method: 'Runtime.evaluate', params: { expression: '({a:1})' } });
+    expect(JSON.stringify(result.rawResult)).not.toMatch(/objectId/u);
+  });
+
+  it('refuses background input on a Human Simulation domain until the window is focused', async () => {
+    const f = await policyFixture();
+    // Focus is provided by the shared browserApi window (focused: true), so input is allowed.
+    await f.executor.execute({ ...f.input, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', button: 'left', x: 10, y: 10 } });
+    expect(f.api.sendCommand).toHaveBeenCalledWith({ tabId: 10 }, 'Input.dispatchMouseEvent', expect.objectContaining({ type: 'mousePressed' }));
+    // With an unfocused window, browser input is refused as a page-state contradiction.
+    const unfocused = { ...browserApi, windows: { ...browserApi.windows, get: async () => ({ ...window, focused: false, tabs: undefined }) } };
+    const inventory = new BrowserInventory({ ...unfocused, tabs: { get: async () => ({ ...tab, url: 'https://example.test/a' }) } });
+    const snapshot = await inventory.snapshot();
+    const privateTab = snapshot.tabs[0]!;
+    const api = new FakeDebugger();
+    const attachments = new DebuggerAttachmentManager(inventory, api);
+    const executor = new CdpExecutor(attachments, new RecentAttemptCache(new MemoryStorage()));
+    const attachment = await attachments.attach(privateTab, null, '1.3');
+    executor.applyPolicy(policy, 1);
+    await expect(executor.execute({ attemptId: crypto.randomUUID(), connectionGeneration: 1, inventoryGeneration: snapshot.inventoryGeneration,
+      privateTab, attachmentGeneration: attachment.attachmentGeneration, policyRevision: policy.revision,
+      method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x: 5, y: 5 } })).rejects.toMatchObject({ code: 'FOREGROUND_REQUIRED' });
   });
 
   it('guards recovery observations even on an unlisted domain', async () => {
@@ -260,7 +308,7 @@ describe('extension CDP adapter', () => {
       method: 'Runtime.evaluate',
       params: { expression: '1 + 1' }
     });
-    expect(result.rawResult).toEqual({ method: 'Runtime.evaluate', value: 2 });
+    expect(result.rawResult).toEqual({ result: { type: 'string', value: 'observed' } });
     expect(await attempts.get({
       attemptId,
       connectionGeneration: 7,

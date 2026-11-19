@@ -41,11 +41,11 @@ it('lists registered profiles, saves shared rules and exposes no profile lifecyc
     expect(state.profiles[0]).toMatchObject({ endpoint_nickname: 'mintwave', ownership: 'user' });
     expect(state.currentProfileRef).toBe(endpoint.endpointRef);
     expect(JSON.stringify(state)).not.toMatch(/adminToken|publicKey|privateKey|credential|relay\.sqlite/u);
-    const configuration = { schemaVersion: 1 as const, rules: [{ id: 'test', domain: 'example.com', mode: 'human_simulation' as const }] };
+    const configuration = { schemaVersion: 1 as const, rules: [{ id: 'test', domain: 'example.com', mode: 'human_simulation' as const }], verification_signatures: [] };
     const saved = service.handle(endpoint.endpointRef, { action: 'rules.save', expectedRevision: state.rules.revision!, configuration });
     expect(saved.rules.configuration).toEqual(configuration);
     expect(JSON.parse(readFileSync(rules.path, 'utf8'))).toEqual(configuration);
-    expect(() => service.handle(endpoint.endpointRef, { action: 'rules.save', expectedRevision: state.rules.revision!, configuration: { schemaVersion: 1, rules: [] } })).toThrow('RULES_CONFLICT');
+    expect(() => service.handle(endpoint.endpointRef, { action: 'rules.save', expectedRevision: state.rules.revision!, configuration: { schemaVersion: 1, rules: [], verification_signatures: [] } })).toThrow('RULES_CONFLICT');
     expect(() => service.handle('unknown', { action: 'snapshot' })).toThrow('PROFILE_NOT_FOUND');
     for (const command of [{ action: 'profile.open', profileRef: 'foo' }, { action: 'profile.stop', profileRef: 'foo' },
       { action: 'execute', tool: 'send_cdp_command' }, { action: 'rules.save', path: '/tmp/other', configuration },

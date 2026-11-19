@@ -21,10 +21,12 @@ export type RequestPauseCause =
   | 'manual_workspace_stop'
   | 'endpoint_killed'
   | 'input_recovery_required'
-  | 'user_confirmation_required';
+  | 'user_confirmation_required'
+  | 'human_verification_required';
 export type WorkspacePauseReason =
   | 'manual_workspace_stop'
-  | 'endpoint_killed';
+  | 'endpoint_killed'
+  | 'human_verification_required';
 export type WorkspaceCondition = 'ready' | 'paused' | 'unavailable' | 'terminated';
 export type CallerWorkspaceRelationship = 'owner' | 'lineage_member' | 'none';
 export type BrowserProcessCondition = 'running' | 'not_running' | 'unknown';
@@ -116,6 +118,8 @@ export interface WorkspaceFacts {
 
 export interface TabFacts {
   readonly interaction_policy?: InteractionPolicyFacts;
+  readonly human_activity?: HumanActivityFacts | null;
+  readonly human_verification?: HumanVerificationFacts | null;
   readonly workspace_ref: WorkspaceRef;
   readonly tab_ref: TabRef;
   readonly window_ref: WindowRef;
@@ -124,6 +128,23 @@ export interface TabFacts {
   readonly url: string;
   readonly active: boolean;
   readonly initial_event_cursor: EventCursor;
+}
+
+export interface HumanActivityFacts {
+  readonly evaluates: number;
+  readonly outstanding: boolean;
+  readonly missing_dwell_ms: number;
+  readonly missing_wheel_px: number;
+  readonly missing_hovers: number;
+  readonly next_load_allowed_at: string | null;
+}
+
+export interface HumanVerificationFacts {
+  readonly status: 'watching' | 'paused' | 'awaiting_resume';
+  readonly signature: string;
+  readonly evidence: string;
+  readonly detected_at: string;
+  readonly tab_ref: TabRef;
 }
 
 export interface InteractionPolicyFacts {

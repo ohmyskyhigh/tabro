@@ -5,7 +5,7 @@ import { McpServer, createMcpHandler, fromJsonSchema } from '@modelcontextprotoc
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import type { CallerEvidence, OctopusBroker } from '../../apps/broker/src/core/index.js';
 import { McpGateway } from '../../apps/broker/src/mcp/index.js';
-import { MCP_TOOL_NAMES, type McpAsyncToolName } from '../../apps/shared/protocol/src/index.js';
+import { MCP_TOOL_NAMES, MCP_CONTRACT_VERSION, type McpAsyncToolName } from '../../apps/shared/protocol/src/index.js';
 import type { RelayRepositories } from '../../apps/broker/src/storage/index.js';
 
 const TOKEN = 'canonical-mcp-gateway-test-token';
@@ -17,7 +17,7 @@ const CALLER = {
 };
 
 const rejectedOutput = () => ({
-  contract_version: '7',
+  contract_version: MCP_CONTRACT_VERSION,
   disposition: 'rejected',
   observed_at: NOW,
   caller: CALLER,
@@ -34,7 +34,7 @@ const rejectedOutput = () => ({
 const acceptedWorkspaceOutput = (input: unknown) => {
   const requestRef = 'req_gateway_test';
   return {
-    contract_version: '7',
+    contract_version: MCP_CONTRACT_VERSION,
     disposition: 'accepted',
     observed_at: NOW,
     caller: CALLER,
@@ -131,7 +131,7 @@ describe('canonical MCP gateway', () => {
     await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
       requestInit: {
         headers: {
-          'x-octopus-contract-version': '7', Authorization: `Bearer ${TOKEN}`,
+          'x-octopus-contract-version': MCP_CONTRACT_VERSION, Authorization: `Bearer ${TOKEN}`,
           ...headers
         }
       }
@@ -193,10 +193,10 @@ describe('canonical MCP gateway', () => {
     await gateway.start();
     const { port } = gateway.address();
     const firstTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-      requestInit: { headers: { 'x-octopus-contract-version': '7', Authorization: `Bearer ${TOKEN}` } }
+      requestInit: { headers: { 'x-octopus-contract-version': MCP_CONTRACT_VERSION, Authorization: `Bearer ${TOKEN}` } }
     });
     const secondTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-      requestInit: { headers: { 'x-octopus-contract-version': '7', Authorization: `Bearer ${TOKEN}` } }
+      requestInit: { headers: { 'x-octopus-contract-version': MCP_CONTRACT_VERSION, Authorization: `Bearer ${TOKEN}` } }
     });
     const first = new Client({ name: 'same-token-first', version: '1.0.0' }, { versionNegotiation: { mode: 'auto' } });
     const second = new Client({ name: 'same-token-second', version: '1.0.0' }, { versionNegotiation: { mode: 'auto' } });

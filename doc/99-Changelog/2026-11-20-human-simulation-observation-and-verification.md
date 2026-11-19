@@ -1,0 +1,5 @@
+# Human Simulation observation and verification
+
+On 2026-11-19 the user accepted the [Human Simulation observation and verification proposal](../90-Proposals/human-simulation-observation-and-verification-2026-11-19.md) with every recommended default. The decision was applied to Product, User Experience, Operational Defaults, the MCP contract and schema, System, Components and Files, and contract 7 became contract 8. The source ships as Tabro 0.7.0 with extension capability `browserInputPolicy: 3`.
+
+On 2026-11-20 a review corrected the first implementation before release. The changes were a schema-valid `HUMAN_PACING_WAIT`, pacing that counts click-driven loads and gates mouse presses, URL signatures matched on host and path only, an isolated world requested per evaluate, jittered control intervals, a reload diagnostic for capability-2 extensions, and a failing resume when the verification confirmation is missing. The [implementation plan](../80-Plans/human-simulation-observation-2026-11-19/README.md#status) records the evidence and the open packaged and live-site qualification.

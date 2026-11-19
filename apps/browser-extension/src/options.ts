@@ -227,7 +227,7 @@ element<HTMLFormElement>('rule-form').addEventListener('submit', event => {
       const rules = editor!.configuration.rules.filter(rule => rule.id !== id);
       if (rules.some(rule => rule.domain === domain)) throw new Error('A rule for this domain already exists.');
       rules.push({ id, domain, mode: 'human_simulation' });
-      await saveRules({ schemaVersion: 1, rules }, editor!.revision); ruleDialog.close(); notice(`Input-only rule saved for ${domain}.`);
+      await saveRules({ ...editor!.configuration, schemaVersion: 1, rules }, editor!.revision); ruleDialog.close(); notice(`Human Simulation rule saved for ${domain}.`);
     } catch (error) { message('rule-error', `${errorText(error)}${stale ? ' Close this editor and refresh before saving again.' : ''}`); }
   })();
 });

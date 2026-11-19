@@ -1,4 +1,7 @@
-import { effectiveBrowserPolicy, humanControlInterval, isRecoveryObservation, isBrowserInput, type BrowserPolicySnapshot } from '../../../../shared/protocol/src/browser-interaction-policy.js';
+import { effectiveBrowserPolicy, humanControlInterval, isRecoveryObservation, isBrowserInput, VERIFICATION_PAUSE_ALLOWED, type BrowserPolicySnapshot } from '../../../../shared/protocol/src/browser-interaction-policy.js';
+import { activeVerificationSignatures, matchVerificationSignatures, type VerificationPageReport } from '../../../../shared/protocol/src/verification-signatures.js';
+import { jitteredInterval, seededRandom } from '../../../../shared/protocol/src/human-motion.js';
+import { HumanSimulationController, type HumanSimulationLimits } from './human-simulation.js';
 import type { BrowserRulesSource } from '../../runtime/browser-rules.js';
 import { InputRecovery } from './input-recovery.js';
 import { randomUUID } from 'node:crypto';
@@ -47,6 +50,8 @@ import { RandomReferenceFactory, type ReferenceFactory } from './reference-facto
 type AsyncInput = JsonObject;
 
 const SINGLE_WORKSPACE_RUNTIMES = new Set(['codex', 'cc', 'dsh']);
+/** Longer pacing waits fail with HUMAN_PACING_WAIT instead of holding the worker lease. */
+const HUMAN_PACING_MAX_WAIT_MS = 20_000;
 
 interface CursorEntry {
   callerSessionRef: string;
@@ -59,6 +64,7 @@ interface BrokerOptions {
   referenceFactory?: ReferenceFactory;
   maxPageSize?: number;
   workerLeaseMs?: number;
+  humanLimits?: Partial<HumanSimulationLimits>;
 }
 
 const isObject = (value: unknown): value is JsonObject =>
@@ -92,6 +98,8 @@ export class OctopusBroker implements ExtensionEventSink {
   private readonly browserRules: BrowserRulesSource | null;
   private readonly syncedPolicies = new Map<string, string>();
   private readonly nextHumanControlAt = new Map<string, number>();
+  private readonly humanSimulation: HumanSimulationController;
+  private readonly humanRandom = seededRandom(0x74616272);
   private readonly inventories = new Map<string, RelayV2PayloadByType['INVENTORY_SNAPSHOT']>();
   private readonly syncingPolicies = new Set<string>();
   private profileManager: ProfileManager | null = null;
@@ -120,6 +128,7 @@ export class OctopusBroker implements ExtensionEventSink {
   ) {
     this.inputRecovery = new InputRecovery(repositories.requests);
     this.browserRules = options.browserRules ?? null;
+    this.humanSimulation = new HumanSimulationController(options.humanLimits ?? {});
     this.references = options.referenceFactory ?? new RandomReferenceFactory();
     this.callers = new CallerRegistry(repositories, this.references);
     this.maxPageSize = options.maxPageSize ?? 100;
@@ -155,14 +164,14 @@ export class OctopusBroker implements ExtensionEventSink {
     if (!snapshot) throw new OctopusBrokerError(problem('BROWSER_RULES_INVALID', this.browserRules.diagnostic ?? 'Repair browser-rules.json before browser dispatch.'));
     const connection = this.extensionPort?.connection(endpointRef);
     if (snapshot.configuration.rules.length && connection?.connected && !connection.browserInputPolicy) {
-      throw new OctopusBrokerError(problem('INPUT_POLICY_UNSUPPORTED', 'The running Tabro extension did not advertise Human Simulation Mode support (browserInputPolicy=2). Reload the extension in this Chrome profile; updating files on disk or seeing the same version number does not confirm the loaded code supports domain rules.'));
+      throw new OctopusBrokerError(problem('INPUT_POLICY_UNSUPPORTED', 'The running Tabro extension did not advertise Human Simulation Mode support (browserInputPolicy>=2, current builds use 3). Reload the extension in this Chrome profile; updating files on disk or seeing the same version number does not confirm the loaded code supports domain rules.'));
     }
     return snapshot;
   }
 
   private policyFact(url: string): JsonObject {
     const snapshot = this.browserRules?.refresh();
-    const effective = effectiveBrowserPolicy(url, snapshot?.configuration ?? { schemaVersion: 1, rules: [] });
+    const effective = effectiveBrowserPolicy(url, snapshot?.configuration ?? { schemaVersion: 1, rules: [], verification_signatures: [] });
     return { ...effective, mode: this.browserRules && !snapshot ? 'unavailable' : effective.mode,
       revision: snapshot?.revision ?? null, diagnostic: this.browserRules?.diagnostic ?? null };
   }
@@ -1579,6 +1588,168 @@ export class OctopusBroker implements ExtensionEventSink {
     return privateGroup;
   }
 
+  /** Human Simulation observation, activity-debt, pacing and verification gating. Returns true when the ticket was terminalized. */
+  private async humanSimulationGate(
+    ticket: StoredRequestTicket,
+    workspace: StoredWorkspace,
+    tab: StoredManagedTab,
+    connection: { connectionGeneration: number },
+    policy: BrowserPolicySnapshot,
+    currentUrl: string,
+    method: string,
+    params: Record<string, unknown>
+  ): Promise<boolean> {
+    const signatures = activeVerificationSignatures(policy.configuration.verification_signatures);
+    const effective = effectiveBrowserPolicy(currentUrl, policy.configuration);
+    const ruled = effective.mode === 'human_simulation';
+    const paused = workspace.pauseCauses.includes('human_verification_required');
+    if (paused && !VERIFICATION_PAUSE_ALLOWED.has(method)) {
+      this.refuseVerification(ticket, workspace, tab, effective);
+      return true;
+    }
+    const report = await this.verificationReport(tab, workspace.endpointRef, connection.connectionGeneration, policy, signatures, currentUrl, ruled);
+    const match = matchVerificationSignatures(signatures, report);
+    if (match) {
+      const scope = { tabRef: tab.tabRef, workspaceRef: workspace.workspaceRef, endpointRef: workspace.endpointRef };
+      const state = this.humanSimulation.noteDetection(scope, match.signature, match.evidence);
+      const confirmed = match.kind === 'url' || performance.now() - state.since >= this.humanSimulation.gracePeriodMs;
+      if (!state.paused && confirmed) this.applyVerificationPause(workspace, tab, effective.matched_domain ?? '', policy, match);
+      if ((state.paused || confirmed) && !VERIFICATION_PAUSE_ALLOWED.has(method)) {
+        this.refuseVerification(ticket, workspace, tab, effective);
+        return true;
+      }
+      return false;
+    }
+    if (!paused) this.humanSimulation.clearDetection(tab.tabRef);
+    if (!ruled) return false;
+    if (method === 'Page.navigate' || method === 'Page.reload') {
+      const debt = this.humanSimulation.debt(tab.tabRef);
+      if (debt) {
+        const missing = [debt.missing_dwell_ms > 0 ? `wait about ${Math.ceil(debt.missing_dwell_ms / 1000)} more second(s) on the page` : null,
+          debt.missing_wheel_px > 0 ? `scroll about ${debt.missing_wheel_px} more pixel(s) with Input.dispatchMouseEvent mouseWheel` : null,
+          debt.missing_hovers > 0 ? `add ${debt.missing_hovers} more distinct hover(s) with Input.dispatchMouseEvent mouseMoved` : null].filter(Boolean);
+        this.failTicket(ticket, problem('HUMAN_ACTIVITY_REQUIRED',
+          `This tab used guarded Runtime.evaluate ${debt.evaluates} time(s). Before leaving the page ${missing.join(', then ')}. Browse like a person: scroll, hover and read, or leave by clicking a link.`,
+          false, { workspace_ref: workspace.workspaceRef, tab_ref: tab.tabRef }));
+        return true;
+      }
+    }
+    // A page load can come from Page.navigate/reload or from a click, so both are paced.
+    // Loads themselves are counted when the tab's URL changes (noteHumanNavigation).
+    if (method === 'Page.navigate' || method === 'Page.reload' || (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed')) {
+      const destination = method === 'Page.navigate' && typeof params.url === 'string' ? params.url : currentUrl;
+      const target = effectiveBrowserPolicy(destination, policy.configuration);
+      const paceDomain = target.mode === 'human_simulation' ? target.matched_domain : null;
+      const pace = paceDomain ? this.humanSimulation.pace(paceDomain) : null;
+      if (pace && pace.waitMs > 0) {
+        if (pace.waitMs > HUMAN_PACING_MAX_WAIT_MS) {
+          this.failTicket(ticket, problem('HUMAN_PACING_WAIT', `${paceDomain} is resting after a run of page loads. Do not click or load pages on it before ${pace.earliestAt}; screenshots and reads stay available.`, true,
+            { workspace_ref: workspace.workspaceRef, tab_ref: tab.tabRef }));
+          return true;
+        }
+        await delay(pace.waitMs);
+        const current = this.repositories.requests.getRequest(ticket.requestRef);
+        if (this.shuttingDown || current?.state !== 'running' || current.pauseCondition !== null || current.claimGeneration !== ticket.claimGeneration) return true;
+        if (this.repositories.logical.getWorkspace(workspace.workspaceRef)?.pauseCauses.includes('human_verification_required')) {
+          this.refuseVerification(ticket, workspace, tab, effectiveBrowserPolicy(currentUrl, policy.configuration));
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Cheap stored URL/title match always; on ruled domains one guarded frame/selector probe at most per interval. */
+  private async verificationReport(
+    tab: StoredManagedTab,
+    endpointRef: string,
+    connectionGeneration: number,
+    policy: BrowserPolicySnapshot,
+    signatures: ReturnType<typeof activeVerificationSignatures>,
+    currentUrl: string,
+    ruled: boolean
+  ): Promise<VerificationPageReport> {
+    const base: VerificationPageReport = { url: currentUrl.toLowerCase(), title: (tab.title ?? '').toLowerCase(), frames: [], found: [] };
+    // An extension without browserInputPolicy=3 refuses guarded evaluate, so only URL/title detection applies.
+    if (!ruled || !this.requireExtensionConnection(endpointRef).humanObservation || !this.humanSimulation.shouldProbe(tab.tabRef)) return base;
+    if (matchVerificationSignatures(signatures, base)) { this.humanSimulation.markProbed(tab.tabRef); return base; }
+    this.humanSimulation.markProbed(tab.tabRef);
+    // The guarded observation expression also has the agent 8192-character limit, so
+    // candidate selectors and frame needles are trimmed to a bounded compact set.
+    const selectors = [...new Set(signatures.map(candidate => candidate.selector_visible)
+      .filter((value): value is string => value !== null && value.length <= 128))].slice(0, 20);
+    const frameNeedles = [...new Set(signatures.map(candidate => candidate.frame_url_contains)
+      .filter((value): value is string => value !== null && value.length <= 128))].slice(0, 20);
+    // The marker lets the transport test double recognize an internal detection read and
+    // exclude it from agent command accounting. It is inert JavaScript.
+    const expression = `(() => { /* __tabro_verification__ */
+      const vis = (el) => { if (!el || el.offsetWidth < 40 || el.offsetHeight < 20) return false; const st = getComputedStyle(el);
+        if (st.visibility === 'hidden' || st.display === 'none' || Number(st.opacity) < 0.1) return false;
+        let x = 0, y = 0, n = el; while (n) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+        return x + el.offsetWidth > 0 && y + el.offsetHeight > 0 && x < innerWidth + scrollX + 2000 && y < Math.max(document.documentElement.scrollHeight, innerHeight) + 10; };
+      const frames = []; for (const f of document.querySelectorAll('iframe')) { const src = String(f.src || '').toLowerCase(); if (vis(f) && src) frames.push(src.slice(0, 512)); }
+      const found = []; for (const sel of ${JSON.stringify(selectors)}) { try { if (vis(document.querySelector(sel))) found.push(sel); } catch { /* invalid selector */ } }
+      return { frames: frames.filter(src => ${JSON.stringify(frameNeedles)}.some(n => src.includes(n))), found, url: String(location.href || '').toLowerCase(), title: String(document.title || '').toLowerCase() };
+    })()`;
+    try {
+      const connection = this.requireExtensionConnection(endpointRef);
+      const result = await this.requireExtensionPort().execute(endpointRef, 'SEND_CDP', {
+        attemptId: randomUUID(),
+        expected: { connectionGeneration, inventoryGeneration: connection.inventoryGeneration,
+          tabGeneration: tab.locatorGeneration, attachmentGeneration: tab.attachmentGeneration },
+        tab: this.tabLocator(parsePrivate<JsonObject>(tab.privateTabKey, 'tab')) as never,
+        policyRevision: policy.revision,
+        recoveryObservation: true,
+        method: 'Runtime.evaluate',
+        params: { expression, returnByValue: true },
+        sessionId: null
+      });
+      const remote = result.outcome === 'succeeded' && isObject(result.result) && isObject(result.result.result)
+        ? (result.result.result as JsonObject).result : undefined;
+      const value = isObject(remote) ? remote.value as Partial<VerificationPageReport> | undefined : undefined;
+      if (value && Array.isArray(value.frames) && Array.isArray(value.found)) {
+        return { url: typeof value.url === 'string' ? value.url : base.url, title: typeof value.title === 'string' ? value.title : base.title,
+          frames: value.frames.filter((item): item is string => typeof item === 'string'), found: value.found.filter((item): item is string => typeof item === 'string') };
+      }
+    } catch { /* A failed probe never blocks the agent's own command. */ }
+    return base;
+  }
+
+  private refuseVerification(
+    ticket: StoredRequestTicket,
+    workspace: StoredWorkspace,
+    tab: StoredManagedTab,
+    effective: { matched_domain: string | null; domain: string }
+  ): void {
+    const state = this.humanSimulation.detection(tab.tabRef);
+    this.failTicket(ticket, problem('HUMAN_VERIFICATION_REQUIRED',
+      `Human verification is required on ${effective.matched_domain ?? (effective.domain || 'this tab')}${state ? ` (${state.signature}: ${state.evidence})` : ''}. Ask the user to complete the challenge in the browser window, then call resume_workspace_automation with human_verification.user_confirmed_completed after they finish. Do not submit more commands to this tab.`,
+      false, { workspace_ref: workspace.workspaceRef, tab_ref: tab.tabRef }));
+  }
+
+  private applyVerificationPause(
+    workspace: StoredWorkspace,
+    tab: StoredManagedTab,
+    matchedDomain: string,
+    policy: BrowserPolicySnapshot,
+    match: { signature: string; evidence: string }
+  ): void {
+    for (const candidate of this.repositories.logical.listActiveWorkspaces({ endpointRef: workspace.endpointRef })) {
+      const tabs = this.repositories.logical.listWorkspaceTabs(candidate.workspaceRef).filter(item => item.lifecycle === 'active');
+      const covers = candidate.workspaceRef === workspace.workspaceRef
+        || tabs.some(item => { const e = effectiveBrowserPolicy(item.url ?? '', policy.configuration); return e.mode === 'human_simulation' && e.matched_domain === matchedDomain; });
+      if (!covers) continue;
+      this.repositories.logical.setWorkspacePauseCause({ workspaceRef: candidate.workspaceRef, cause: 'human_verification_required' });
+      for (const item of tabs) {
+        const e = effectiveBrowserPolicy(item.url ?? '', policy.configuration);
+        if (item.tabRef === tab.tabRef || (e.mode === 'human_simulation' && e.matched_domain === matchedDomain)) {
+          this.humanSimulation.noteDetection({ tabRef: item.tabRef, workspaceRef: candidate.workspaceRef, endpointRef: candidate.endpointRef }, match.signature, match.evidence);
+          this.humanSimulation.markPaused(item.tabRef);
+        }
+      }
+    }
+  }
+
   private async executeCdp(ticket: StoredRequestTicket): Promise<void> {
     const workspace = this.requireWorkspaceForTicket(ticket);
     const endpointControl = this.repositories.logical.getActiveEndpointControl(workspace.endpointRef);
@@ -1641,9 +1812,19 @@ export class OctopusBroker implements ExtensionEventSink {
     }
     let policy = await this.synchronizePolicy(workspace.endpointRef);
     const params = isObject(args.params) ? args.params : {};
-    const interval = humanControlInterval(method, params);
+    const currentTabRecord = this.repositories.logical.getTab(workspace.workspaceRef, tab.tabRef);
+    const currentUrl = (currentTabRecord?.url ?? tab.url) ?? '';
     const humanDomain = (url: string): boolean => policy !== null && effectiveBrowserPolicy(url, policy.configuration).mode === 'human_simulation';
-    const currentUrl = this.repositories.logical.getTab(workspace.workspaceRef, tab.tabRef)?.url ?? tab.url ?? '';
+    if (method === 'Runtime.evaluate' && humanDomain(currentUrl) && !this.requireExtensionConnection(workspace.endpointRef).humanObservation) {
+      throw new OctopusBrokerError(problem('INPUT_POLICY_UNSUPPORTED', 'The running Tabro extension supports Human Simulation Mode but not guarded Runtime.evaluate (browserInputPolicy=3). Reload the extension in this Chrome profile, or observe with Page.captureScreenshot and targeted DOM reads until then.'));
+    }
+    if (policy) {
+      const refusal = await this.humanSimulationGate(ticket, workspace, tab, connection, policy, currentUrl, method, params);
+      if (refusal) return;
+    }
+    // Human Simulation intervals are minima with a log-normal extra delay, so the spacing is never uniform.
+    const baseInterval = humanControlInterval(method, params);
+    const interval = humanDomain(currentUrl) ? jitteredInterval(baseInterval, this.humanRandom) : baseInterval;
     if (interval > 0 && humanDomain(currentUrl)) {
       const remaining = (this.nextHumanControlAt.get(tab.tabRef) ?? 0) - performance.now();
       if (remaining > 0) await delay(Math.ceil(remaining));
@@ -1663,7 +1844,9 @@ export class OctopusBroker implements ExtensionEventSink {
       throw new OctopusBrokerError(problem('INPUT_POLICY_UNSUPPORTED', 'Update the extension before guarded recovery observation.'));
     }
     const currentWorkspace = this.requireWorkspaceForTicket(ticket);
-    if (currentWorkspace.ownerEpoch !== ticket.acceptedOwnerEpoch || currentWorkspace.controlEpoch !== workspace.controlEpoch || currentWorkspace.pauseCauses.length) {
+    const verificationOnly = currentWorkspace.pauseCauses.length > 0 && currentWorkspace.pauseCauses.every(cause => cause === 'human_verification_required');
+    if (currentWorkspace.ownerEpoch !== ticket.acceptedOwnerEpoch || currentWorkspace.controlEpoch !== workspace.controlEpoch
+      || (currentWorkspace.pauseCauses.length && !(verificationOnly && VERIFICATION_PAUSE_ALLOWED.has(method)))) {
       throw new OctopusBrokerError(problem('CONTROL_RACE_LOST', 'Workspace control changed while synchronizing browser rules.'));
     }
     const attemptId = randomUUID();
@@ -1806,6 +1989,22 @@ export class OctopusBroker implements ExtensionEventSink {
     body: JsonObject
   ): void {
     const stream = this.activeStream(tab.tabRef);
+    const policySnapshot = this.browserRules?.refresh();
+    const recordUrl = this.repositories.logical.getTab(workspace.workspaceRef, tab.tabRef)?.url ?? tab.url ?? '';
+    if (policySnapshot && effectiveBrowserPolicy(recordUrl, policySnapshot.configuration).mode === 'human_simulation') {
+      const method = typeof args.method === 'string' ? args.method : '';
+      const commandParams = isObject(args.params) ? args.params : {};
+      if (method === 'Runtime.evaluate') this.humanSimulation.noteEvaluate(tab.tabRef);
+      else if (method === 'Input.dispatchMouseEvent' && commandParams.type === 'mouseWheel') {
+        this.humanSimulation.noteWheel(tab.tabRef, Number(commandParams.deltaY ?? 0));
+      } else if (method === 'Input.dispatchMouseEvent' && commandParams.type === 'mouseMoved') {
+        this.humanSimulation.noteHover(tab.tabRef, Number(commandParams.x ?? 0), Number(commandParams.y ?? 0));
+      } else if (method === 'Page.reload') {
+        // A reload keeps the URL, so noteHumanNavigation never sees it; every other load is counted there.
+        const paceDomain = effectiveBrowserPolicy(recordUrl, policySnapshot.configuration).matched_domain ?? '';
+        if (paceDomain) this.humanSimulation.noteLoad(paceDomain, performance.now(), this.humanRandom);
+      }
+    }
     this.succeedTicket(ticket, {
       tool: 'send_cdp_command', disposition: 'complete', facts: { command: {
         workspace_ref: workspace.workspaceRef,
@@ -2288,10 +2487,21 @@ export class OctopusBroker implements ExtensionEventSink {
   }
 
   private async executeWorkspaceResume(ticket: StoredRequestTicket): Promise<void> {
-    const workspace = this.requireWorkspaceForTicket(ticket);
+    let workspace = this.requireWorkspaceForTicket(ticket);
     const inventory = await this.requireExtensionPort().requestInventory(workspace.endpointRef, null);
     this.reconcileInventory(workspace.endpointRef, inventory);
     const input = this.requestArguments(ticket).input_recovery;
+    const verificationAck = this.requestArguments(ticket).human_verification;
+    // Without the user's confirmation a resume would clear nothing that blocks this workspace,
+    // so report the verification pause instead of a success that leaves automation paused.
+    if (workspace.pauseCauses.includes('human_verification_required')
+      && !(isObject(verificationAck) && verificationAck.user_confirmed_completed === true)) {
+      const state = this.repositories.logical.listWorkspaceTabs(workspace.workspaceRef)
+        .map(item => this.humanSimulation.detection(item.tabRef)).find(item => item !== null);
+      throw new OctopusBrokerError(problem('HUMAN_VERIFICATION_REQUIRED',
+        `This workspace is paused for human verification${state ? ` (${state.signature}: ${state.evidence})` : ''}. Ask the user to complete the challenge in the browser window, then call resume_workspace_automation with human_verification.user_confirmed_completed true.`,
+        false, { workspace_ref: workspace.workspaceRef }));
+    }
     const states = this.inputRecovery.forWorkspace(workspace.workspaceRef);
     const recoveryRef = isObject(input) && input.user_confirmed_released === true ? input.recovery_ref : undefined;
     const selected = recoveryRef === undefined ? states : states.filter(state => state.recoveryRef === recoveryRef);
@@ -2307,14 +2517,46 @@ export class OctopusBroker implements ExtensionEventSink {
       if (workspace.pauseCauses.includes('endpoint_killed')) throw new OctopusBrokerError(problem('ENDPOINT_KILLED', 'Endpoint kill remains active. Input recovery does not clear it.'));
       for (const state of selected) this.inputRecovery.clear(state.tabRef);
     }
+    let clearedVerification = false;
+    if (isObject(verificationAck) && verificationAck.user_confirmed_completed === true
+      && workspace.pauseCauses.includes('human_verification_required')) {
+      const stillChallenged = await this.recheckVerification(workspace);
+      if (stillChallenged) {
+        throw new OctopusBrokerError(problem('HUMAN_VERIFICATION_REQUIRED',
+          `The verification challenge is still present (${stillChallenged.signature}: ${stillChallenged.evidence}). Ask the user to finish it in the browser window before resuming.`, true,
+          { workspace_ref: workspace.workspaceRef }));
+      }
+      for (const item of this.repositories.logical.listWorkspaceTabs(workspace.workspaceRef).filter(t => t.lifecycle === 'active')) this.humanSimulation.clearDetection(item.tabRef);
+      workspace = this.repositories.logical.clearWorkspacePauseCause({ workspaceRef: workspace.workspaceRef, cause: 'human_verification_required' });
+      this.resumeWorkspacePausedRequests(workspace, 'human_verification_required');
+      clearedVerification = true;
+    }
     const updated = this.repositories.logical.clearWorkspacePauseCause({ workspaceRef: workspace.workspaceRef, cause: 'manual_workspace_stop' });
     this.resumeWorkspacePausedRequests(updated, 'manual_workspace_stop');
     this.succeedTicket(ticket, {
       tool: 'resume_workspace_automation', disposition: 'complete', facts: {
         workspace: this.workspaceFact(updated, this.sessionForTicket(ticket)),
-        cleared_pause_reason: 'manual_workspace_stop', reconciled: true
+        cleared_pause_reason: 'manual_workspace_stop', reconciled: true,
+        ...(clearedVerification ? { cleared_human_verification: true } : {})
       }
     });
+  }
+
+  /** Re-probes every active ruled tab after a user confirms the challenge. Returns the first still-present match. */
+  private async recheckVerification(workspace: StoredWorkspace): Promise<{ signature: string; evidence: string } | null> {
+    const snapshot = this.browserRules?.refresh();
+    if (!snapshot) return null;
+    const signatures = activeVerificationSignatures(snapshot.configuration.verification_signatures);
+    const connection = this.requireExtensionConnection(workspace.endpointRef);
+    for (const item of this.repositories.logical.listWorkspaceTabs(workspace.workspaceRef).filter(t => t.lifecycle === 'active')) {
+      const url = item.url ?? '';
+      const ruled = effectiveBrowserPolicy(url, snapshot.configuration).mode === 'human_simulation';
+      this.humanSimulation.markProbed(item.tabRef, 0);
+      const report = await this.verificationReport(item, workspace.endpointRef, connection.connectionGeneration, snapshot, signatures, url, ruled);
+      const match = matchVerificationSignatures(signatures, report);
+      if (match) return match;
+    }
+    return null;
   }
 
   private executeEndpointKill(ticket: StoredRequestTicket): void {
@@ -2606,6 +2848,7 @@ export class OctopusBroker implements ExtensionEventSink {
       for (const rawTab of liveTabs) {
         const existing = existingByBrowserId.get(rawTab.tabId);
         if (!existing) continue;
+        const previousUrl = existing.url;
         const updated = this.repositories.logical.updateTab({
           workspaceRef: workspace.workspaceRef,
           tabRef: existing.tabRef,
@@ -2624,6 +2867,7 @@ export class OctopusBroker implements ExtensionEventSink {
           url: rawTab.url,
           observedAt: payload.capturedAt
         });
+        if (updated && previousUrl !== updated.url) this.noteHumanNavigation(updated.tabRef, updated.url ?? '');
         if (updated) reconciledByBrowserId.set(rawTab.tabId, updated);
       }
       for (const existing of existingTabs) {
@@ -2771,7 +3015,7 @@ export class OctopusBroker implements ExtensionEventSink {
       parent_workspace_ref: workspace.parentWorkspaceRef,
       condition,
       input_recovery: input ? this.inputRecovery.facts(input.tabRef) : null,
-      automation_pause_reasons: workspace.pauseCauses.filter((cause) => cause === 'manual_workspace_stop' || cause === 'endpoint_killed'),
+      automation_pause_reasons: workspace.pauseCauses.filter((cause) => cause === 'manual_workspace_stop' || cause === 'endpoint_killed' || cause === 'human_verification_required'),
       owner_session_ref: workspace.ownerSessionRef,
       lineage_ref: workspace.lineageRef,
       caller_relationship: workspace.ownerSessionRef === caller.sessionRef ? 'owner' : workspace.lineageRef === caller.lineageRef ? 'lineage_member' : 'none',
@@ -2789,9 +3033,51 @@ export class OctopusBroker implements ExtensionEventSink {
       title: tab.title ?? '',
       url: tab.url ?? '',
       interaction_policy: this.policyFact(tab.url ?? ''),
+      ...this.humanFacts(tab),
       active: tab.lifecycle === 'active',
       initial_event_cursor: this.activeStream(tab.tabRef).initialCursorRef
     };
+  }
+
+  /**
+   * A tab URL change observed in inventory is a page load however it was caused (Page.navigate,
+   * a clicked link, a redirect or in-page routing). It clears the old page's activity debt and
+   * counts toward the destination domain's pacing.
+   */
+  private noteHumanNavigation(tabRef: string, url: string): void {
+    this.humanSimulation.noteNavigation(tabRef, url);
+    const snapshot = this.browserRules?.refresh();
+    if (!snapshot) return;
+    const effective = effectiveBrowserPolicy(url, snapshot.configuration);
+    if (effective.mode === 'human_simulation' && effective.matched_domain) {
+      this.humanSimulation.noteLoad(effective.matched_domain, performance.now(), this.humanRandom);
+    }
+  }
+
+  private humanFacts(tab: StoredManagedTab): JsonObject {
+    const snapshot = this.browserRules?.refresh();
+    if (!snapshot) return {};
+    const effective = effectiveBrowserPolicy(tab.url ?? '', snapshot.configuration);
+    const workspace = this.repositories.logical.getWorkspace(tab.workspaceRef);
+    const verification = this.humanSimulation.detection(tab.tabRef);
+    const facts: JsonObject = {};
+    if (effective.mode === 'human_simulation') {
+      const debt = this.humanSimulation.debt(tab.tabRef);
+      const pace = this.humanSimulation.pace(effective.matched_domain ?? effective.domain);
+      facts.human_activity = debt === null && pace === null ? null : {
+        evaluates: debt?.evaluates ?? 0, outstanding: debt !== null,
+        missing_dwell_ms: debt?.missing_dwell_ms ?? 0, missing_wheel_px: debt?.missing_wheel_px ?? 0, missing_hovers: debt?.missing_hovers ?? 0,
+        next_load_allowed_at: pace === null ? null : pace.earliestAt
+      };
+    }
+    if (verification) {
+      const paused = workspace?.pauseCauses.includes('human_verification_required') === true;
+      facts.human_verification = { status: paused ? 'paused' : 'watching', signature: verification.signature, evidence: verification.evidence,
+        detected_at: new Date(Date.now() - (performance.now() - verification.detectedAt)).toISOString(), tab_ref: tab.tabRef };
+    } else if (effective.mode === 'human_simulation') {
+      facts.human_verification = null;
+    }
+    return facts;
   }
 
   private windowFact(window: StoredLogicalWindow): JsonObject {
@@ -3053,7 +3339,8 @@ export class OctopusBroker implements ExtensionEventSink {
         || !['queued', 'running'].includes(ticket.state)) continue;
       const remaining = workspace.pauseCauses.includes('endpoint_killed') ? 'endpoint_killed'
         : workspace.pauseCauses.includes('manual_workspace_stop') ? 'manual_workspace_stop'
-          : null;
+          : workspace.pauseCauses.includes('human_verification_required') ? 'human_verification_required'
+            : null;
       const priorDetails = isObject(ticket.checkpoint.details) ? ticket.checkpoint.details : {};
       this.repositories.requests.recordCheckpoint({
         requestRef: ticket.requestRef,

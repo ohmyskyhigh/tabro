@@ -305,7 +305,7 @@ describe('extension WebSocket gateway', () => {
     expect(fence.enter(transaction, crypto.randomUUID(), () => true)).toBe(true);
     socket.send(JSON.stringify(createRelayV2Envelope('DASHBOARD_REQUEST', { requestId: crypto.randomUUID(),
       connectionGeneration: ready.payload.connectionGeneration,
-      command: { action: 'rules.save', expectedRevision: 'a'.repeat(64), configuration: { schemaVersion: 1, rules: [] } } })));
+      command: { action: 'rules.save', expectedRevision: 'a'.repeat(64), configuration: { schemaVersion: 1, rules: [], verification_signatures: [] } } })));
     await new Promise(resolve => setTimeout(resolve, 100));
     expect(dashboard).toHaveBeenCalledTimes(1);
     expect(fence.resume(transaction)).toBe(true);

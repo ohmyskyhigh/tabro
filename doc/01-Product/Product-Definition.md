@@ -316,7 +316,15 @@ Parent: [`01-Product`](./_MOC.md).
 
 ### User-selected domains require browser input for manipulation
 
-Users maintain one local domain rule list shared by the Broker's profiles and agent clients. Each entry covers its hostname, nested subdomains and every path. Only the current top-level tab URL selects the rule; iframe-origin enforcement and redirect-history tracking are excluded. On matching sites, manipulation uses browser mouse and keyboard input. Read-only JavaScript, DOM, accessibility and screenshots remain available. This policy does not guarantee a website accepts automation.
+Users maintain one local domain rule list shared by the Broker's profiles and agent clients. Each entry covers its hostname, nested subdomains and every path. Only the current top-level tab URL selects the rule; iframe-origin enforcement and redirect-history tracking are excluded. On matching sites, manipulation uses browser mouse and keyboard input. Read-only JavaScript, DOM, accessibility and screenshots remain available, including guarded `Runtime.evaluate`: the expression runs with the browser side-effect guard in an isolated world and returns plain data, so an agent can read a page quickly without mutating it. This policy does not guarantee a website accepts automation.
+
+### Ruled browsing is paced to remain plausible rather than maximally fast
+
+The user accepted these defaults on 2026-11-19. Tabro spaces, curves and groups the browser input it dispatches so one requested move or scroll arrives as the sequence a person produces, and requires browser input on a ruled site to happen in the tab the person can see. A guarded read creates an activity expectation on that page: leaving it by URL requires comparable human browsing first, and repeated page loads on one domain are spaced with a periodic rest. These obligations shape the agent's journey; they do not change what a person can approve.
+
+### A detected human-verification challenge stops automation until the person finishes it
+
+Tabro recognises verification challenges from URLs, titles and visible captcha or slider elements, including when the page redirects to an unlisted domain, and stops manipulation on the affected Profile and matching domain. Observation that helps the person see the state remains available. Only the person's completion of the challenge, acknowledged by the agent and re-checked by Tabro against the page, resumes work. Tabro never asks the agent to solve the challenge, and a claimed completion that the page does not confirm keeps the pause. The 2026-11-11 background-work preference still applies to ordinary domains; on Human Simulation domains browser input additionally requires the foreground, as recorded in [the accepted proposal](../90-Proposals/human-simulation-observation-and-verification-2026-11-19.md).
 
 ### Interrupted gestures preserve uncertainty until recovery is established
 

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { BrowserRulesSchema, BROWSER_METHOD_POLICY, effectiveBrowserPolicy, guardedBrowserCommand, normalizeRuleDomain } from '../../apps/shared/protocol/src/browser-interaction-policy.js';
+import { BrowserRulesSchema, BROWSER_METHOD_POLICY, effectiveBrowserPolicy, guardedBrowserCommand, humanSimulationCommand, normalizeRuleDomain, stripRemoteObjectIds, VERIFICATION_PAUSE_ALLOWED } from '../../apps/shared/protocol/src/browser-interaction-policy.js';
 import { CONSERVATIVE_CAPABILITY_MANIFEST } from '../../apps/shared/protocol/src/index.js';
 import { BrowserRulesFile } from '../../apps/broker/src/runtime/browser-rules.js';
 
@@ -28,6 +28,40 @@ describe('domain input-only policy', () => {
     }
     expect(() => BrowserRulesSchema.parse({ schemaVersion: 1, rules: [configuration.rules[0], { id: 'duplicate', domain: 'EXAMPLE.com', mode: 'input_only' }] })).toThrow(/Duplicate/u);
   });
+  it('allows every Human Simulation rule a guarded plain-data evaluate without a separate option', () => {
+    expect(humanSimulationCommand('Runtime.evaluate', { expression: "document.title" }, 'example.com'))
+      .toMatchObject({ expression: "document.title", returnByValue: true, throwOnSideEffect: true, silent: true, generatePreview: false, timeout: 1000 });
+    expect(humanSimulationCommand('Runtime.evaluate', { expression: 'x', returnByValue: false, timeout: 90_000 }, 'example.com'))
+      .toMatchObject({ returnByValue: true, timeout: 1000 });
+    for (const params of [{ expression: 'x', contextId: 4 }, { expression: 'x', uniqueContextId: 'a' }, { expression: 'x', objectGroup: 'g' },
+      { expression: 'x', userGesture: true }, { expression: 'x', awaitPromise: true }]) {
+      expect(() => humanSimulationCommand('Runtime.evaluate', params, 'example.com')).toThrow(/Human Simulation Mode/u);
+    }
+    expect(() => humanSimulationCommand('Runtime.evaluate', { expression: 'x'.repeat(8_193) }, 'example.com')).toThrow(/8192/u);
+    expect(() => humanSimulationCommand('Runtime.evaluate', {}, 'example.com')).toThrow(/nonempty/u);
+    // Evaluate stays part of the mode; page mutation and remote-object following never do.
+    for (const method of ['Runtime.callFunctionOn', 'Runtime.getProperties', 'DOM.setAttributeValue', 'Page.addScriptToEvaluateOnNewDocument']) {
+      expect(() => humanSimulationCommand(method, {}, 'example.com')).toThrow(/Human Simulation Mode/u);
+    }
+    expect(humanSimulationCommand('Input.dispatchMouseEvent', { type: 'mouseWheel', deltaY: 100 }, 'example.com'))
+      .toMatchObject({ deltaY: 100 });
+  });
+
+  it('keeps only observations and activation available during a verification pause', () => {
+    expect(VERIFICATION_PAUSE_ALLOWED.has('Page.captureScreenshot')).toBe(true);
+    expect(VERIFICATION_PAUSE_ALLOWED.has('Page.bringToFront')).toBe(true);
+    for (const method of ['Runtime.evaluate', 'Input.dispatchMouseEvent', 'Input.insertText', 'Page.navigate', 'Page.reload', 'DOM.setFileInputFiles']) {
+      expect(VERIFICATION_PAUSE_ALLOWED.has(method)).toBe(false);
+    }
+  });
+
+  it('strips every nested remote object identifier from an observation result', () => {
+    const stripped = stripRemoteObjectIds({ result: { type: 'object', objectId: 'r1', value: [{ objectId: 'x', ok: 1 }] },
+      exceptionDetails: { exception: { objectId: 'e1', description: 'boom' } } }) as Record<string, unknown>;
+    expect(JSON.stringify(stripped)).not.toMatch(/objectId/u);
+    expect((stripped.exceptionDetails as Record<string, unknown>)).toMatchObject({ exception: { description: 'boom' } });
+  });
+
   it('classifies every advertised method and refuses unknown mutations', () => {
     expect(Object.keys(BROWSER_METHOD_POLICY).sort()).toEqual(CONSERVATIVE_CAPABILITY_MANIFEST.cdpMethods.map(item => item.method).sort());
     for (const method of ['DOM.focus', 'DOM.setFileInputFiles', 'DOM.setAttributeValue', 'Input.setIgnoreInputEvents', 'Network.setCacheDisabled', 'Emulation.setDeviceMetricsOverride', 'Unknown.execute']) {

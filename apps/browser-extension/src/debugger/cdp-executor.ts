@@ -1,6 +1,7 @@
 import { ExtensionAdapterError, type PrivateTabLocator } from '../browser/inventory.js';
-import { BrowserPolicyError, effectiveBrowserPolicy, guardedBrowserCommand, humanSimulationCommand, isBrowserInput, isRecoveryObservation, isSideEffectRefusal,
+import { BrowserPolicyError, effectiveBrowserPolicy, guardedBrowserCommand, humanSimulationCommand, isBrowserInput, isRecoveryObservation, isSideEffectRefusal, stripRemoteObjectIds,
   type BrowserPolicySnapshot } from '../../../shared/protocol/src/browser-interaction-policy.js';
+import { initialPointer, pointerPath, readingPause, seededRandom, wheelBurst, type Point, type Random } from '../../../shared/protocol/src/human-motion.js';
 import type {
   RecentAttemptCache,
   RecentAttemptOutcome
@@ -12,6 +13,8 @@ const METHOD_PATTERN = /^[A-Za-z][A-Za-z0-9_.]{0,127}$/;
 
 const payloadBytes = (value: unknown): number =>
   new TextEncoder().encode(JSON.stringify(value ?? null)).byteLength;
+
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 export interface ExecuteCdpInput {
   policyRevision?: string;
@@ -46,6 +49,10 @@ const asAdapterError = (error: unknown): ExtensionAdapterError => {
 
 export class CdpExecutor {
   private policy: { connectionGeneration: number; snapshot: BrowserPolicySnapshot } | null = null;
+  /** Main frame ID per tab for the guarded observation world. */
+  private readonly worlds = new Map<number, string>();
+  private readonly pointers = new Map<number, Point>();
+  private readonly motions = new Map<number, Random>();
   applyPolicy(snapshot: BrowserPolicySnapshot, connectionGeneration: number): void {
     const previous = this.policy;
     if (previous?.connectionGeneration === connectionGeneration && (snapshot.generation < previous.snapshot.generation
@@ -82,11 +89,20 @@ export class CdpExecutor {
       const guarded = humanSimulation || input.recoveryObservation === true;
       const params = humanSimulation
         ? humanSimulationCommand(input.method, input.params ?? {}, effective.domain)
-        : guarded ? guardedBrowserCommand(input.method, input.params ?? {}, effective?.domain ?? '') : input.params;
+        : guarded ? guardedBrowserCommand(input.method, input.params ?? {}, effective?.domain ?? '') : (input.params ?? {});
+      if (humanSimulation && isBrowserInput(input.method)) {
+        if (tab!.active !== true) throw new ExtensionAdapterError('FOREGROUND_REQUIRED', `${effective.domain} is using Human Simulation Mode. ${input.method} needs the tab active in a focused window. Call Page.bringToFront once, or ask the user to focus the Tabro window. Do not retry while the tab is in the background.`);
+        if (!(await this.attachments.windowFocused(tab!.windowId))) {
+          throw new ExtensionAdapterError('FOREGROUND_REQUIRED', `${effective.domain} is using Human Simulation Mode. The window is not focused; browser input would produce page state no person could produce. Ask the user to focus the Tabro window before continuing.`);
+        }
+      }
       // No await between this revision check and dispatch: a newly synchronized policy fences older queued commands.
       if (this.policy !== policy) throw new ExtensionAdapterError('INPUT_POLICY_STALE', 'The browser rules changed before execution.');
       dispatched = true;
-      const rawResult = await this.sendCommand(target, input.method, params, guarded);
+      const humanInput = humanSimulation && isBrowserInput(input.method);
+      const rawResult = humanInput
+        ? await this.executeHumanInput(target, input.method, params, input.privateTab.tabId)
+        : await this.sendCommand(target, input.method, params, guarded, humanSimulation, input.privateTab.tabId);
       if (guarded && rawResult && isSideEffectRefusal(rawResult)) throw new BrowserPolicyError(input.method, effective?.domain ?? '', 'Chrome could not establish read-only execution. Use a DOM or accessibility observation fallback.');
       if (payloadBytes(rawResult) > this.maxPayloadBytes) {
         throw new ExtensionAdapterError('PAYLOAD_TOO_LARGE', 'The CDP result exceeds the relay payload limit.');
@@ -113,8 +129,76 @@ export class CdpExecutor {
     return output;
   }
 
-  private async sendCommand(target: chrome.debugger.DebuggerSession, method: string, params: Record<string, unknown> | undefined, guarded: boolean): Promise<object | undefined> {
-    if (!guarded || method !== 'Runtime.callFunctionOn') return this.attachments.api.sendCommand(target, method, params);
+  /**
+   * Expand one agent movement or wheel request into the event sequence a person
+   * produces. Coordinates for press/release stay exact; only the approach path and
+   * the scroll ticks are synthesized here.
+   */
+  private async executeHumanInput(target: chrome.debugger.DebuggerSession, method: string,
+    params: Record<string, unknown>, tabId: number): Promise<object | undefined> {
+    const random = this.motion(tabId);
+    let result: object | undefined;
+    // A move with a held button is a drag step: coordinates must stay exact and unexpanded.
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseMoved' && Number(params.buttons ?? 0) === 0) {
+      const targetPoint = { x: Number(params.x ?? 0), y: Number(params.y ?? 0) };
+      const from = this.pointers.get(tabId) ?? initialPointer(targetPoint, random);
+      for (const point of pointerPath(from, targetPoint, random)) {
+        result = await this.attachments.api.sendCommand(target, method,
+          { ...params, x: point.x, y: point.y, buttons: 0 });
+        await sleep(point.delayMs);
+      }
+      this.pointers.set(tabId, { x: Number(params.x ?? 0), y: Number(params.y ?? 0) });
+      return result;
+    }
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseWheel') {
+      const deltaX = Number(params.deltaX ?? 0);
+      const deltaY = Number(params.deltaY ?? 0);
+      for (const tick of wheelBurst(deltaX, deltaY, random)) {
+        result = await this.attachments.api.sendCommand(target, method, { ...params, deltaX: tick.deltaX, deltaY: tick.deltaY });
+        await sleep(tick.delayMs);
+      }
+      await sleep(readingPause(random));
+      return result;
+    }
+    if (method === 'Input.dispatchMouseEvent') {
+      if (params.x !== undefined && params.y !== undefined) this.pointers.set(tabId, { x: Number(params.x), y: Number(params.y) });
+    }
+    return this.attachments.api.sendCommand(target, method, params);
+  }
+
+  private motion(tabId: number): Random {
+    let random = this.motions.get(tabId);
+    if (!random) {
+      random = seededRandom((tabId ^ (Date.now() & 0xffff)) >>> 0);
+      this.motions.set(tabId, random);
+    }
+    return random;
+  }
+
+  /** Human Simulation Runtime.evaluate runs in an isolated world and returns plain data only. */
+  private async sendCommand(target: chrome.debugger.DebuggerSession, method: string, params: Record<string, unknown> | undefined,
+    guarded: boolean, humanSimulation: boolean, tabId: number): Promise<object | undefined> {
+    if (humanSimulation && method === 'Runtime.evaluate') {
+      // A child session would evaluate in that frame's page world, outside the isolated world.
+      if (target.sessionId !== undefined) throw new BrowserPolicyError(method, '', 'Guarded Runtime.evaluate runs on the top-level tab only; omit sessionId.');
+      const read = async (): Promise<object | undefined> => this.attachments.api.sendCommand(target, method,
+        { ...params, contextId: await this.observationContext(target, tabId) });
+      let result: object | undefined;
+      try {
+        result = await read();
+      } catch (error) {
+        // A replaced main frame invalidates the cached frame ID once; look it up again and retry the read.
+        this.worlds.delete(tabId);
+        if (!/context|frame|target/iu.test(error instanceof Error ? error.message : '')) throw error;
+        result = await read();
+      }
+      return stripRemoteObjectIds(result) as object | undefined;
+    }
+    if (!guarded || method !== 'Runtime.callFunctionOn') {
+      const result = await this.attachments.api.sendCommand(target, method, params);
+      if ((method === 'Page.navigate' || method === 'Page.reload')) this.worlds.delete(tabId);
+      return result;
+    }
     // callFunctionOn has no protocol timeout. Bound this guarded observation using
     // Chrome's execution interruption, never a page-side timer or input event.
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -136,6 +220,31 @@ export class CdpExecutor {
         );
       });
     } finally { if (timer) clearTimeout(timer); }
+  }
+
+  /**
+   * The isolated main-frame world for one guarded observation. Execution context IDs are not
+   * unique across renderer processes, so after a cross-site navigation a cached ID could name
+   * the new page's main world. Chrome returns the existing world for a repeated
+   * createIsolatedWorld on the same document, so it is requested before every evaluate and only
+   * the main frame ID is cached.
+   */
+  private async observationContext(target: chrome.debugger.DebuggerSession, tabId: number): Promise<number> {
+    let frameId = this.worlds.get(tabId);
+    if (frameId === undefined) {
+      const tree = await this.attachments.api.sendCommand(target, 'Page.getFrameTree') as
+        { frameTree?: { frame?: { id?: string } } } | undefined;
+      frameId = tree?.frameTree?.frame?.id;
+      if (!frameId) throw new ExtensionAdapterError('CDP_COMMAND_FAILED', 'Chrome did not report the main frame for the guarded observation world.');
+      this.worlds.set(tabId, frameId);
+    }
+    const world = await this.attachments.api.sendCommand(target, 'Page.createIsolatedWorld', {
+      frameId, worldName: 'tabro-observation', grantUniveralAccess: false
+    }) as { executionContextId?: number } | undefined;
+    if (typeof world?.executionContextId !== 'number') {
+      throw new ExtensionAdapterError('CDP_COMMAND_FAILED', 'Chrome did not create the guarded observation world.');
+    }
+    return world.executionContextId;
   }
 
   private validateInput(input: ExecuteCdpInput): void {

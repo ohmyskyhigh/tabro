@@ -80,7 +80,7 @@ const payloadTooLargeProblem = {
 
 function rejectedOutput() {
   return {
-    contract_version: '7',
+    contract_version: MCP_CONTRACT_VERSION,
     disposition: 'rejected',
     observed_at: '2026-08-31T00:00:00.000Z',
     caller,
@@ -92,7 +92,7 @@ function rejectedOutput() {
 
 function acceptedWorkspaceOutput(requestTool = 'request_browser_workspace') {
   return {
-    contract_version: '7',
+    contract_version: MCP_CONTRACT_VERSION,
     disposition: 'accepted',
     observed_at: '2026-08-31T00:00:00.000Z',
     caller,

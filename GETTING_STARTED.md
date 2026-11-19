@@ -340,4 +340,25 @@ Install the contract-7 runtime and reload its extension before using Human Simul
 
 Save the file to apply a valid revision automatically. Each hostname covers itself, nested subdomains and all paths; do not enter a scheme, path, IP address or wildcard. Remove an entry to remove its restriction, provided no matching parent rule remains. Saving `"rules": []` removes all domain restrictions. Invalid live edits retain the previous valid rules and report a diagnostic; a missing or malformed file after initialization blocks browser dispatch on restart until repaired. Upgrades preserve the file.
 
-An agent may edit this file when the user asks it to add or remove domains. It must not weaken a rule to get past a blocked browser command. Read `get_browser_context` with `view: {kind: "tab", workspace_ref, tab_ref}` to verify the effective policy and matching hostname. The Broker view exposes configuration diagnostics. Matching is checked again against the current top-level URL at execution. Use screenshots to observe the page, then read the DOM only for specific element inspection. Tabro spaces control events per tab. Existing input_only rules are accepted and shown as Human Simulation Mode.
+An agent may edit this file when the user asks it to add or remove domains. It must not weaken a rule to get past a blocked browser command. Read `get_browser_context` with `view: {kind: "tab", workspace_ref, tab_ref}` to verify the effective policy, matching hostname, outstanding human-activity debt and any detected verification challenge. The Broker view exposes configuration diagnostics. Matching is checked again against the current top-level URL at execution. Observe with screenshots, targeted read-only DOM commands, or guarded `Runtime.evaluate` that returns plain data; Tabro runs the expression in an isolated world with the browser side-effect guard, so it cannot click, focus, write, request or await. Existing `input_only` rules are accepted and shown as Human Simulation Mode.
+
+Browser input on those domains is paced, and a move or wheel request is expanded into the trajectory and tick sequence a person produces. It requires the tab to be active in a focused window (`FOREGROUND_REQUIRED` otherwise; one `Page.bringToFront` resolves it). After a guarded read on a page, leaving that page by URL waits until the tab has also scrolled, hovered and dwelled like a person (`HUMAN_ACTIVITY_REQUIRED`); clicking a link is always the more human departure. Repeated page loads on one domain are spaced, with a longer rest after thirty (`HUMAN_PACING_WAIT`).
+
+### Tabro pauses when a site asks for human verification
+
+Tabro checks every managed tab for known verification challenges before running a command: challenge URLs (Taobao `_____tmd_____`, login redirects, Cloudflare platform paths), challenge titles ("Just a moment…", "Attention Required") and visible captcha frames or slider widgets (reCAPTCHA, hCaptcha, GeeTest, Tencent, Taobao NC). Frames a page keeps hidden do not count. On a match, manipulation stops with `HUMAN_VERIFICATION_REQUIRED` while screenshots and element reads remain available, and the tab group is marked in Chrome. Complete the challenge in that browser window, then let the agent call `resume_workspace_automation` with `human_verification: { "user_confirmed_completed": true }`; Tabro re-checks the page and keeps the pause when the challenge is still present. An optional list adds your own signatures:
+
+```json
+{
+  "schemaVersion": 1,
+  "rules": [
+    { "id": "example-human-simulation", "domain": "example.com", "mode": "human_simulation" }
+  ],
+  "verification_signatures": [
+    { "id": "example-slider", "selector_visible": "#example_captcha_slider" },
+    { "id": "example-challenge", "url_contains": "/human-check" }
+  ]
+}
+```
+
+Each signature has exactly one of `url_contains`, `title_contains`, `frame_url_contains` or `selector_visible`, matched case-insensitively. URL matches pause immediately; title, frame and widget matches pause once they persist for eight seconds, so an interstitial that resolves on its own does not interrupt you.

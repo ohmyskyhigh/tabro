@@ -1,4 +1,4 @@
-export const MCP_CONTRACT_VERSION = '7' as const;
+export const MCP_CONTRACT_VERSION = '8' as const;
 
 export const MCP_ASYNC_TOOL_NAMES = [
   'set_browser_proxy',
@@ -81,7 +81,7 @@ const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
   get_browser_context: 'Read one narrow, paginated broker, endpoint, window, capability, workspace, tab, or request-summary view.',
   request_browser_workspace: 'Acquire an exact number of logical workspaces on distinct eligible browser-profile endpoints. Initial tabs open in the background; Codex, CC and DSH chats reuse one workspace. Explicit Page.bringToFront remains available when the website needs foreground activation.',
   create_browser_tab: 'Create and register one managed tab in an owned workspace without selecting it, even when another tab requires input recovery. Background work is preferred; use Page.bringToFront explicitly when needed.',
-  send_cdp_command: 'Submit one supported CDP command to a managed tab. Prefer background work; explicitly use Page.bringToFront when the website needs activation or foreground input, avoiding repeated activation or automatic focus restoration. On Human Simulation Mode domains, use screenshots for context and read-only DOM commands only to inspect specific elements. Tabro paces Input.dispatchMouseEvent, Input.dispatchKeyEvent and Input.insertText. Use separate move, press and release events. INPUT_ONLY_REQUIRED supplies alternatives. Input recovery restricts only the affected tab to guarded observations; other tabs remain usable. Never replay an uncertain gesture or automatically release held input.',
+  send_cdp_command: 'Submit one supported CDP command to a managed tab. Prefer background work; explicitly use Page.bringToFront when the website needs activation or foreground input, avoiding repeated activation or automatic focus restoration. On Human Simulation Mode domains, observe with Page.captureScreenshot, read-only DOM element commands, or guarded Runtime.evaluate: the expression runs in an isolated world with the browser side-effect guard, returns plain data only, and cannot click, focus, write, request or await. Scroll before reading lazy lists. Tabro paces Input.dispatchMouseEvent, Input.dispatchKeyEvent and Input.insertText, expands moves and wheel into human trajectories and bursts, and requires foreground input on those domains. Leave a page with Page.navigate only after HUMAN_ACTIVITY_REQUIRED is satisfied; page in-site listings with real clicks instead. When any tab shows a human-verification challenge, automation pauses with HUMAN_VERIFICATION_REQUIRED: ask the user to complete it and resume only after their confirmation. If a screenshot shows an unrecognized challenge, call stop_workspace_automation and ask the user. Input recovery restricts only the affected tab to guarded observations; other tabs remain usable. Never replay an uncertain gesture or automatically release held input.',
   read_cdp_events: 'Read retained raw CDP events from a required broker-issued tab cursor.',
   get_browser_request: 'Read one authority-visible request ticket by its broker-issued reference.',
   take_over_workspace: 'Transfer one exactly identified workspace and its owner-governed public tickets.',
@@ -89,7 +89,7 @@ const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
   resolve_browser_request: 'Resolve one owner-visible request paused for user confirmation.',
   close_browser_request: 'Remove one terminal ticket from public discovery while retaining audit history.',
   stop_workspace_automation: 'Add the manual-stop pause cause to one workspace.',
-  resume_workspace_automation: 'Reconcile a workspace and clear its manual stop. After user intervention, input_recovery acknowledges only the tab identified by its current recovery_ref from get_browser_context; other tabs retain their recovery states. Uncertain website effects still require resolve_browser_request. Never invent user acknowledgement.',
+  resume_workspace_automation: 'Reconcile a workspace and clear its manual stop. After user intervention, input_recovery acknowledges only the tab identified by its current recovery_ref from get_browser_context; other tabs retain their recovery states. For a human-verification pause, pass human_verification.user_confirmed_completed true after the user finished the challenge; Tabro re-checks the page and keeps the pause when the challenge is still present. Uncertain website effects still require resolve_browser_request. Never invent user acknowledgement.',
   kill_browser_endpoint: 'Pause every active workspace on one entirely owned browser-profile endpoint.',
   resume_browser_endpoint: 'Reconcile one entirely owned endpoint and clear only its endpoint-kill pause cause.'
 };

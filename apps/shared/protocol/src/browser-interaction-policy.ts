@@ -10,6 +10,18 @@ export function normalizeRuleDomain(value: string): string {
   return hostname;
 }
 
+/** A verification signature. Exactly one non-null matcher; matching is a case-insensitive substring test. */
+export const VerificationSignatureSchema = z.strictObject({
+  id: z.string().min(1).max(128).regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u),
+  url_contains: z.string().min(3).max(512).nullable().default(null),
+  title_contains: z.string().min(2).max(256).nullable().default(null),
+  frame_url_contains: z.string().min(3).max(512).nullable().default(null),
+  selector_visible: z.string().min(1).max(256).nullable().default(null)
+}).refine(value => [value.url_contains, value.title_contains, value.frame_url_contains, value.selector_visible]
+  .filter(item => item !== null).length === 1,
+  { message: 'A verification signature needs exactly one of url_contains, title_contains, frame_url_contains or selector_visible.' });
+export type VerificationSignatureConfig = z.infer<typeof VerificationSignatureSchema>;
+
 export const BrowserRulesSchema = z.strictObject({
   schemaVersion: z.literal(1),
   rules: z.array(z.strictObject({
@@ -19,12 +31,17 @@ export const BrowserRulesSchema = z.strictObject({
       catch (error) { context.addIssue({ code: 'custom', message: (error as Error).message }); return z.NEVER; }
     }),
     mode: z.enum(['human_simulation', 'input_only']).transform(() => 'human_simulation' as const)
-  })).max(1000)
+  })).max(1000),
+  verification_signatures: z.array(VerificationSignatureSchema).max(200).default([])
 }).superRefine((value, context) => {
   for (const field of ['id', 'domain'] as const) {
     if (new Set(value.rules.map(rule => rule[field])).size !== value.rules.length) {
       context.addIssue({ code: 'custom', path: ['rules'], message: `Duplicate rule ${field}.` });
     }
+  }
+  const signatures = value.verification_signatures ?? [];
+  if (new Set(signatures.map(signature => signature.id)).size !== signatures.length) {
+    context.addIssue({ code: 'custom', path: ['verification_signatures'], message: 'Duplicate verification signature id.' });
   }
 });
 export type BrowserRules = z.infer<typeof BrowserRulesSchema>;
@@ -94,13 +111,25 @@ export function isSideEffectRefusal(result: object): boolean {
   return exception !== undefined && /(?:possible side.effect|side.effect check|side effects? cannot|side.effect-free)/iu.test(JSON.stringify(exception));
 }
 
-/** Human Simulation relies on visual observations and read-only element inspection. */
+/**
+ * Human Simulation allows screenshots, targeted read-only element inspection and guarded
+ * Runtime.evaluate. Evaluate results are always returned by value, and the extension runs
+ * the expression in an isolated world, so no page object reference reaches the agent.
+ */
 export function humanSimulationCommand(method: string, params: Record<string, unknown>, domain: string): Record<string, unknown> {
   const kind = BROWSER_METHOD_POLICY[method];
   if (kind !== 'input' && kind !== 'navigation' && !HUMAN_OBSERVATIONS.has(method)) {
-    throw new BrowserPolicyError(method, domain, 'Use a screenshot or targeted element inspection.');
+    throw new BrowserPolicyError(method, domain, 'Use Runtime.evaluate returning plain data, a screenshot or targeted element inspection.');
   }
   if (method === 'DOM.getDocument' || method === 'DOM.describeNode') return { ...params, depth: Math.min(typeof params.depth === 'number' && params.depth >= 0 ? params.depth : 1, 1), pierce: false };
+  if (method === 'Runtime.evaluate') {
+    for (const key of ['contextId', 'uniqueContextId', 'objectGroup', 'includeCommandLineAPI', 'replMode', 'serializationOptions', 'generateWebDriverValue']) {
+      if (params[key] !== undefined) throw new BrowserPolicyError(method, domain, `${key} is not available in Human Simulation Mode. Tabro selects an isolated execution context and returns plain data.`);
+    }
+    if (typeof params.expression !== 'string' || params.expression.length === 0) throw new BrowserPolicyError(method, domain, 'Runtime.evaluate needs a nonempty expression.');
+    if (params.expression.length > 8192) throw new BrowserPolicyError(method, domain, 'The observation expression exceeds the 8192-character limit. Use a smaller targeted read.');
+    return { ...guardedBrowserCommand(method, params, domain), returnByValue: true, generatePreview: false };
+  }
   return guardedBrowserCommand(method, params, domain);
 }
 
@@ -108,8 +137,25 @@ const HUMAN_OBSERVATIONS = new Set([
   'Page.captureScreenshot', 'Page.getLayoutMetrics', 'Page.getFrameTree', 'Page.enable', 'Page.disable',
   'DOM.enable', 'DOM.disable', 'DOM.getDocument', 'DOM.querySelector', 'DOM.querySelectorAll',
   'DOM.describeNode', 'DOM.getBoxModel',
+  'Accessibility.enable', 'Accessibility.disable', 'Accessibility.getPartialAXTree', 'Accessibility.queryAXTree',
+  'Runtime.evaluate'
+]);
+
+/** Commands still available while a human-verification challenge pauses automation. */
+export const VERIFICATION_PAUSE_ALLOWED = new Set([
+  'Page.captureScreenshot', 'Page.getLayoutMetrics', 'Page.getFrameTree', 'Page.bringToFront', 'Page.enable', 'Page.disable',
+  'DOM.enable', 'DOM.disable', 'DOM.getDocument', 'DOM.querySelector', 'DOM.querySelectorAll', 'DOM.describeNode', 'DOM.getBoxModel',
   'Accessibility.enable', 'Accessibility.disable', 'Accessibility.getPartialAXTree', 'Accessibility.queryAXTree'
 ]);
+
+/** Recursively removes remote object identifiers so a result cannot be used to reach page objects. */
+export function stripRemoteObjectIds(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripRemoteObjectIds);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => key !== 'objectId')
+    .map(([key, child]) => [key, stripRemoteObjectIds(child)]));
+}
 
 /** Minimum time before the next control event in this tab. Reads bypass this timer. */
 export function humanControlInterval(method: string, params: Record<string, unknown>): number {

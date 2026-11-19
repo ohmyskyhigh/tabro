@@ -62,6 +62,7 @@ const copyRecord = (record: MutableAttachmentRecord): AttachmentRecord => ({
 
 export class DebuggerAttachmentManager {
   currentTab(locator: PrivateTabLocator): Promise<chrome.tabs.Tab> { return this.inventory.assertTab(locator); }
+  windowFocused(windowId: number): Promise<boolean> { return this.inventory.isWindowFocused(windowId); }
   private readonly attachments = new Map<number, MutableAttachmentRecord>();
   private readonly tabLocks = new Map<number, Promise<void>>();
   private readonly detachListeners = new Set<(fact: DebuggerDetachFact) => void>();

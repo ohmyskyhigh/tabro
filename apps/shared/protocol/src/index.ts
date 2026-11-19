@@ -6,5 +6,7 @@ export * from './capabilities/manifest.js';
 export * from './mcp/tool-catalog.js';
 export * from './mcp/validators.js';
 export * from './relay-messages.js';
+export * from './human-motion.js';
+export * from './verification-signatures.js';
 export * from './version.js';
 export * from './schemas.js';

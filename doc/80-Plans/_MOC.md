@@ -4,6 +4,7 @@ Plans describe intended development work. They do not establish delivered behavi
 
 ## Plans
 
+- [Human Simulation observation and verification](./human-simulation-observation-2026-11-19/README.md) — accepted 2026-11-19; source implemented and reviewed, packaged real-browser and live-site qualification open.
 - [Domain input-only rules](./domain-input-only-rules-2026-11-10/README.md) — implemented source and macOS arm64 browser evidence; other native targets and actual Codex/Hermes client acceptance remain open.
 - [Hermes October 5 review fixes](./tabro-hermes-provider-2026-10-01/review-fixes-2026-10-05.md) — relay Origin admission, setup disclosure and custom install-root forwarding.
 - [`profile-proxy-2026-10-03`](./profile-proxy-2026-10-03/README.md) — implemented HTTP, HTTPS and authenticated SOCKS5 support for closed broker-owned Profiles; includes current qualification and local deployment evidence.

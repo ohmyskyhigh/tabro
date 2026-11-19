@@ -4,6 +4,8 @@ This directory records applied changes to vault structure and canonical document
 
 ## Entries
 
+- [Human Simulation observation and verification](./2026-11-20-human-simulation-observation-and-verification.md) records the accepted contract 8 amendments and the pre-release review corrections.
+
 - [Extension dashboard](../../.changelog/extension_dashboard-2026-11-11.md) records the two-tab UI, read-only profile scope, shared rule editing and native Chrome verification, followed by soft background defaults, separate connection/automation status, acknowledged-input cleanup and the normal macOS installation update.
 
 - [Domain input-only rules](../../.changelog/input_only_rules_proposal-2026-11-10.md) records approved canonical amendments, implementation, local evidence and outstanding platform/client qualification.

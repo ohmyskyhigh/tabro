@@ -51,6 +51,7 @@ interface PendingSocketState {
   dashboard?: boolean;
   profileProxy?: boolean;
   browserInputPolicy?: boolean;
+  humanObservation?: boolean;
   managedClaim?: ManagedConnectionClaim | undefined;
   protocolVersion?: 1 | 2;
   targetId?: string;
@@ -235,6 +236,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       inventoryGeneration: connection.inventoryGeneration,
       profileProxy: connection.profileProxy === true,
       browserInputPolicy: connection.browserInputPolicy === true,
+      humanObservation: connection.humanObservation === true,
       connected: connection.socket.readyState === WebSocket.OPEN
     };
   }
@@ -499,7 +501,8 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
     if (socket.readyState !== WebSocket.OPEN) return;
     state.managedClaim = payload.managedClaim;
     state.profileProxy = payload.profileProxy === 1;
-    state.browserInputPolicy = payload.browserInputPolicy === 2;
+    state.browserInputPolicy = payload.browserInputPolicy !== undefined && payload.browserInputPolicy >= 2;
+    state.humanObservation = payload.browserInputPolicy === 3;
     state.dashboard = payload.capabilityManifestIds.includes(DASHBOARD_CAPABILITY_ID);
     negotiateRelayProtocol(payload.supportedProtocolVersions);
     const browserMajorMatch = payload.browser.version.match(/\d+/);
@@ -645,6 +648,7 @@ export class ExtensionGateway implements CommandTransport, OctopusExtensionPort 
       protocolVersion: 2,
       profileProxy: state.profileProxy === true,
       browserInputPolicy: state.browserInputPolicy === true,
+      humanObservation: state.humanObservation === true,
       epoch: state.epoch,
       socket,
       connectedAt: Date.now(),

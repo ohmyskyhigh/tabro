@@ -7,6 +7,7 @@ import {
   type OctopusExtensionPort
 } from '../../apps/broker/src/core/index.js';
 import { parseMcpToolOutput, type RelayV2PayloadByType } from '../../apps/shared/protocol/src/index.js';
+import type { HumanSimulationLimits } from '../../apps/broker/src/core/octopus/human-simulation.js';
 import { SqliteRelayStore } from '../../apps/broker/src/storage/index.js';
 
 const observed = {
@@ -19,7 +20,11 @@ const observed = {
 
 class FakeExtensionPort implements OctopusExtensionPort {
   browserInputPolicy = true;
+  humanObservation = true;
   tabActive = true;
+  verificationReport: { url?: string; title?: string; frame?: string; selector?: string } | null = null;
+  probeCount = 0;
+  setVerification(report: FakeExtensionPort['verificationReport']): void { this.verificationReport = report; }
   readonly controlTimes: number[] = [];
   readonly inputTrace: Array<RelayV2PayloadByType['SEND_CDP']> = [];
   readonly createTrace: Array<RelayV2PayloadByType['CREATE_TAB']> = [];
@@ -67,6 +72,11 @@ class FakeExtensionPort implements OctopusExtensionPort {
   setInventoryWindows(windows: Array<{ windowId: number; windowGeneration: number; focused: boolean }>): void {
     this.inventoryWindows = windows;
   }
+  /** Sets the live URL of every fake tab, so repeated inventory reads keep a ruled domain. */
+  setTabUrl(url: string): void {
+    for (const endpointTabs of this.tabs.values()) for (const tab of endpointTabs.values()) tab.url = url;
+    for (const endpointRef of this.tabs.keys()) this.bumpInventory(endpointRef);
+  }
 
   setEventSink(sink: ExtensionEventSink): void { this.sink = sink; }
 
@@ -75,6 +85,7 @@ class FakeExtensionPort implements OctopusExtensionPort {
     return {
       endpointRef,
       browserInputPolicy: this.browserInputPolicy,
+      humanObservation: this.humanObservation,
       connectionGeneration: connection.connectionGeneration,
       inventoryGeneration: this.inventoryGenerations.get(endpointRef) ?? 1,
       connected: connection.connected
@@ -201,9 +212,21 @@ class FakeExtensionPort implements OctopusExtensionPort {
     } else if (type === 'ATTACH_DEBUGGER') {
       result = { attachmentGeneration: 1, protocolVersion: '1.3' };
     } else if (type === 'SEND_CDP') {
+      const command = payload as RelayV2PayloadByType['SEND_CDP'];
+      const probe = command.recoveryObservation === true && command.method === 'Runtime.evaluate'
+        && typeof (command.params as { expression?: unknown } | undefined)?.expression === 'string'
+        && (command.params as { expression: string }).expression.includes('__tabro_verification__');
+      if (probe) {
+        const report = this.verificationReport;
+        this.probeCount += 1;
+        return this.operationResult(type, attemptId, endpointRef, report === null
+          ? { result: { result: { type: 'object', value: { frames: [], found: [], url: 'https://example.test/', title: '' } } } }
+          : { result: { result: { type: 'object', value: { frames: [report.frame ?? ''], found: report.selector ? [report.selector] : [],
+            url: report.url ?? 'https://example.test/', title: report.title ?? '' } } } });
+      }
       this.cdpCalls += 1;
       this.controlTimes.push(performance.now());
-      this.inputTrace.push(payload as RelayV2PayloadByType['SEND_CDP']);
+      this.inputTrace.push(command);
       result = { result: { result: { type: 'number', value: 4 } }, sessionId: null };
       if (this.lostCdpResult) {
         if (this.lostCdpResult === 'cached') this.attemptOutcomes.set(attemptId, { ok: true, output: result });
@@ -511,8 +534,9 @@ describe('canonical Tabro broker', () => {
     const scope = await recoveryWorkspace();
     broker.beginShutdown(); await broker.waitForIdle();
     const snapshot = { revision: 'a'.repeat(64), generation: 1, configuration: { schemaVersion: 1 as const,
-      rules: [{ id: 'paced', domain: 'example.test', mode: 'human_simulation' as const }] } };
-    broker = new OctopusBroker(store.canonical, { browserRules: { diagnostic: null, refresh: () => snapshot } });
+      rules: [{ id: 'paced', domain: 'example.test', mode: 'human_simulation' as const }], verification_signatures: [] } };
+    // Page-load pacing is covered separately; this case measures per-event spacing only.
+    broker = new OctopusBroker(store.canonical, { browserRules: { diagnostic: null, refresh: () => snapshot }, humanLimits: { loadIntervalMs: 0 } });
     broker.setExtensionPort(extension);
     // about:blank in the fake inventory is superseded by the ruled test URL.
     const snapshotFn = extension.requestInventory.bind(extension);
@@ -540,7 +564,7 @@ describe('canonical Tabro broker', () => {
     const scope = await recoveryWorkspace();
     broker.beginShutdown(); await broker.waitForIdle();
     const snapshot = { revision: 'a'.repeat(64), generation: 1, configuration: { schemaVersion: 1 as const,
-      rules: [{ id: 'protected', domain: 'example.test', mode: 'human_simulation' as const }] } };
+      rules: [{ id: 'protected', domain: 'example.test', mode: 'human_simulation' as const }], verification_signatures: [] } };
     broker = new OctopusBroker(store.canonical, { browserRules: { diagnostic: null, refresh: () => snapshot } });
     broker.setExtensionPort(extension);
     extension.browserInputPolicy = false;
@@ -548,6 +572,153 @@ describe('canonical Tabro broker', () => {
     extension.browserInputPolicy = true;
     expect((await terminal(accept('send_cdp_command', { ...scope, method: 'DOM.getDocument', params: {} }))).state).toBe('succeeded');
     expect(extension.inputTrace.at(-1)).toMatchObject({ policyRevision: snapshot.revision });
+  });
+
+  async function ruledWorkspace(limits: Partial<HumanSimulationLimits> = {}) {
+    const scope = await recoveryWorkspace();
+    extension.setTabUrl('https://example.test/');
+    broker.beginShutdown(); await broker.waitForIdle();
+    const snapshot = { revision: 'b'.repeat(64), generation: 1, configuration: { schemaVersion: 1 as const,
+      rules: [{ id: 'sim', domain: 'example.test', mode: 'human_simulation' as const }], verification_signatures: [] } };
+    broker = new OctopusBroker(store.canonical, { browserRules: { diagnostic: null, refresh: () => snapshot }, humanLimits: limits });
+    broker.setExtensionPort(extension);
+    const endpoint = store.canonical.logical.getEndpointByNickname('profile-a')!;
+    const seeded = await extension.requestInventory(endpoint.endpointRef);
+    seeded.windows[0]!.tabs[0]!.url = 'https://example.test/';
+    broker.onInventory(endpoint.endpointRef, seeded);
+    return scope;
+  }
+
+  it('refuses to leave a Human Simulation page before the evaluate activity debt is paid', async () => {
+    const scope = await ruledWorkspace({ dwellMs: 0, wheelPx: 1_000, hovers: 2, loadIntervalMs: 0, probeIntervalMs: 0, graceMs: 0 });
+    const read = accept('send_cdp_command', { ...scope, method: 'Runtime.evaluate', params: { expression: '[1,2]' } });
+    expect((await terminal(read)).state).toBe('succeeded');
+    const leaving = accept('send_cdp_command', { ...scope, method: 'Page.navigate', params: { url: 'https://example.test/next' } });
+    expect((await terminal(leaving)).failure?.problem.code).toBe('HUMAN_ACTIVITY_REQUIRED');
+    expect(extension.inputTrace.some(item => item.method === 'Page.navigate')).toBe(false);
+    expect(broker.getBrowserContext({ view: { kind: 'tab', workspace_ref: scope.workspace_ref, tab_ref: scope.target.tab_ref } }, caller))
+      .toMatchObject({ facts: { tab: { human_activity: { outstanding: true, missing_wheel_px: 1000, missing_hovers: 2 } } } });
+    const wheel = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent',
+      params: { type: 'mouseWheel', x: 100, y: 100, deltaX: 0, deltaY: 1_200 } });
+    expect((await terminal(wheel)).state).toBe('succeeded');
+    for (const y of [80, 260]) {
+      const hover = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x: 120, y } });
+      expect((await terminal(hover)).state).toBe('succeeded');
+    }
+    const paid = accept('send_cdp_command', { ...scope, method: 'Page.navigate', params: { url: 'https://example.test/next' } });
+    expect((await terminal(paid)).state).toBe('succeeded');
+    expect(broker.getBrowserContext({ view: { kind: 'tab', workspace_ref: scope.workspace_ref, tab_ref: scope.target.tab_ref } }, caller))
+      .toMatchObject({ facts: { tab: { human_activity: null } } });
+  });
+
+  /** Reports a committed page load the way the extension does: through a fresh inventory. */
+  async function loadPage(url: string): Promise<void> {
+    const endpoint = store.canonical.logical.getEndpointByNickname('profile-a')!;
+    extension.setTabUrl(url);
+    broker.onInventory(endpoint.endpointRef, await extension.requestInventory(endpoint.endpointRef));
+  }
+
+  it('paces repeated page loads on one Human Simulation domain', async () => {
+    const scope = await ruledWorkspace({ dwellMs: 0, wheelPx: 0, hovers: 0, loadIntervalMs: 160, probeIntervalMs: 0, graceMs: 0 });
+    const first = accept('send_cdp_command', { ...scope, method: 'Page.navigate', params: { url: 'https://example.test/a' } });
+    expect((await terminal(first)).state).toBe('succeeded');
+    await loadPage('https://example.test/a');
+    const second = accept('send_cdp_command', { ...scope, method: 'Page.navigate', params: { url: 'https://example.test/b' } });
+    expect((await terminal(second)).state).toBe('succeeded');
+    expect(extension.inputTrace.filter(item => item.method === 'Page.navigate')).toHaveLength(2);
+    const controls = extension.controlTimes.slice(-2);
+    expect(controls[1]! - controls[0]!).toBeGreaterThanOrEqual(120);
+  });
+
+  it('paces clicks after a click-driven page load, not only Page.navigate', async () => {
+    const scope = await ruledWorkspace({ dwellMs: 0, wheelPx: 0, hovers: 0, loadIntervalMs: 200, probeIntervalMs: 0, graceMs: 0 });
+    // A clicked link changes the tab URL without any Page.navigate.
+    await loadPage('https://example.test/list?page=2');
+    const loadedAt = performance.now();
+    const hover = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x: 50, y: 60 } });
+    expect((await terminal(hover)).state).toBe('succeeded');
+    const press = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', button: 'left', x: 50, y: 60 } });
+    expect((await terminal(press)).state).toBe('succeeded');
+    const pressedAt = extension.controlTimes.at(-1)!;
+    // Hover is not gated by load pacing; the press waits for the load interval.
+    expect(pressedAt - loadedAt).toBeGreaterThanOrEqual(150);
+    const release = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', button: 'left', x: 50, y: 60 } });
+    expect((await terminal(release)).state).toBe('succeeded');
+  });
+
+  it('rests a domain after a run of page loads and reports a schema-valid HUMAN_PACING_WAIT', async () => {
+    const scope = await ruledWorkspace({ dwellMs: 0, wheelPx: 0, hovers: 0, loadIntervalMs: 0, pagesBeforeRest: 2,
+      restMsMin: 60_000, restMsMax: 60_000, probeIntervalMs: 0, graceMs: 0 });
+    for (const page of ['a', 'b', 'c']) await loadPage(`https://example.test/${page}`);
+    const press = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', button: 'left', x: 10, y: 10 } });
+    const ticket = await terminal(press);
+    expect(ticket.failure?.problem).toMatchObject({ code: 'HUMAN_PACING_WAIT', retryable: true });
+    parseMcpToolOutput('get_browser_request', broker.getBrowserRequest({ request_ref: press }, caller));
+    const view = broker.getBrowserContext({ view: { kind: 'tab', workspace_ref: scope.workspace_ref, tab_ref: scope.target.tab_ref } }, caller);
+    parseMcpToolOutput('get_browser_context', view);
+    expect(view).toMatchObject({ facts: { tab: { human_activity: { next_load_allowed_at: expect.any(String) } } } });
+    // Reads stay available while the domain rests.
+    const read = accept('send_cdp_command', { ...scope, method: 'Runtime.evaluate', params: { expression: '1' } });
+    expect((await terminal(read)).state).toBe('succeeded');
+  });
+
+  it('asks for an extension reload before guarded evaluate on a capability-2 extension', async () => {
+    const scope = await ruledWorkspace({ probeIntervalMs: 0, graceMs: 0 });
+    extension.humanObservation = false;
+    const read = accept('send_cdp_command', { ...scope, method: 'Runtime.evaluate', params: { expression: '1' } });
+    expect((await terminal(read)).failure?.problem.code).toBe('INPUT_POLICY_UNSUPPORTED');
+    expect(extension.probeCount).toBe(0);
+    const shot = accept('send_cdp_command', { ...scope, method: 'Page.captureScreenshot', params: {} });
+    expect((await terminal(shot)).state).toBe('succeeded');
+  });
+
+  it('pauses manipulation on a detected challenge and resumes only after the user finishes it', async () => {
+    const scope = await ruledWorkspace({ loadIntervalMs: 0, probeIntervalMs: 0, graceMs: 0 });
+    const read = accept('send_cdp_command', { ...scope, method: 'Runtime.evaluate', params: { expression: '1' } });
+    expect((await terminal(read)).state).toBe('succeeded');
+    expect(extension.probeCount).toBeGreaterThan(0);
+    extension.setVerification({ selector: '#nc_1_wrapper' });
+    const clicked = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent',
+      params: { type: 'mousePressed', button: 'left', x: 20, y: 20 } });
+    expect((await terminal(clicked)).failure?.problem.code).toBe('HUMAN_VERIFICATION_REQUIRED');
+    const shot = accept('send_cdp_command', { ...scope, method: 'Page.captureScreenshot', params: {} });
+    expect((await terminal(shot)).state).toBe('succeeded');
+    const view = broker.getBrowserContext({ view: { kind: 'tab', workspace_ref: scope.workspace_ref, tab_ref: scope.target.tab_ref } }, caller);
+    parseMcpToolOutput('get_browser_context', view);
+    expect(view).toMatchObject({ facts: { tab: { human_verification: { status: 'paused', signature: 'taobao-slider-selector' } } } });
+    expect(broker.listBrowserProfiles({}, caller)).toMatchObject({ facts: { profiles: [{ automation_paused: true }] } });
+    const ackWhileChallenged = accept('resume_workspace_automation', { workspace_ref: scope.workspace_ref,
+      human_verification: { user_confirmed_completed: true } });
+    expect((await terminal(ackWhileChallenged)).failure?.problem.code).toBe('HUMAN_VERIFICATION_REQUIRED');
+    // A resume without the user's confirmation must not report success while still paused.
+    const plainResume = accept('resume_workspace_automation', { workspace_ref: scope.workspace_ref });
+    const plainTicket = await terminal(plainResume);
+    expect(plainTicket.failure?.problem.code).toBe('HUMAN_VERIFICATION_REQUIRED');
+    parseMcpToolOutput('get_browser_request', broker.getBrowserRequest({ request_ref: plainResume }, caller));
+    const stillBlocked = accept('send_cdp_command', { ...scope, method: 'Input.insertText', params: { text: 'x' } });
+    expect((await terminal(stillBlocked)).failure?.problem.code).toBe('HUMAN_VERIFICATION_REQUIRED');
+    extension.setVerification(null);
+    const resumed = accept('resume_workspace_automation', { workspace_ref: scope.workspace_ref,
+      human_verification: { user_confirmed_completed: true } });
+    const resumedTicket = await terminal(resumed);
+    expect(resumedTicket.state).toBe('succeeded');
+    expect(JSON.stringify(broker.getBrowserRequest({ request_ref: resumed }, caller))).toMatch(/cleared_human_verification/u);
+    const after = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent',
+      params: { type: 'mousePressed', button: 'left', x: 20, y: 20 } });
+    expect((await terminal(after)).state).toBe('succeeded');
+  });
+
+  it('treats a challenge URL as unambiguous even when the tab left the ruled domain', async () => {
+    const scope = await ruledWorkspace({ probeIntervalMs: 0, graceMs: 0 });
+    const endpoint = store.canonical.logical.getEndpointByNickname('profile-a')!;
+    extension.setTabUrl('https://login.taobao.com/member/login.jhtml');
+    const redirected = await extension.requestInventory(endpoint.endpointRef);
+    broker.onInventory(endpoint.endpointRef, redirected);
+    const clicked = accept('send_cdp_command', { ...scope, method: 'Input.dispatchMouseEvent',
+      params: { type: 'mousePressed', button: 'left', x: 20, y: 20 } });
+    expect((await terminal(clicked)).failure?.problem.code).toBe('HUMAN_VERIFICATION_REQUIRED');
+    const shot = accept('send_cdp_command', { ...scope, method: 'Page.captureScreenshot', params: {} });
+    expect((await terminal(shot)).state).toBe('succeeded');
   });
 
   it.each([

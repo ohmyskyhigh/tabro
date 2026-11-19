@@ -19,6 +19,7 @@ export interface ExtensionConnectionSnapshot {
   connected: boolean;
   profileProxy?: boolean;
   browserInputPolicy?: boolean;
+  humanObservation?: boolean;
 }
 
 export interface ExtensionEventSink {

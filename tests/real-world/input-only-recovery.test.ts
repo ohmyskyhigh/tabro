@@ -92,6 +92,17 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
 
   const site = createServer((req, res) => {
     if (req.url === '/redirect') { res.writeHead(302, { location: `http://other.test:${sitePort}/` }).end(); return; }
+    if (req.url === '/challenge' || req.url === '/cleared') {
+      res.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' });
+      // A visible slider plus a resident hidden captcha frame, like a real commerce challenge.
+      res.end(`<!doctype html><title>Tabro challenge fixture</title><style>body{margin:30px;font:16px sans-serif}button{margin:10px;padding:10px}</style>
+        <div id="nc_1_wrapper" style="width:300px;height:40px;background:#eee">slide</div>
+        <button id="done">Done</button>
+        <iframe id="resident" src="https://www.google.com/recaptcha/api2/bframe?x=1" style="width:0;height:0;border:0"></iframe>
+        <script>window.fixture={doneClicks:0};document.querySelector('#done').onclick=()=>{fixture.doneClicks++};</script>`);
+      return;
+    }
+    if (req.url === '/recaptcha-bframe') { res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><title>b</title>'); return; }
     if (req.url?.startsWith('/event') || req.url?.startsWith('/effect')) {
       let body = ''; req.on('data', chunk => { body += String(chunk); });
       req.on('end', () => {
@@ -106,6 +117,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       #scroll{position:absolute;top:300px;left:40px;width:280px;height:120px;overflow:auto;background:#eee}
       </style><button id="button">Count</button><input id="text"><select id="select" size="2"><option>A</option><option>B</option></select>
       <div id="drag">Drag</div><div id="zone">Drop</div><div id="scroll"><div style="height:900px">Scroll</div></div>
+      <iframe id="resident" src="https://www.google.com/recaptcha/api2/bframe?x=1" style="display:none"></iframe>
       <script>
       window.fixture={clicks:0,drops:0,events:[]};let dragging=false;
       const send=(path,data)=>fetch(path,{method:'POST',body:JSON.stringify(data)});
@@ -243,8 +255,14 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     expect(result.exceptionDetails, JSON.stringify(result)).toBeUndefined();
     return object(result.result).value;
   }
-  async function center(selector: string) {
-    const document = await raw('DOM.getDocument', {});
+  // Out-of-band page write used to simulate the site or the user finishing a challenge.
+  async function force(expression: string): Promise<unknown> {
+    const browserTab = object(trace.at(-1)?.tab).tabId;
+    const result = object(await worker(`chrome.debugger.sendCommand({tabId:${Number(browserTab)}},'Runtime.evaluate',${JSON.stringify({ expression, returnByValue: true })})`));
+    expect(result.exceptionDetails, JSON.stringify(result)).toBeUndefined();
+    return object(result.result).value;
+  }
+  async function center(selector: string) {    const document = await raw('DOM.getDocument', {});
     const node = await raw('DOM.querySelector', { nodeId: object(document.root).nodeId, selector });
     const model = object((await raw('DOM.getBoxModel', { nodeId: node.nodeId })).model);
     const points = model.content as number[];
@@ -347,6 +365,13 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     const backgroundTab = (await worker('chrome.tabs.query({})') as Json[]).find(item => String(item.url).includes('fixture.test'))!;
     expect(backgroundTab.active).toBe(false);
     const backgroundPoint = await center('#text');
+    // Contract 8 refuses browser input on a Human Simulation domain while the tab is hidden.
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', ...backgroundPoint }, 'FOREGROUND_REQUIRED');
+    expect(await read('fixture.clicks')).toBe(0);
+    pass('real Chrome: background input refused on a Human Simulation domain');
+    await cdp('Page.bringToFront', {});
+    await expect.poll(async () => ((await worker('chrome.tabs.query({})') as Json[])
+      .find(item => String(item.url).includes('fixture.test'))!.active === true)).toBe(true);
     await mouse('mouseMoved', backgroundPoint); await mouse('mousePressed', backgroundPoint);
     const previousInventoryCount = inventoriesReceived;
     // A harmless tab update publishes inventory without changing the gesture's focus.
@@ -356,8 +381,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     await mouse('mouseReleased', backgroundPoint);
     expect((await context()).input_recovery).toBeNull();
     expect(await read('document.activeElement.id')).toBe('text');
-    pass('background click survives unchanged inventory between press and release');
-    await cdp('Page.bringToFront', {});
+    pass('foreground click survives unchanged inventory between press and release');
     for (const expression of [
       'document.querySelector("#button").click()', 'document.querySelector("#text").focus()',
       'document.querySelector("#text").value="forbidden"', 'document.querySelector("#scroll").scrollTop=50',
@@ -370,6 +394,45 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     expect(await read('document.querySelector("#scroll").scrollTop')).toBe(0);
     expect(await read('document.querySelector("#text").getAttribute("data-test")')).toBeNull();
     pass('scripted manipulation refused without effects');
+    // Guarded evaluate now answers through Tabro in an isolated world with plain data only.
+    const listed = await raw('Runtime.evaluate', { expression: 'JSON.stringify([...document.querySelectorAll("button,#drag,#zone")].map(item => item.id))' });
+    expect(JSON.parse(String(object(listed.result).value))).toEqual(expect.arrayContaining(['button', 'drag', 'zone']));
+    expect(JSON.stringify(listed)).not.toMatch(/objectId/u);
+    await force('window.__mainWorldMarker = 7');
+    expect(await read('window.__mainWorldMarker')).toBe(7);
+    const isolated = await raw('Runtime.evaluate', { expression: 'typeof window.__mainWorldMarker' });
+    expect(String(object(isolated.result).value)).toBe('undefined');
+    expect(String(object((await raw('Runtime.evaluate', { expression: 'document.title' })).result).value)).toBe('Tabro input fixture');
+    await cdp('Runtime.evaluate', { expression: 'window.__x = 1' }, 'INPUT_ONLY_REQUIRED');
+    expect((await context()).human_verification ?? null).toBeNull();
+    pass('real Chrome: isolated-world guarded read returns plain data, hides remote objects, cannot see or write page-world globals, and the resident hidden captcha frame raises no challenge');
+    // The guarded reads created an activity debt: leaving the page by URL is refused until it is paid.
+    await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/challenge` }, 'HUMAN_ACTIVITY_REQUIRED');
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', ...await center('#scroll'), deltaX: 0, deltaY: 2_000 });
+    for (const selector of ['#button', '#text', '#select']) await mouse('mouseMoved', await center(selector));
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 4_200));
+    await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/challenge` });
+    await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro challenge fixture');
+    pass('real Chrome: HUMAN_ACTIVITY_REQUIRED gates the URL departure and paid human activity releases it');
+    // Detection is throttled per tab; wait one interval so the next command re-probes the page.
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 1_600));
+    await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', ...await center('#nc_1_wrapper') }, 'HUMAN_VERIFICATION_REQUIRED');
+    const shot = await raw('Page.captureScreenshot', { format: 'png' });
+    expect(Buffer.from(String(shot.data), 'base64').subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    expect(object((await context()).human_verification)).toMatchObject({ status: 'paused', signature: 'taobao-slider-selector' });
+    await execute('resume_workspace_automation', { workspace_ref: workspace,
+      human_verification: { user_confirmed_completed: true } }, 'HUMAN_VERIFICATION_REQUIRED');
+    await execute('resume_workspace_automation', { workspace_ref: workspace });
+    await cdp('Input.insertText', { text: 'still blocked' }, 'HUMAN_VERIFICATION_REQUIRED');
+    // The site clearing the challenge is what a completed user verification looks like to Tabro.
+    await force('document.querySelector("#nc_1_wrapper").style.display = "none"');
+    const challengeResumed = await execute('resume_workspace_automation', { workspace_ref: workspace,
+      human_verification: { user_confirmed_completed: true } });
+    expect(JSON.stringify(challengeResumed.result)).toMatch(/cleared_human_verification/u);
+    expect((await context()).human_verification ?? null).toBeNull();
+    await click('#done');
+    expect(await read('fixture.doneClicks')).toBe(1);
+    pass('real Chrome: a visible challenge pauses manipulation, keeps screenshots, refuses false resume claims and resumes after the user finishes');
     await click('#button'); expect(await read('fixture.clicks')).toBe(1);
     await click('#text'); await cdp('Input.insertText', { text: 'Hello 世界' });
     expect(await read('document.querySelector("#text").value')).toBe('Hello 世界');

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:octopus-browser-relay:mcp-contract:v7",
-  "title": "Tabro MCP contract version 7",
-  "description": "Twenty-two tools include sixteen durable asynchronous operations, five reads, and one terminal request closure. Extension-registered Profiles have broker/user launch ownership, and lifecycle tickets retain authenticated requester authority. Pairing aliases are the sole public Profile names.",
+  "$id": "urn:octopus-browser-relay:mcp-contract:v8",
+  "title": "Tabro MCP contract version 8",
+  "description": "Twenty-two tools include sixteen durable asynchronous operations, five reads, and one terminal request closure. Extension-registered Profiles have broker/user launch ownership, and lifecycle tickets retain authenticated requester authority. Pairing aliases are the sole public Profile names. Contract 8 adds Human Simulation guarded evaluate, activity debt, pacing, foreground input and human-verification pauses.",
   "$defs": {
     "broker_issued_ref": {
       "type": "string",
@@ -175,6 +175,10 @@
             "INPUT_BUSY",
             "INPUT_RECOVERY_REQUIRED",
             "INPUT_STATE_UNCERTAIN",
+            "HUMAN_ACTIVITY_REQUIRED",
+            "HUMAN_PACING_WAIT",
+            "HUMAN_VERIFICATION_REQUIRED",
+            "FOREGROUND_REQUIRED",
             "PROXY_UNSUPPORTED",
             "PROXY_BUSY",
             "PROXY_REVISION_CONFLICT",
@@ -561,7 +565,8 @@
     "workspace_pause_reason": {
       "enum": [
         "manual_workspace_stop",
-        "endpoint_killed"
+        "endpoint_killed",
+        "human_verification_required"
       ]
     },
     "workspace_fact": {
@@ -595,13 +600,13 @@
           ]
         },
         "automation_pause_reasons": {
-          "description": "Independent active workspace control causes. The list can contain both endpoint_killed and manual_workspace_stop.",
+          "description": "Independent active workspace control causes. The list can contain endpoint_killed, manual_workspace_stop and human_verification_required.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/workspace_pause_reason"
           },
           "uniqueItems": true,
-          "maxItems": 2
+          "maxItems": 3
         },
         "owner_session_ref": {
           "$ref": "#/$defs/broker_issued_ref"
@@ -683,6 +688,26 @@
         },
         "interaction_policy": {
           "$ref": "#/$defs/interaction_policy"
+        },
+        "human_activity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/human_activity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "human_verification": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/human_verification"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -694,6 +719,80 @@
         "url",
         "active",
         "initial_event_cursor"
+      ],
+      "additionalProperties": false
+    },
+    "human_activity": {
+      "type": "object",
+      "description": "Human Simulation activity debt for the current document after guarded Runtime.evaluate use, plus the next permitted top-level page load.",
+      "properties": {
+        "evaluates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outstanding": {
+          "type": "boolean"
+        },
+        "missing_dwell_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing_wheel_px": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing_hovers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "next_load_allowed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "evaluates",
+        "outstanding",
+        "missing_dwell_ms",
+        "missing_wheel_px",
+        "missing_hovers",
+        "next_load_allowed_at"
+      ],
+      "additionalProperties": false
+    },
+    "human_verification": {
+      "type": "object",
+      "description": "A detected human-verification challenge. status paused blocks manipulation until the user confirms and Tabro re-checks the page.",
+      "properties": {
+        "status": {
+          "enum": [
+            "watching",
+            "paused",
+            "awaiting_resume"
+          ]
+        },
+        "signature": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "detected_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "tab_ref": {
+          "$ref": "#/$defs/broker_issued_ref"
+        }
+      },
+      "required": [
+        "status",
+        "signature",
+        "evidence",
+        "detected_at",
+        "tab_ref"
       ],
       "additionalProperties": false
     },
@@ -1404,7 +1503,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "7"
+          "const": "8"
         },
         "disposition": {
           "enum": [
@@ -2340,7 +2439,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "7"
+          "const": "8"
         },
         "disposition": {
           "enum": [
@@ -2863,6 +2962,18 @@
         "workspace_ref": {
           "$ref": "#/$defs/broker_issued_ref"
         },
+        "human_verification": {
+          "type": "object",
+          "properties": {
+            "user_confirmed_completed": {
+              "const": true
+            }
+          },
+          "required": [
+            "user_confirmed_completed"
+          ],
+          "additionalProperties": false
+        },
         "input_recovery": {
           "type": "object",
           "properties": {
@@ -2897,6 +3008,9 @@
           "const": "manual_workspace_stop"
         },
         "reconciled": {
+          "const": true
+        },
+        "cleared_human_verification": {
           "const": true
         }
       },
@@ -3073,7 +3187,8 @@
             "user_confirmation_required",
             "manual_workspace_stop",
             "endpoint_killed",
-            "input_recovery_required"
+            "input_recovery_required",
+            "human_verification_required"
           ]
         },
         "paused_at": {
@@ -4948,7 +5063,7 @@
       "description": "Accepted means durable admission, not execution success. The ticket response must be delivered before dispatch; delivery failure means no dispatch and is an immediate transport bug. Rejected submissions contain no ticket or request_ref. No asynchronous input carries an agent deadline, no public tool cancels one ticket, and the broker applies no elapsed-time terminal timeout.",
       "properties": {
         "contract_version": {
-          "const": "7"
+          "const": "8"
         },
         "disposition": {
           "enum": [
