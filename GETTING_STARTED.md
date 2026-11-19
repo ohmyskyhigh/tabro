@@ -6,7 +6,7 @@ Install Tabro on the desktop host and under the OS account that runs your browse
 
 ### Each qualified platform uses the same install and browser verification flow
 
-On the [release page](https://github.com/ohmyskyhigh/tabro/releases), look for `tabro-setup-` assets and choose Windows x64, macOS arm64 (Apple Silicon), macOS x64 (Intel), or Linux x64. The [qualification record](./doc/06-Files/Real-World-Runbook.md#packaged-installation) tracks availability separately from local test results. Windows x64 users can use the [Windows preview](#other-agents) while the standalone release is pending.
+On the [release page](https://github.com/ohmyskyhigh/tabro/releases), look for `tabro-setup-` assets and choose Windows x64, macOS arm64 (Apple Silicon), macOS x64 (Intel), or Linux x64. The [qualification record](./doc/06-Files/Real-World-Runbook.md#packaged-installation) tracks availability separately from local test results.
 
 1. Download the matching archive and its `.sha256` file. Compare the SHA-256 before extracting the archive into its own folder. Use `Get-FileHash` on Windows, `shasum -a 256` on macOS, or `sha256sum` on Linux.
 2. Open a terminal in the extracted folder as your desktop browser user. Use Chrome, Chromium or Edge 153 or newer. Install Node.js 22.12 or newer before running the macOS or Linux setup. Authenticated proxies on Linux require `secret-tool` and an unlocked Secret Service keyring. Before first setup, register one installation and one desktop OS account for the device. Other OS accounts cannot use that Broker. Run normal setup, the Broker and the browser as the designated desktop user, not as administrator.

@@ -52,7 +52,7 @@ The current Windows source updater requires a release declaring shared runtime d
 
 ### The source installer prepares the current twenty-two-tool shared runtime
 
-1. Build with `pnpm install --frozen-lockfile` and `pnpm build`, then run `pnpm stage:hermes --output=tabro-v0.5.0-<platform>` for the current platform.
+1. Build with `pnpm install --frozen-lockfile` and `pnpm build`, then run `pnpm stage:hermes --output=tabro-v<version>-<platform>`, using the version in `package.json` and the current platform.
 2. Follow [Getting Started](./GETTING_STARTED.md#standalone-installers) to provision one device owner and run the staged package's setup as that user.
 3. Register the printed stdio MCP entry, load the printed extension directory for an existing profile, and verify a real browser action.
 
@@ -107,7 +107,7 @@ Use [Getting Started](./GETTING_STARTED.md#standalone-installers) for the standa
 
 ### The installer builds, registers, and prepares the local runtime
 
-Build the runtime with `pnpm build`, stage a package with `pnpm stage:hermes --output=tabro-v0.5.0-<platform>`, then provision and run it using [Getting Started](./GETTING_STARTED.md#standalone-installers). On Windows, `pwsh -NoProfile -File tools/install-local.ps1 -PackagePath <extracted-current-package>` delegates to that package's setup. The package prints the MCP and extension paths.
+Build the runtime with `pnpm build`, then stage it with `pnpm stage:hermes --output=tabro-v<version>-<platform>` using the version in `package.json`. Follow [Getting Started](./GETTING_STARTED.md#standalone-installers) to provision and run it. On Windows, `pwsh -NoProfile -File tools/install-local.ps1 -PackagePath <extracted-current-package>` delegates to that package's setup. The package prints the MCP and extension paths.
 
 ### Preflight reports each missing setup action as JSON
 

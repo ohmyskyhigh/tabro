@@ -43,7 +43,7 @@ Agent 可以为不同任务创建独立的标签组工作区。Broker 记录工�
 
 ### 开发者可从源码安装二十二工具的共享运行时
 
-运行 `pnpm install --frozen-lockfile`、`pnpm build`，再用 `pnpm stage:hermes --output=tabro-v0.5.0-<平台>` 构建当前安装包。按[入门指南](./GETTING_STARTED.md#standalone-installers)注册设备和桌面用户、运行安装包，使用输出的 MCP 与扩展路径完成连接验证。
+运行 `pnpm install --frozen-lockfile`、`pnpm build`，再用 `pnpm stage:hermes --output=tabro-v<版本>-<平台>` 构建当前安装包，版本取自 `package.json`。按[入门指南](./GETTING_STARTED.md#standalone-installers)注册设备和桌面用户、运行安装包，使用输出的 MCP 与扩展路径完成连接验证。
 
 ## 功能
 
@@ -131,7 +131,7 @@ flowchart LR
 
 ### 开发者可以从仓库构建、注册并启动本地运行时
 
-运行 `pnpm build` 并使用 `pnpm stage:hermes --output=tabro-v0.5.0-<平台>` 生成安装包。按[入门指南](./GETTING_STARTED.md)完成设备注册和安装。源码工具复用注册的 Broker；只有设备注册明确指向源码目录时才可直接启动源码 Broker。
+运行 `pnpm build` 并使用 `pnpm stage:hermes --output=tabro-v<版本>-<平台>` 生成安装包，版本取自 `package.json`。按[入门指南](./GETTING_STARTED.md)完成设备注册和安装。源码工具复用注册的 Broker；只有设备注册明确指向源码目录时才可直接启动源码 Broker。
 
 ## MCP 工具
 
