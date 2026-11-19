@@ -23,6 +23,10 @@ const object = (value: unknown): Json => {
   return value as Json;
 };
 
+// The expanded scenario launches several adapters and restarts the Broker
+// under real Chrome. Native Intel runners take longer across those steps.
+const qualificationTimeoutMs = process.platform === 'darwin' && process.arch === 'x64' ? 480_000 : 240_000;
+
 // Explicit environment gate: release jobs also require the resulting PASS report.
 it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules and interrupted input in isolated real Chrome', async () => {
   const packageRoot = resolve(process.env.TABRO_QUALIFY_PACKAGE!);
@@ -60,7 +64,10 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     startedAt: new Date().toISOString(), sourceRevision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     sourceHasLocalChanges: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
     packageManifestSha256: createHash('sha256').update(readFileSync(join(packageRoot, 'runtime-manifest.json'))).digest('hex'), checks: [], connections };
-  const pass = (check: string) => { (report.checks as string[]).push(check); };
+  const pass = (check: string) => {
+    (report.checks as string[]).push(check);
+    console.info(`[Chrome qualification] ${check}`);
+  };
   let broker: ChildProcess | null = null;
   let browser: ChildProcess | null = null;
   let control: ChromeManagementConnection | null = null;
@@ -498,7 +505,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     writeFileSync(evidence, JSON.stringify({ ...report, trace, events, effects, brokerLog: logs }, null, 2));
     rmSync(root, { recursive: true, force: true, maxRetries: 15, retryDelay: 200 });
   }
-}, 240000);
+}, qualificationTimeoutMs);
 
 it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('loads changed managed extension bytes after a same-version upgrade without losing identity', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'tabro-worker-upgrade-')));
