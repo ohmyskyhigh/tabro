@@ -327,7 +327,7 @@ New workspace, additional and replacement tabs open in the background. This is a
 
 Add domains through **Broker management → Website rules**, or edit the file directly using the format below.
 
-Install the contract-7 runtime and reload its extension before using Human Simulation Mode. The Broker initializes `<Tabro installation>/data/browser-rules.json` with an empty list. It is shared across that Broker's profiles and Codex/Hermes clients. Default locations are `%LOCALAPPDATA%\Tabro\data\browser-rules.json` on Windows, `~/Library/Application Support/Tabro/data/browser-rules.json` on macOS, and `${XDG_DATA_HOME:-~/.local/share}/tabro/data/browser-rules.json` on Linux. Custom installations use their own data folder; source runs default to `.relay-data/browser-rules.json`. `TABRO_BROWSER_RULES_PATH` can select a different host file.
+Install the contract-8 runtime and reload its extension before using Human Simulation Mode. The Broker initializes `<Tabro installation>/data/browser-rules.json` with an empty list. It is shared across that Broker's profiles and Codex/Hermes clients. Default locations are `%LOCALAPPDATA%\Tabro\data\browser-rules.json` on Windows, `~/Library/Application Support/Tabro/data/browser-rules.json` on macOS, and `${XDG_DATA_HOME:-~/.local/share}/tabro/data/browser-rules.json` on Linux. Custom installations use their own data folder; source runs default to `.relay-data/browser-rules.json`. `TABRO_BROWSER_RULES_PATH` can select a different host file.
 
 ```json
 {

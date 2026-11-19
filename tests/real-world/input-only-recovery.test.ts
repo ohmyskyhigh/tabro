@@ -12,6 +12,7 @@ import { expect, it } from 'vitest';
 import { ChromeManagementConnection } from '../../apps/broker/src/profiles/management-connection.js';
 import { ChromeLauncher } from '../../apps/broker/src/profiles/chrome-launcher.js';
 import { extensionDigest, profileLayout } from '../../apps/broker/src/profiles/runtime-config.js';
+import { HUMAN_SIMULATION_LIMITS } from '../../apps/broker/src/core/octopus/human-simulation.js';
 import type { ManagedProfile } from '../../apps/broker/src/profiles/types.js';
 import { MCP_CONTRACT_VERSION } from '../../apps/shared/protocol/src/mcp/tool-catalog.js';
 import { maintenanceRequest } from '../../apps/shared/protocol/src/maintenance-client.js';
@@ -217,7 +218,9 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       env: { ...getDefaultEnvironment(), TABRO_RUNTIME_FILE: runtimeFile, TABRO_TOKEN: token,
         TABRO_RUNTIME: runtimeName, TABRO_RUNTIME_SESSION: `input-qualification-${runId}-${session}` }, stderr: 'pipe' }));
     const tools = await next.listTools();
-    expect(tools.tools.find(tool => tool.name === 'send_cdp_command')?.description).toContain('INPUT_ONLY_REQUIRED');
+    const description = tools.tools.find(tool => tool.name === 'send_cdp_command')?.description;
+    expect(description).toContain('guarded Runtime.evaluate');
+    expect(description).toContain('HUMAN_VERIFICATION_REQUIRED');
     return next;
   }
   async function connect(runtimeName: 'codex' | 'hermes', session: string = runtimeName) {
@@ -238,7 +241,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       ticket = object(object((await callOn(target, 'get_browser_request', { request_ref: ref })).facts).ticket);
       return ticket.state;
     }, { timeout: 45000, interval: 100 }).toMatch(/^(succeeded|failed|uncertain)$/u);
-    if (failCode) expect(object(object(ticket.failure).problem).code).toBe(failCode);
+    if (failCode) expect(ticket.failure, JSON.stringify(ticket)).toMatchObject({ problem: { code: failCode } });
     else expect(ticket.state, JSON.stringify(ticket)).toBe('succeeded');
     return ticket;
   }
@@ -262,7 +265,8 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     expect(result.exceptionDetails, JSON.stringify(result)).toBeUndefined();
     return object(result.result).value;
   }
-  async function center(selector: string) {    const document = await raw('DOM.getDocument', {});
+  async function center(selector: string) {
+    const document = await raw('DOM.getDocument', {});
     const node = await raw('DOM.querySelector', { nodeId: object(document.root).nodeId, selector });
     const model = object((await raw('DOM.getBoxModel', { nodeId: node.nodeId })).model);
     const points = model.content as number[];
@@ -279,15 +283,26 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     await cdp('Input.dispatchKeyEvent', { type: 'keyUp', code, key: keyValue, windowsVirtualKeyCode });
   }
   async function context() { return object((await call('get_browser_context', { view: { kind: 'tab', workspace_ref: workspace, tab_ref: tab } })).facts); }
+  async function verification() { return object((await context()).tab).human_verification as Json | null | undefined; }
   async function worker(expression: string) {
     const value = await control!.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, workerSession);
     expect(value.exceptionDetails, JSON.stringify(value)).toBeUndefined(); return object(value.result).value;
+  }
+  async function bringToFront() {
+    await cdp('Page.bringToFront', {});
+    const { tabId, windowId } = object(trace.at(-1)?.tab);
+    // A headed macOS window can remain behind another app even after Chrome activates its tab.
+    if (process.env.TABRO_QUALIFY_HEADED === '1') await worker(`chrome.windows.update(${Number(windowId)}, {focused: true})`);
+    await expect.poll(async () => await worker(
+      `Promise.all([chrome.tabs.get(${Number(tabId)}), chrome.windows.get(${Number(windowId)})]).then(([tab, window]) => tab.active && window.focused)`),
+    { timeout: 5000 }).toBe(true);
   }
   try {
     writeFileSync(rulesFile, JSON.stringify(rules));
     await startBroker(); await connect('codex');
     browser = spawn(browserPath, [`--user-data-dir=${userData}`, '--no-first-run', '--no-default-browser-check', '--disable-background-mode',
-      '--headless=new', '--window-size=1280,900', '--no-proxy-server', '--host-resolver-rules=MAP *.test 127.0.0.1', '--remote-debugging-address=127.0.0.1',
+      ...(process.env.TABRO_QUALIFY_HEADED === '1' ? [] : ['--headless=new']),
+      '--window-size=1280,900', '--no-proxy-server', '--host-resolver-rules=MAP *.test 127.0.0.1', '--remote-debugging-address=127.0.0.1',
       '--remote-debugging-port=0', '--enable-unsafe-extension-debugging', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
     browser.stderr?.on('data', data => { browserLog = (browserLog + String(data)).slice(-32_768); });
     const portFile = join(userData, 'DevToolsActivePort');
@@ -362,16 +377,16 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     workspace = String(object(resolved.workspace).workspace_ref); tab = String((resolved.tabs as Json[])[0]!.tab_ref);
     await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/` });
     await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro input fixture');
-    const backgroundTab = (await worker('chrome.tabs.query({})') as Json[]).find(item => String(item.url).includes('fixture.test'))!;
+    const browserTabId = Number(object(trace.at(-1)?.tab).tabId);
+    const currentTab = async () => object(await worker(`chrome.tabs.get(${browserTabId})`));
+    const backgroundTab = await currentTab();
     expect(backgroundTab.active).toBe(false);
     const backgroundPoint = await center('#text');
     // Contract 8 refuses browser input on a Human Simulation domain while the tab is hidden.
     await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', ...backgroundPoint }, 'FOREGROUND_REQUIRED');
     expect(await read('fixture.clicks')).toBe(0);
     pass('real Chrome: background input refused on a Human Simulation domain');
-    await cdp('Page.bringToFront', {});
-    await expect.poll(async () => ((await worker('chrome.tabs.query({})') as Json[])
-      .find(item => String(item.url).includes('fixture.test'))!.active === true)).toBe(true);
+    await bringToFront();
     await mouse('mouseMoved', backgroundPoint); await mouse('mousePressed', backgroundPoint);
     const previousInventoryCount = inventoriesReceived;
     // A harmless tab update publishes inventory without changing the gesture's focus.
@@ -404,7 +419,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     expect(String(object(isolated.result).value)).toBe('undefined');
     expect(String(object((await raw('Runtime.evaluate', { expression: 'document.title' })).result).value)).toBe('Tabro input fixture');
     await cdp('Runtime.evaluate', { expression: 'window.__x = 1' }, 'INPUT_ONLY_REQUIRED');
-    expect((await context()).human_verification ?? null).toBeNull();
+    expect(await verification()).toBeNull();
     pass('real Chrome: isolated-world guarded read returns plain data, hides remote objects, cannot see or write page-world globals, and the resident hidden captcha frame raises no challenge');
     // The guarded reads created an activity debt: leaving the page by URL is refused until it is paid.
     await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/challenge` }, 'HUMAN_ACTIVITY_REQUIRED');
@@ -414,25 +429,33 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/challenge` });
     await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro challenge fixture');
     pass('real Chrome: HUMAN_ACTIVITY_REQUIRED gates the URL departure and paid human activity releases it');
-    // Detection is throttled per tab; wait one interval so the next command re-probes the page.
-    await new Promise(resolveDelay => setTimeout(resolveDelay, 1_600));
-    await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', ...await center('#nc_1_wrapper') }, 'HUMAN_VERIFICATION_REQUIRED');
+    // Repeated observations during the grace period must retain the first detection.
+    await expect.poll(async () => {
+      await raw('DOM.getDocument', {});
+      return (await verification())?.status;
+    }, { timeout: 15_000 }).toBe('watching');
+    await raw('DOM.getDocument', {});
+    expect(await verification()).toMatchObject({ status: 'watching', signature: 'taobao-slider-selector' });
+    await new Promise(resolveDelay => setTimeout(resolveDelay, HUMAN_SIMULATION_LIMITS.graceMs));
+    await cdp('Input.insertText', { text: 'blocked by verification' }, 'HUMAN_VERIFICATION_REQUIRED');
     const shot = await raw('Page.captureScreenshot', { format: 'png' });
     expect(Buffer.from(String(shot.data), 'base64').subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-    expect(object((await context()).human_verification)).toMatchObject({ status: 'paused', signature: 'taobao-slider-selector' });
+    expect(await verification()).toMatchObject({ status: 'paused', signature: 'taobao-slider-selector' });
     await execute('resume_workspace_automation', { workspace_ref: workspace,
       human_verification: { user_confirmed_completed: true } }, 'HUMAN_VERIFICATION_REQUIRED');
-    await execute('resume_workspace_automation', { workspace_ref: workspace });
+    await execute('resume_workspace_automation', { workspace_ref: workspace }, 'HUMAN_VERIFICATION_REQUIRED');
     await cdp('Input.insertText', { text: 'still blocked' }, 'HUMAN_VERIFICATION_REQUIRED');
     // The site clearing the challenge is what a completed user verification looks like to Tabro.
     await force('document.querySelector("#nc_1_wrapper").style.display = "none"');
     const challengeResumed = await execute('resume_workspace_automation', { workspace_ref: workspace,
       human_verification: { user_confirmed_completed: true } });
     expect(JSON.stringify(challengeResumed.result)).toMatch(/cleared_human_verification/u);
-    expect((await context()).human_verification ?? null).toBeNull();
+    expect(await verification()).toBeNull();
     await click('#done');
     expect(await read('fixture.doneClicks')).toBe(1);
     pass('real Chrome: a visible challenge pauses manipulation, keeps screenshots, refuses false resume claims and resumes after the user finishes');
+    await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/` });
+    await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro input fixture');
     await click('#button'); expect(await read('fixture.clicks')).toBe(1);
     await click('#text'); await cdp('Input.insertText', { text: 'Hello 世界' });
     expect(await read('document.querySelector("#text").value')).toBe('Hello 世界');
@@ -481,6 +504,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/independent-${separateWorkspace}` });
       await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro input fixture');
       expect((await context()).input_recovery).toBeNull();
+      await bringToFront();
       await click('#button'); expect(await read('fixture.clicks')).toBe(1);
       await click('#text'); await cdp('Input.insertText', { text: 'new tab works' });
       expect(await read('document.querySelector("#text").value')).toBe('new tab works');
@@ -500,6 +524,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     const testTab = tabs.find(item => item.id === pausedBrowserTabId)!;
     await worker(`chrome.debugger.sendCommand({tabId:${Number(testTab.id)}},'Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',x:700,y:500})`);
     await execute('resume_workspace_automation', { workspace_ref: workspace, input_recovery: { recovery_ref: recovery.recovery_ref, user_confirmed_released: true } });
+    await bringToFront();
     await click('#button'); expect(await read('fixture.clicks')).toBe(2);
     pass('actual Broker process crash preserves held input; recovery reads and explicit acknowledgement work');
 

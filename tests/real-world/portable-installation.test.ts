@@ -390,11 +390,20 @@ globalThis.fetch = async (input, init) => {
           proxyQuiescent: boolean; activeWorkspaceCount: number; openRequestCount: number };
         return health.relayQuiescent && health.profileQuiescent && health.proxyQuiescent && health.activeWorkspaceCount === 0 && health.openRequestCount === 0;
       }, { timeout: 30_000 }).toBe(true);
-      await waitForQuiescence();
+      const upgradeWhenIdle = async (source?: string, extraEnv?: NodeJS.ProcessEnv) => {
+        // A Chrome reconnect can start between the health check and maintenance admission.
+        // Retry only an explicit busy rejection before the installer changed state.
+        for (let attempt = 0; ; attempt++) {
+          await waitForQuiescence();
+          const result = upgrade(source, extraEnv);
+          if (result.status === 0 || !result.stderr.includes('Maintenance enter failed with status 409')) return result;
+          if (attempt === 3) throw new Error(result.stderr);
+        }
+      };
       const statePath = resolve(install, 'installation.json');
       const beforeLauncher = JSON.parse(readFileSync(statePath, 'utf8')) as { runtimeDirectory: string; packageDigest: string };
       const originalPid = (JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')) as { processId: number }).processId;
-      const launcherUpdate = upgrade(launcherPackage);
+      const launcherUpdate = await upgradeWhenIdle(launcherPackage);
       expect(launcherUpdate.status, launcherUpdate.stderr).toBe(0);
       const afterLauncher = JSON.parse(readFileSync(statePath, 'utf8')) as { runtimeDirectory: string; packageDigest: string };
       expect(afterLauncher).toMatchObject(beforeLauncher);
@@ -415,7 +424,7 @@ globalThis.fetch = async (input, init) => {
       expect(readFileSync(installedFile)).toEqual(installedBytes);
       passed('unchanged setup rejects a damaged installed release and the fixture restores its exact bytes');
       const previousState = readFileSync(statePath);
-      const failedSnapshot = upgrade(snapshotFailurePackage);
+      const failedSnapshot = await upgradeWhenIdle(snapshotFailurePackage);
       expect(failedSnapshot.status).not.toBe(0);
       expect(readFileSync(statePath)).toEqual(previousState);
       expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
@@ -423,8 +432,7 @@ globalThis.fetch = async (input, init) => {
       expect(existsSync(resolve(install, 'data/maintenance.json'))).toBe(false);
       expect((await profiles()).profiles.some(item => item.profile_ref === profile_ref)).toBe(true);
       passed('snapshot failure resumes the original Broker without changing its data');
-      await waitForQuiescence();
-      const failed = upgrade(brokenPackage);
+      const failed = await upgradeWhenIdle(brokenPackage);
       expect(failed.status).not.toBe(0);
       expect(readFileSync(statePath)).toEqual(previousState);
       expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
@@ -432,28 +440,19 @@ globalThis.fetch = async (input, init) => {
       expect(existsSync(resolve(install, 'data/maintenance.json'))).toBe(false);
       expect((await profiles()).profiles.some(item => item.profile_ref === profile_ref)).toBe(true);
       passed('failed new Broker startup rolls back before resume and preserves profile data');
-      await waitForQuiescence();
       const before = (JSON.parse(readFileSync(resolve(install, 'data/runtime.json'), 'utf8')) as { processId: number }).processId;
-      const changed = upgrade();
+      const changed = await upgradeWhenIdle();
       expect(changed.status, changed.stderr).toBe(0);
       installation = JSON.parse(changed.stdout) as Setup;
       expect(installation.broker.processId).not.toBe(before);
       expect(readFileSync(rulesPath, 'utf8')).toBe(savedRules);
       expect(readManagedConfig()).toMatchObject({ root: previousConfig.root, executablePath: previousConfig.executablePath });
       passed('quiescent upgrade switches Broker and preserves rules and managed profile configuration');
-      await waitForQuiescence();
       const database = resolve(install, 'data/relay.sqlite');
       const originalInode = statSync(database).ino;
       const beforeAmbiguous = JSON.parse(readFileSync(statePath, 'utf8')) as { runtimeDirectory: string };
       const ambiguousEnvironment = { NODE_OPTIONS: `--import="${lostResumeHook}"` };
-      let ambiguous = upgrade(ambiguousPackage, ambiguousEnvironment);
-      // A reconnect can start between the health observation and admission.
-      // Retry only an explicit pre-admission busy rejection, never an accepted
-      // or ambiguous upgrade and never the injected lost resume response.
-      for (let retry = 0; retry < 3 && ambiguous.status !== 0 && /Maintenance enter failed with status 409/u.test(ambiguous.stderr); retry++) {
-        await waitForQuiescence();
-        ambiguous = upgrade(ambiguousPackage, ambiguousEnvironment);
-      }
+      const ambiguous = await upgradeWhenIdle(ambiguousPackage, ambiguousEnvironment);
       expect(ambiguous.status).not.toBe(0);
       expect(ambiguous.stderr).toMatch(/ambiguous/i);
       const journalPath = resolve(install, 'data/maintenance-operation.json');

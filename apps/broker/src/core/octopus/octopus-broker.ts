@@ -1620,7 +1620,8 @@ export class OctopusBroker implements ExtensionEventSink {
       }
       return false;
     }
-    if (!paused) this.humanSimulation.clearDetection(tab.tabRef);
+    // A skipped or failed content probe cannot confirm that a challenge disappeared.
+    if (!paused && report.complete) this.humanSimulation.clearDetection(tab.tabRef);
     if (!ruled) return false;
     if (method === 'Page.navigate' || method === 'Page.reload') {
       const debt = this.humanSimulation.debt(tab.tabRef);
@@ -1667,11 +1668,13 @@ export class OctopusBroker implements ExtensionEventSink {
     policy: BrowserPolicySnapshot,
     signatures: ReturnType<typeof activeVerificationSignatures>,
     currentUrl: string,
-    ruled: boolean
-  ): Promise<VerificationPageReport> {
-    const base: VerificationPageReport = { url: currentUrl.toLowerCase(), title: (tab.title ?? '').toLowerCase(), frames: [], found: [] };
+    ruled: boolean,
+    recheck = false
+  ): Promise<VerificationPageReport & { complete: boolean }> {
     // An extension without browserInputPolicy=3 refuses guarded evaluate, so only URL/title detection applies.
-    if (!ruled || !this.requireExtensionConnection(endpointRef).humanObservation || !this.humanSimulation.shouldProbe(tab.tabRef)) return base;
+    const probeContent = ruled && this.requireExtensionConnection(endpointRef).humanObservation;
+    const base = { url: currentUrl.toLowerCase(), title: (tab.title ?? '').toLowerCase(), frames: [], found: [], complete: !probeContent };
+    if (!probeContent || (!recheck && !this.humanSimulation.shouldProbe(tab.tabRef))) return base;
     if (matchVerificationSignatures(signatures, base)) { this.humanSimulation.markProbed(tab.tabRef); return base; }
     this.humanSimulation.markProbed(tab.tabRef);
     // The guarded observation expression also has the agent 8192-character limit, so
@@ -1704,11 +1707,11 @@ export class OctopusBroker implements ExtensionEventSink {
         params: { expression, returnByValue: true },
         sessionId: null
       });
-      const remote = result.outcome === 'succeeded' && isObject(result.result) && isObject(result.result.result)
-        ? (result.result.result as JsonObject).result : undefined;
+      const evaluation = result.outcome === 'succeeded' ? result.result?.rawResult : undefined;
+      const remote = isObject(evaluation) ? evaluation.result : undefined;
       const value = isObject(remote) ? remote.value as Partial<VerificationPageReport> | undefined : undefined;
       if (value && Array.isArray(value.frames) && Array.isArray(value.found)) {
-        return { url: typeof value.url === 'string' ? value.url : base.url, title: typeof value.title === 'string' ? value.title : base.title,
+        return { complete: true, url: typeof value.url === 'string' ? value.url : base.url, title: typeof value.title === 'string' ? value.title : base.title,
           frames: value.frames.filter((item): item is string => typeof item === 'string'), found: value.found.filter((item): item is string => typeof item === 'string') };
       }
     } catch { /* A failed probe never blocks the agent's own command. */ }
@@ -2544,17 +2547,18 @@ export class OctopusBroker implements ExtensionEventSink {
 
   /** Re-probes every active ruled tab after a user confirms the challenge. Returns the first still-present match. */
   private async recheckVerification(workspace: StoredWorkspace): Promise<{ signature: string; evidence: string } | null> {
-    const snapshot = this.browserRules?.refresh();
-    if (!snapshot) return null;
+    const snapshot = await this.synchronizePolicy(workspace.endpointRef);
+    if (!snapshot) throw new OctopusBrokerError(problem('HUMAN_VERIFICATION_REQUIRED', 'Tabro could not re-check the verification challenge. Check that the browser extension is connected and retry.', true));
     const signatures = activeVerificationSignatures(snapshot.configuration.verification_signatures);
     const connection = this.requireExtensionConnection(workspace.endpointRef);
     for (const item of this.repositories.logical.listWorkspaceTabs(workspace.workspaceRef).filter(t => t.lifecycle === 'active')) {
       const url = item.url ?? '';
       const ruled = effectiveBrowserPolicy(url, snapshot.configuration).mode === 'human_simulation';
-      this.humanSimulation.markProbed(item.tabRef, 0);
-      const report = await this.verificationReport(item, workspace.endpointRef, connection.connectionGeneration, snapshot, signatures, url, ruled);
+      const report = await this.verificationReport(item, workspace.endpointRef, connection.connectionGeneration, snapshot, signatures, url, ruled, true);
       const match = matchVerificationSignatures(signatures, report);
       if (match) return match;
+      if (!report.complete) throw new OctopusBrokerError(problem('HUMAN_VERIFICATION_REQUIRED', 'Tabro could not re-check the verification challenge. Inspect the tab with a screenshot and retry.', true,
+        { workspace_ref: workspace.workspaceRef, tab_ref: item.tabRef }));
     }
     return null;
   }

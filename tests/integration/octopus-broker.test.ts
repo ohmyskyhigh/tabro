@@ -220,8 +220,8 @@ class FakeExtensionPort implements OctopusExtensionPort {
         const report = this.verificationReport;
         this.probeCount += 1;
         return this.operationResult(type, attemptId, endpointRef, report === null
-          ? { result: { result: { type: 'object', value: { frames: [], found: [], url: 'https://example.test/', title: '' } } } }
-          : { result: { result: { type: 'object', value: { frames: [report.frame ?? ''], found: report.selector ? [report.selector] : [],
+          ? { rawResult: { result: { type: 'object', value: { frames: [], found: [], url: 'https://example.test/', title: '' } } } }
+          : { rawResult: { result: { type: 'object', value: { frames: [report.frame ?? ''], found: report.selector ? [report.selector] : [],
             url: report.url ?? 'https://example.test/', title: report.title ?? '' } } } });
       }
       this.cdpCalls += 1;

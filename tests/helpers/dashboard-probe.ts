@@ -2,14 +2,17 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect } from 'vitest';
+import type { z } from 'zod';
 import type { ChromeManagementConnection } from '../../apps/broker/src/profiles/management-connection.js';
+import { BrowserRulesSchema } from '../../apps/shared/protocol/src/browser-interaction-policy.js';
 
 /** Real extension-page input; no mocked Chrome APIs or dashboard responses. */
 export async function probeDashboard(control: ChromeManagementConnection, extensionId: string, rulesPath: string, evidenceRoot: string,
   verifyEnforcement: () => Promise<void>): Promise<string[]> {
   const checks: string[] = [];
-  const original = JSON.parse(readFileSync(rulesPath, 'utf8')) as { schemaVersion: 1; rules: Array<{ id: string; domain: string; mode: 'human_simulation' | 'input_only' }> };
-  const normalizedOriginal = { ...original, rules: original.rules.map(rule => ({ ...rule, mode: 'human_simulation' })) };
+  const rules = () => JSON.parse(readFileSync(rulesPath, 'utf8')) as z.input<typeof BrowserRulesSchema>;
+  const original = rules();
+  const normalizedOriginal = BrowserRulesSchema.parse(original);
   const { targetId } = await control.send('Target.createTarget', { url: `chrome-extension://${extensionId}/options.html` });
   const { sessionId } = await control.send('Target.attachToTarget', { targetId, flatten: true });
   const session = String(sessionId);
@@ -53,7 +56,6 @@ export async function probeDashboard(control: ChromeManagementConnection, extens
     writeFileSync(resolve(evidenceRoot, `${process.platform}-${process.arch}-dashboard-${name}.png`), Buffer.from(String(result.data), 'base64'));
   };
   const saved = async () => expect.poll(() => read('document.querySelector("#rule-dialog").open'), { timeout: 10000 }).toBe(false);
-  const rules = () => JSON.parse(readFileSync(rulesPath, 'utf8')) as typeof original;
   try {
     await expect.poll(() => read('document.querySelector("#status")?.textContent'), { timeout: 15000 }).toBe('Connected');
     expect(await read('document.querySelector("#pairing-code").value')).toMatch(/^[A-Z]+-[A-Z]+$/u);
