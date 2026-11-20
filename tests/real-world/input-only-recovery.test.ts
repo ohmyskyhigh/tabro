@@ -54,7 +54,11 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : process.platform === 'win32'
       ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '/opt/google/chrome/chrome');
   expect(existsSync(browserPath), 'A native Chrome installation is required').toBe(true);
-  const rules = { schemaVersion: 1, rules: [{ id: 'fixture', domain: 'fixture.test', mode: 'input_only' }] };
+  const rules = {
+    schemaVersion: 1,
+    rules: [{ id: 'fixture', domain: 'fixture.test', mode: 'input_only' }],
+    verification_signatures: [{ id: 'fixture-hidden-captcha-frame', frame_url_contains: '/recaptcha-bframe' }]
+  };
   const token = readFileSync(join(install, 'data/admin-token.txt'), 'utf8').trim();
   const runId = randomBytes(8).toString('hex');
   const trace: Json[] = [];
@@ -118,7 +122,7 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       #scroll{position:absolute;top:300px;left:40px;width:280px;height:120px;overflow:auto;background:#eee}
       </style><button id="button">Count</button><input id="text"><select id="select" size="2"><option>A</option><option>B</option></select>
       <div id="drag">Drag</div><div id="zone">Drop</div><div id="scroll"><div style="height:900px">Scroll</div></div>
-      <iframe id="resident" src="https://www.google.com/recaptcha/api2/bframe?x=1" style="display:none"></iframe>
+      <iframe id="resident" src="/recaptcha-bframe" style="display:none"></iframe>
       <script>
       window.fixture={clicks:0,drops:0,events:[]};let dragging=false;
       const send=(path,data)=>fetch(path,{method:'POST',body:JSON.stringify(data)});
