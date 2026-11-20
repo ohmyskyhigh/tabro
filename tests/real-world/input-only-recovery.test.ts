@@ -332,7 +332,8 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     const peer = await newClient('codex', 'codex'); additionalClients.push(peer);
     const receipts = await Promise.all([call('request_browser_workspace', workspaceArgs), callOn(peer, 'request_browser_workspace', workspaceArgs)]);
     const requestRef = object(object(receipts[0]!.facts).ticket).request_ref;
-    expect(object(object(receipts[1]!.facts).ticket).request_ref).toBe(requestRef);
+    for (const receipt of receipts) expect(receipt.disposition).toBe('accepted');
+    const secondRequestRef = object(object(receipts[1]!.facts).ticket).request_ref;
     let allocated: Json = {};
     await expect.poll(async () => {
       allocated = object(object((await call('get_browser_request', { request_ref: requestRef })).facts).ticket);
@@ -340,6 +341,12 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
     }, { timeout: 45000, interval: 100 }).toBe('succeeded');
     let resolved = (object(object(allocated.result).facts).resolved as Json[])[0]!;
     workspace = String(object(resolved.workspace).workspace_ref); tab = String((resolved.tabs as Json[])[0]!.tab_ref);
+    let secondAllocation: Json = {};
+    await expect.poll(async () => {
+      secondAllocation = object(object((await callOn(peer, 'get_browser_request', { request_ref: secondRequestRef })).facts).ticket);
+      return secondAllocation.state;
+    }, { timeout: 45000, interval: 100 }).toBe('succeeded');
+    expect(object((object(object(secondAllocation.result).facts).resolved as Json[])[0]!.workspace).workspace_ref).toBe(workspace);
     await connect('codex');
     const resumed = await execute('request_browser_workspace', workspaceArgs);
     expect(object((object(object(resumed.result).facts).resolved as Json[])[0]!.workspace).workspace_ref).toBe(workspace);
@@ -352,9 +359,11 @@ it.runIf(!!process.env.TABRO_QUALIFY_PACKAGE)('qualifies packaged domain rules a
       expect(groups.has(otherWorkspace)).toBe(false); groups.add(otherWorkspace);
       await executeOn(other, 'terminate_workspace', { workspace_ref: otherWorkspace });
     }
-    pass('real Chrome: concurrent same-chat requests share a ticket, adapter restart resumes the group, and Codex/CC/DSH identities use separate groups');
+    pass('real Chrome: concurrent same-chat requests resolve to the same workspace, adapter restart resumes the group, and Codex/CC/DSH identities use separate groups');
     await cdp('Page.navigate', { url: `http://fixture.test:${sitePort}/` });
     await expect.poll(() => read('document.title'), { timeout: 15000 }).toBe('Tabro input fixture');
+    // The Windows headless runner can stall surface capture while this new tab is inactive.
+    await bringToFront();
     const screenshot = await raw('Page.captureScreenshot', { format: 'png' });
     expect(Buffer.from(String(screenshot.data), 'base64').subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
     pass('real Chrome: screenshot observation works on a Human Simulation Mode domain');

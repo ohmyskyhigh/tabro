@@ -131,9 +131,16 @@ describe('stdio MCP session adapter', () => {
     const args = { required_workspace_count: 1, designated_endpoints: [{ endpoint_nickname: 'mintwave' }] };
     const [first, duplicate] = await Promise.all([dsh!, worker!].map(client => call(client, 'request_browser_workspace', args)));
     expect(first).toMatchObject({ disposition: 'accepted' });
-    expect(ticketRef(duplicate!)).toBe(ticketRef(first!));
+    expect(duplicate).toMatchObject({ disposition: 'accepted' });
     const original = await waitTicket(dsh!, ticketRef(first!));
+    expect(original.state).toBe('succeeded');
     const { workspace_ref } = (original.result as { facts: { resolved: Array<{ workspace: { workspace_ref: string } }> } }).facts.resolved[0]!.workspace;
+    // Across adapter processes the second submission can reach the Broker after
+    // the first ticket already finished. Both paths must resolve to one workspace.
+    const second = await waitTicket(worker!, ticketRef(duplicate!));
+    expect(second.state).toBe('succeeded');
+    expect(second.result).toMatchObject({ facts: { resolved: [{ workspace: { workspace_ref } }] } });
+    expect(app.store.canonical.logical.listActiveWorkspaces()).toHaveLength(1);
     await dsh!.close();
     const resumed = await connect('dsh');
     expect(await readBrokerContext(resumed)).toEqual(caller);
